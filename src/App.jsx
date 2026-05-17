@@ -1,674 +1,900 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-const C = {
-  bg: "#f1f5f9",
-  surface: "#ffffff",
-  surfaceHi: "#f8fafc",
-  border: "#e2e8f0",
-  accent: "#4f6ef7",
-  accentLo: "#eff2fe",
-  green: "#16a34a",
-  greenLo: "#dcfce7",
-  amber: "#d97706",
-  amberLo: "#fef3c7",
-  red: "#dc2626",
-  redLo: "#fee2e2",
-  text: "#0f172a",
-  muted: "#64748b",
-  mono: "'Courier New', monospace",
+import {
+  Package, Search, ScanLine, Plus, Minus, Download, Home, List, X, Check,
+  Camera, AlertCircle, Trash2, Edit3, Save, Image as ImageIcon, Upload, User,
+  Shield, Eye, EyeOff, ClipboardCheck, Lock, LogOut, Database, Cloud,
+  RefreshCw, Settings as SettingsIcon, CheckCircle2, XCircle, Layers,
+  FileSpreadsheet, ArrowRight, FileCheck, WifiOff, Zap, Send, Clock,
+  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin,
+} from 'lucide-react';
+
+const INVOICE_API = "https://flat-snowflake-d374invoice-api.dogut-dn.workers.dev";
+const DRIVE_FOLDER_DEFAULT = "1Egu5XH0UInn4ol6V2FlI06-TMUdnXO4D";
+const MODELS = [
+  { id: "claude-opus-4-6",    label: "Opus 4.6" },
+  { id: "claude-sonnet-4-6",  label: "Sonnet 4.6 ✦" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+const INVOICE_PROMPT = `ตอบด้วย JSON เท่านั้น ห้ามพิมพ์ข้อความอื่นใดก่อนหรือหลัง JSON ห้าม backtick ห้าม markdown
+สกัดข้อมูลจากใบกำกับภาษี/ใบส่งของที่อัปโหลดมา และตอบเป็น JSON ตามโครงสร้างนี้:
+{
+  "invoice_no": string|null,
+  "invoice_date": string|null,
+  "vendor_name": string|null,
+  "vendor_tax_id": string|null,
+  "document_type": "invoice"|"receipt"|"credit_note"|"debit_note"|"quotation"|"other"|null,
+  "vendor_address": string|null,
+  "vendor_branch": string|null,
+  "price_type": "incl"|"excl",
+  "products": [
+    {
+      "no": number|null,
+      "description": string|null,
+      "carton_size": number|null,
+      "carton": number|null,
+      "ea": number|null,
+      "qty": number|null,
+      "price_ea": number|null,
+      "amount": number|null,
+      "special_discount": number|null,
+      "vat": "v"|"0"|null
+    }
+  ]
+}
+กฎ: price_type="incl" ถ้าราคารวม VAT แล้ว, "excl" ถ้าแยก VAT
+สกัดทุกรายการสินค้า ไม่ละเว้น
+invoice_date ให้เป็น DD/MM/YYYY หรือ YYYY-MM-DD`;
+
+const BARCODE_PROMPT = list => `คุณได้รับรูปภาพสินค้าและรายการชื่อสินค้าจากใบกำกับ
+จงหาบาร์โค้ดจากรูป (EAN-13 หรือรหัสสินค้า) และจับคู่กับชื่อในรายการ
+ตอบเป็น JSON array เท่านั้น:
+[{"barcode":"xxx","match":"ชื่อสินค้าที่ตรงกัน","description_image":"ชื่อสินค้าจากรูป"}]
+รายการสินค้า:
+${list}`;
+
+const STEPS = ["อัปโหลด", "สแกนสินค้า", "ตรวจสอบ", "สรุป"];
+
+const SEED_PRODUCTS = [
+  { id: 'p001', barcode: '8851234567001', name: 'น้ำดื่มสิงห์ 600ml', category: 'เครื่องดื่ม', unit: 'ขวด', price: 10, cost: 7, stock: 245 },
+  { id: 'p002', barcode: '8851234567002', name: 'น้ำดื่มคริสตัล 600ml', category: 'เครื่องดื่ม', unit: 'ขวด', price: 9, cost: 6, stock: 180 },
+  { id: 'p003', barcode: '8851234567003', name: 'โค้ก 325ml', category: 'เครื่องดื่ม', unit: 'กระป๋อง', price: 17, cost: 12, stock: 120 },
+  { id: 'p004', barcode: '8851234567004', name: 'เป๊ปซี่ 325ml', category: 'เครื่องดื่ม', unit: 'กระป๋อง', price: 17, cost: 12, stock: 95 },
+  { id: 'p005', barcode: '8851234567005', name: 'มาม่าหมูสับ', category: 'บะหมี่', unit: 'ซอง', price: 6, cost: 4, stock: 320 },
+  { id: 'p006', barcode: '8851234567006', name: 'มาม่าต้มยำกุ้ง', category: 'บะหมี่', unit: 'ซอง', price: 6, cost: 4, stock: 280 },
+  { id: 'p007', barcode: '8851234567007', name: 'เลย์รสต้นตำรับ 50g', category: 'ขนม', unit: 'ซอง', price: 20, cost: 14, stock: 88 },
+  { id: 'p008', barcode: '8851234567008', name: 'แชมพูแพนทีน 340ml', category: 'ของใช้', unit: 'ขวด', price: 159, cost: 110, stock: 45 },
+  { id: 'p009', barcode: '8851234567009', name: 'สบู่โปรเทคส์ 65g', category: 'ของใช้', unit: 'ก้อน', price: 15, cost: 10, stock: 156 },
+  { id: 'p010', barcode: '8851234567010', name: 'นมเมจิ 225ml', category: 'นม', unit: 'กล่อง', price: 17, cost: 12, stock: 200 },
+];
+
+const storage = {
+  get:    async (key)        => { try { const v = localStorage.getItem(key); return v != null ? { value: v } : null; } catch { return null; } },
+  set:    async (key, value) => { try { localStorage.setItem(key, String(value)); return { key, value }; } catch { return null; } },
+  delete: async (key)        => { try { localStorage.removeItem(key); return { key, deleted: true }; } catch { return null; } },
 };
+const safeGet = (k, def = '') => { try { return localStorage.getItem(k) ?? def; } catch { return def; } };
+const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 
-// ── Seed Data ────────────────────────────────────────────────────────────────
-const PRODUCTS = [
-  { barcode: "8851234567001", name: "น้ำดื่มสิงห์ 600ml",    unit: "ขวด",    price: 10,  cost: 7,   stock: 245 },
-  { barcode: "8851234567002", name: "น้ำดื่มคริสตัล 600ml", unit: "ขวด",    price: 9,   cost: 6,   stock: 180 },
-  { barcode: "8851234567003", name: "โค้ก 325ml",            unit: "กระป๋อง",price: 17,  cost: 12,  stock: 120 },
-  { barcode: "8851234567004", name: "เป๊ปซี่ 325ml",          unit: "กระป๋อง",price: 17,  cost: 12,  stock: 95  },
-  { barcode: "8851234567005", name: "มาม่าหมูสับ",            unit: "ซอง",    price: 6,   cost: 4,   stock: 320 },
-  { barcode: "8851234567006", name: "มาม่าต้มยำกุ้ง",         unit: "ซอง",    price: 6,   cost: 4,   stock: 280 },
-  { barcode: "8851234567007", name: "เลย์รสต้นตำรับ 50g",    unit: "ซอง",    price: 20,  cost: 14,  stock: 88  },
-  { barcode: "8851234567008", name: "แชมพูแพนทีน 340ml",     unit: "ขวด",    price: 159, cost: 110, stock: 45  },
-  { barcode: "8851234567009", name: "สบู่โปรเทคส์ 65g",      unit: "ก้อน",   price: 15,  cost: 10,  stock: 156 },
-  { barcode: "8851234567010", name: "นมเมจิ 225ml",           unit: "กล่อง",  price: 17,  cost: 12,  stock: 200 },
-];
-
-const DEMO_SUBMISSIONS = [
-  {
-    id: "sub001", docNo: "RC-202505170001", counter: "สมหญิง",
-    submittedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    status: "pending", itemCount: 5, totalQty: 142, note: "นับโซน A เสร็จแล้ว",
-    data: [
-      { barcode: "8851234567001", productName: "น้ำดื่มสิงห์ 600ml",  qty: 40, unit: "ขวด",    location: "A1" },
-      { barcode: "8851234567003", productName: "โค้ก 325ml",           qty: 28, unit: "กระป๋อง",location: "A2" },
-      { barcode: "8851234567005", productName: "มาม่าหมูสับ",          qty: 35, unit: "ซอง",    location: "A3" },
-      { barcode: "8851234567006", productName: "มาม่าต้มยำกุ้ง",      qty: 29, unit: "ซอง",    location: "A3" },
-      { barcode: "8851234567009", productName: "สบู่โปรเทคส์ 65g",    qty: 10, unit: "ก้อน",   location: "A4" },
-    ],
-  },
-  {
-    id: "sub002", docNo: "RC-202505170002", counter: "สมชาย",
-    submittedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    status: "approved", itemCount: 3, totalQty: 77, note: "",
-    data: [
-      { barcode: "8851234567002", productName: "น้ำดื่มคริสตัล 600ml",qty: 30, unit: "ขวด",    location: "B1" },
-      { barcode: "8851234567007", productName: "เลย์รสต้นตำรับ 50g",  qty: 20, unit: "ซอง",    location: "B2" },
-      { barcode: "8851234567010", productName: "นมเมจิ 225ml",         qty: 27, unit: "กล่อง",  location: "B3" },
-    ],
-  },
-];
-
-// ── Tiny helpers ──────────────────────────────────────────────────────────────
-const fmt = n => Number(n).toLocaleString("th-TH");
-const timeStr = iso => new Date(iso).toLocaleString("th-TH", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
-
-function Badge({ color = "accent", children }) {
-  const map = { accent: [C.accentLo, C.accent], green: [C.greenLo, C.green], amber: [C.amberLo, C.amber], red: [C.redLo, C.red], muted: ["#1e2433", C.muted] };
-  const [bg, fg] = map[color] || map.accent;
-  return <span style={{ background: bg, color: fg, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, letterSpacing: "0.05em", textTransform: "uppercase" }}>{children}</span>;
+function useDebouncedStorage(key, value, ready, delay = 800) {
+  const timerRef = useRef(null);
+  const pendingRef = useRef(false);
+  useEffect(() => {
+    if (!ready) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    pendingRef.current = true;
+    timerRef.current = setTimeout(async () => {
+      if (!pendingRef.current) return;
+      pendingRef.current = false;
+      try { await storage.set(key, JSON.stringify(value)); } catch {}
+    }, delay);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [key, value, ready, delay]);
 }
 
-function Card({ children, style = {} }) {
-  return <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, ...style }}>{children}</div>;
+function useWinWidth() {
+  const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth : 800);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return w;
 }
 
-function Btn({ children, onClick, disabled, color = "accent", size = "md", full = false, style = {} }) {
-  const bg = { accent: C.accent, green: "#16a34a", red: "#dc2626", ghost: C.surfaceHi }[color];
-  const pad = size === "sm" ? "6px 14px" : size === "lg" ? "14px 28px" : "10px 20px";
+async function supabaseFindProduct(cfg, code) {
+  const { url, anonKey, tableName } = cfg;
+  if (!url || !anonKey) return null;
+  const table = tableName || 'product_price';
+  const res = await fetch(
+    `${url.replace(/\/$/, '')}/rest/v1/${table}?StkCode=eq.${encodeURIComponent(code)}&limit=1`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } }
+  );
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  const rows = await res.json();
+  return rows.length > 0 ? rows[0] : null;
+}
+
+function mapSupabaseRow(row, fallbackCode) {
+  const get = (...keys) => {
+    for (const k of keys) {
+      if (row[k] != null && row[k] !== '') return row[k];
+      for (let i = 1; i <= 3; i++) { const kn = k + '-' + i; if (row[kn] != null && row[kn] !== '') return row[kn]; }
+    }
+    return '';
+  };
+  const id = String(get('รหัสสินค้า', 'product_code', 'code', 'id') || fallbackCode || '');
+  return {
+    source: 'supabase', id,
+    barcode: String(get('บาร์โค้ด', 'barcode') || id || fallbackCode || ''),
+    productCode: id,
+    name: String(get('ชื่อสินค้า', 'product_name', 'name') || '(ไม่มีชื่อ)'),
+    category: String(get('ประเภท', 'category') || 'อื่นๆ'),
+    unit: String(get('หน่วย', 'unit') || 'ชิ้น'),
+    price: parseFloat(String(get('ราคา', 'price', 'ราคาขาย') || '0').replace(/[^\d.-]/g, '')) || 0,
+    cost:  parseFloat(String(get('ทุนเฉลี่ย', 'ต้นทุน', 'cost', 'ราคาทุน') || '0').replace(/[^\d.-]/g, '')) || 0,
+  };
+}
+
+async function sbFetch(url, key, table, rawQS) {
+  const res = await fetch(`${url.replace(/\/$/, '')}/rest/v1/${table}?${rawQS}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function lookupVendorREST(sbUrl, sbKey, vendorName) {
+  if (!sbUrl || !sbKey || !vendorName) return null;
+  const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
+  const col = encodeURIComponent('ชื่อ-นามสกุล');
+  const sel = encodeURIComponent('รหัส');
+  const get = async (op, kw) => {
+    const val = op === 'ilike' ? `*${encodeURIComponent(kw)}*` : encodeURIComponent(kw);
+    const r = await fetch(`${sbUrl}/rest/v1/vendor_info?select=${sel}&${col}=${op}.${val}&limit=1`, { headers: h });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d[0]?.['รหัส'] ?? null;
+  };
+  const stripped = vendorName.trim().replace(/\s*(จำกัด|มหาชน|co\.?,?\s*ltd\.?|บจก\.?|หจก\.?|บมจ\.?)/gi, '').trim();
+  return (await get('eq', vendorName)) ?? (await get('ilike', stripped)) ?? (await get('ilike', stripped.split(/\s+/)[0]));
+}
+
+function toYMD(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    let [a, b, c] = parts;
+    if (String(a).length === 4) return `${a}-${String(b).padStart(2,'0')}-${String(c).padStart(2,'0')}`;
+    const year = +c > 2400 ? +c - 543 : +c < 100 ? +c + 2000 : +c;
+    return `${year}-${String(b).padStart(2,'0')}-${String(a).padStart(2,'0')}`;
+  }
+  const dt = new Date(s);
+  if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+  return null;
+}
+
+async function imgToBase64(file) {
+  const ok = ['image/jpeg','image/png','image/gif','image/webp'];
+  if (ok.includes(file.type)) {
+    const img = new Image(), url = URL.createObjectURL(file);
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    return { base64: c.toDataURL('image/jpeg', 0.92).split(',')[1], mediaType: 'image/jpeg' };
+  }
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res({ base64: r.result.split(',')[1], mediaType: file.type });
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function callClaude(content, extra = {}, model) {
+  const r = await fetch(INVOICE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, max_tokens: 8000, temperature: 0, messages: [{ role: 'user', content }], ...extra }),
+  });
+  if (!r.ok) { const txt = await r.text(); throw new Error('API ' + r.status + ': ' + txt.slice(0, 150)); }
+  return r.json();
+}
+
+function extractJSON(text) {
+  if (!text) throw new Error('empty');
+  const t = text.replace(/```json|```/g, '').trim();
+  if (t.startsWith('[')) { const e = t.lastIndexOf(']'); if (e > 0) return JSON.parse(t.slice(0, e+1)); }
+  const start = t.indexOf('{'); const end = t.lastIndexOf('}');
+  if (start < 0 || end < 0) throw new Error('no JSON');
+  return JSON.parse(t.slice(start, end + 1));
+}
+
+function recalc(p) {
+  const cs = p.carton_size != null ? +p.carton_size : null, ca = p.carton != null ? +p.carton : null;
+  const ea = p.ea != null ? +p.ea : 0, am = p.amount != null ? +p.amount : null;
+  const sd = p.special_discount != null ? +p.special_discount : 0;
+  const qty = cs != null && ca != null ? +(cs * ca + ea).toFixed(4) : (p.qty != null ? +p.qty : null);
+  const price_ea = p.price_ea != null ? +p.price_ea : (qty != null && qty !== 0 && am != null ? +(am / qty).toFixed(4) : null);
+  const total = (qty != null && price_ea != null) ? +(qty * price_ea - sd).toFixed(2) : null;
+  const amount_sd = am != null ? +(am - sd).toFixed(2) : null;
+  const diff = (amount_sd != null && total != null) ? +(amount_sd - total).toFixed(2) : null;
+  const vatCode = p.vat ?? 'v', pt = p._pt ?? 'incl';
+  const excl_vat = total != null ? (vatCode === 'v' ? (pt === 'incl' ? +(total/1.07).toFixed(2) : total) : total) : null;
+  const vat_amt = total != null ? (vatCode === 'v' ? (pt === 'incl' ? +(total - total/1.07).toFixed(2) : +(total*0.07).toFixed(2)) : 0) : null;
+  return { ...p, qty, price_ea, total, amount_sd, diff, excl_vat, vat_amt };
+}
+
+function vatSummary(products = []) {
+  let sdTot = 0, netTotal = 0, excl = 0, vatAmt = 0;
+  for (const p of products) {
+    const sd = p.special_discount != null ? +p.special_discount : 0;
+    const net = p.total != null ? +p.total : 0, pt = p._pt ?? 'incl';
+    sdTot += sd; netTotal += net;
+    excl += p.excl_vat != null ? +p.excl_vat : (p.vat === 'v' ? (pt === 'incl' ? +(net/1.07) : net) : net);
+    vatAmt += p.vat_amt != null ? +p.vat_amt : 0;
+  }
+  return { sdTot: +sdTot.toFixed(2), netTotal: +netTotal.toFixed(2), excl: +excl.toFixed(2), vatAmt: +vatAmt.toFixed(2) };
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+function buildStockExcelRows(data, docNo, countedAt) {
+  const header = ['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'จำนวนนับ', 'Location', 'ราคาขาย', 'ทุนเฉลี่ย', 'เวลาสแกน'];
+  const rows = data.map(d => [
+    d.barcode, d.productName, d.unit || '', d.qty,
+    d.location || '', d.price || 0, d.cost || 0,
+    d.scannedAt ? new Date(d.scannedAt).toLocaleString('th-TH') : '',
+  ]);
+  const meta = [
+    [`เอกสารเลขที่: ${docNo || ''}`],
+    [`วันเวลาส่ง: ${countedAt ? new Date(countedAt).toLocaleString('th-TH') : ''}`],
+    [],
+    header,
+  ];
+  return [...meta, ...rows];
+}
+
+function downloadStockExcel(data, filename, docNo, submittedAt) {
+  const allRows = buildStockExcelRows(data, docNo, submittedAt);
+  const ws = XLSX.utils.aoa_to_sheet(allRows);
+  ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 20 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
+}
+
+function downloadStockCSV(data, filename) {
+  const csv = data.map(d => `${d.barcode},${d.qty},${d.price || 0},0`).join('\n');
+  downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), filename);
+}
+
+function openPDFPrint(sub) {
+  const OVERLAY_ID = '__pdf_overlay__', STYLE_ID = '__pdf_style__';
+  document.getElementById(OVERLAY_ID)?.remove();
+  document.getElementById(STYLE_ID)?.remove();
+  const dateStr = new Date(sub.submittedAt).toLocaleDateString('th-TH');
+  const rows = sub.data.map(d => `<tr><td>${d.barcode}</td><td>${d.productName || ''}</td><td style="text-align:center">${d.qty}</td><td style="text-align:center">${d.unit || ''}</td>${d.location ? `<td>${d.location}</td>` : '<td>-</td>'}<td style="text-align:right">${Number(d.price||0).toLocaleString()}</td></tr>`).join('');
+  if (!document.getElementById('__sarabun_font__')) {
+    const link = document.createElement('link');
+    link.id = '__sarabun_font__'; link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap';
+    document.head.appendChild(link);
+  }
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `@media print{body>*:not(#${OVERLAY_ID}){display:none!important}#${OVERLAY_ID}{display:block!important;position:static!important;background:#fff;padding:0;margin:0;box-shadow:none}@page{size:A4 portrait;margin:12mm}}#${OVERLAY_ID}{position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto;padding:20px;font-family:'Sarabun',sans-serif;color:#1e293b}#${OVERLAY_ID} .pr-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}#${OVERLAY_ID} .pr-close{cursor:pointer;font-size:20px;color:#64748b;background:none;border:none;padding:4px 8px}#${OVERLAY_ID} .pr-print{cursor:pointer;background:#4361ee;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:14px;font-family:inherit}#${OVERLAY_ID} h1{font-size:18px;font-weight:700;margin-bottom:10px}#${OVERLAY_ID} .meta{font-size:13px;margin:3px 0}#${OVERLAY_ID} table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12px}#${OVERLAY_ID} thead tr{background:#4361ee;color:#fff}#${OVERLAY_ID} th{padding:8px;font-weight:700;text-align:left}#${OVERLAY_ID} td{padding:7px 8px;border-bottom:1px solid #e2e8f0}#${OVERLAY_ID} tr:nth-child(even) td{background:#f5f7ff}`;
+  document.head.appendChild(style);
+  const overlay = document.createElement('div');
+  overlay.id = OVERLAY_ID;
+  overlay.innerHTML = `<div class="pr-header"><div><h1>Stock Count Report</h1><p class="meta">เลขที่เอกสาร : <b>${sub.docNo || sub.id}</b></p><p class="meta">วันที่ : <b>${dateStr}</b></p><p class="meta">พนักงาน : <b>${sub.counter}</b></p><p class="meta">รายการ : <b>${sub.itemCount}</b> &nbsp; รวม : <b>${sub.totalQty}</b></p>${sub.note ? `<p class="meta">หมายเหตุ : <b>${sub.note}</b></p>` : ''}</div><div style="display:flex;gap:8px;align-items:flex-start"><button class="pr-print" id="__pdf_print_btn__">🖨️ พิมพ์ / PDF</button><button class="pr-close" id="__pdf_close_btn__">✕</button></div></div><table><thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th style="text-align:center">จำนวน</th><th style="text-align:center">หน่วย</th><th>Location</th><th style="text-align:right">ราคาขาย</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:16px;font-size:11px;color:#64748b;text-align:right">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>`;
+  document.body.appendChild(overlay);
+  document.getElementById('__pdf_print_btn__')?.addEventListener('click', () => window.print());
+  document.getElementById('__pdf_close_btn__')?.addEventListener('click', () => { document.getElementById(OVERLAY_ID)?.remove(); document.getElementById(STYLE_ID)?.remove(); });
+}
+
+async function generateDocNo() {
+  const today = new Date();
+  const dateStr = today.getFullYear().toString() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
+  let seq = 1;
+  try { const r = await storage.get('docNoState'); if (r?.value) { const s = JSON.parse(r.value); if (s.date === dateStr) seq = s.seq + 1; } } catch {}
+  try { await storage.set('docNoState', JSON.stringify({ date: dateStr, seq })); } catch {}
+  return `RC-${dateStr}${String(seq).padStart(4,'0')}`;
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+export default function CombinedApp() {
+  const [products, setProducts] = useState([]);
+  const [countEntries, setCountEntries] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
+  const [view, setView] = useState('count');
+  const [loaded, setLoaded] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price' });
+  const [dataSource, setDataSource] = useState('none');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('unknown');
+  const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
+  const [compareState, setCompareState] = useState({
+    selectedSub: null, compareData: [], loading: false, loadProgress: '',
+    error: '', compareAt: null, driveSaving: false, driveResult: null,
+  });
+  const updateDraft = useCallback((patch) => setCountDraft(prev => ({ ...prev, ...patch })), []);
+
+  useEffect(() => {
+    (async () => {
+      const tryLoad = async (key, setter, parse = true) => {
+        try { const r = await storage.get(key); if (r?.value) setter(parse ? JSON.parse(r.value) : r.value); } catch {}
+      };
+      await tryLoad('countEntries', setCountEntries);
+      await tryLoad('submissions', setSubmissions);
+      await tryLoad('lastSyncAt', setLastSyncAt, false);
+      let cfg = { url: '', anonKey: '', tableName: 'product_price' };
+      try { const r = await storage.get('supabaseConfig'); if (r?.value) { cfg = JSON.parse(r.value); setSupabaseConfig(cfg); } } catch {}
+      let src = 'none';
+      try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
+      if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
+      setDataSource(src);
+      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); } } catch {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  useDebouncedStorage('countEntries', countEntries, loaded);
+  useDebouncedStorage('submissions', submissions, loaded);
+
+  const handleLogin = (user) => { setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
+
+  const checkBarcode = async (barcode) => {
+    const trimmed = barcode.trim();
+    if (!trimmed) return null;
+    if (supabaseConfig.url && supabaseConfig.anonKey) {
+      try {
+        const row = await supabaseFindProduct(supabaseConfig, trimmed);
+        if (row) { const product = mapSupabaseRow(row, trimmed); setProducts(prev => prev.some(p => p.id === product.id || p.barcode === product.barcode) ? prev : [...prev, product]); setConnectionStatus('ok'); return product; }
+        setConnectionStatus('ok'); return null;
+      } catch (e) { setConnectionStatus('error'); const cached = products.find(p => p.id === trimmed || p.barcode === trimmed); if (cached) return { ...cached, source: 'cached' }; throw new Error(`ค้นหาไม่ได้: ${e.message}`); }
+    }
+    if (dataSource === 'seed') { const local = products.find(p => p.id === trimmed || p.barcode === trimmed); return local ? { ...local, source: 'local' } : null; }
+    throw new Error('ยังไม่ได้ตั้งค่า Supabase');
+  };
+
+  const addCountEntry = (entry) => {
+    const now = new Date();
+    const dateStr = entry.countDate || now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 8);
+    const timestamp = new Date(`${dateStr}T${timeStr}`).toISOString();
+    setCountEntries(prev => [{
+      id: `e${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      barcode: entry.barcode, productName: entry.productName, productId: entry.productId || '',
+      unit: entry.unit || '', price: entry.price || 0, cost: entry.cost || 0,
+      qty: parseInt(entry.qty) || 0, notFound: !!entry.notFound,
+      location: entry.location || '',
+      counter: currentUser?.name || 'พนักงาน', counterId: currentUser?.id || 'unknown',
+      timestamp,
+    }, ...prev]);
+  };
+
+  const deleteCountEntry = (id) => setCountEntries(prev => prev.filter(e => e.id !== id));
+  const clearMyEntries = () => setCountEntries(prev => prev.filter(e => e.counterId !== currentUser?.id));
+
+  const submitForReview = async (grouped, note) => {
+    const docNo = await generateDocNo();
+    const now = new Date().toISOString();
+    const sub = {
+      id: `sub${Date.now()}_${Math.random().toString(36).slice(2,7)}`, docNo,
+      counter: currentUser?.name || 'พนักงาน', counterId: currentUser?.id || 'unknown',
+      submittedAt: now,
+      startedAt: grouped.reduce((min, g) => g.scannedAt && g.scannedAt < min ? g.scannedAt : min, now),
+      note: note || '', status: 'pending', reviewedAt: null, reviewedBy: null, reviewNote: '',
+      itemCount: grouped.length, totalQty: grouped.reduce((s, g) => s + g.qty, 0), data: grouped,
+    };
+    setSubmissions(prev => [sub, ...prev]);
+    return sub;
+  };
+
+  const reviewSubmission = (id, status, reviewNote) => setSubmissions(prev => prev.map(s => s.id === id ? { ...s, status, reviewNote: reviewNote || '', reviewedAt: new Date().toISOString(), reviewedBy: currentUser?.name || 'ผู้จัดการ' } : s));
+  const deleteSubmission = (id) => setSubmissions(prev => prev.filter(s => s.id !== id));
+
+  const saveSupabaseConfig = async (cfg) => {
+    setSupabaseConfig(cfg);
+    await storage.set('supabaseConfig', JSON.stringify(cfg));
+    if (cfg.url && cfg.anonKey) { setDataSource('supabase'); await storage.set('dataSource', 'supabase'); }
+  };
+
+  const testConnection = async (cfg) => {
+    if (!cfg.url || !cfg.anonKey) throw new Error('ใส่ URL และ Anon Key ก่อน');
+    const table = cfg.tableName || 'product_price';
+    const res = await fetch(`${cfg.url.replace(/\/$/, '')}/rest/v1/${table}?select=count`, {
+      headers: { apikey: cfg.anonKey, Authorization: `Bearer ${cfg.anonKey}`, Prefer: 'count=exact' }
+    });
+    if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+    const range = res.headers.get('content-range') || '';
+    const match = range.match(/\/(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
+  const useSeedData = async () => { setProducts(SEED_PRODUCTS); setDataSource('seed'); setLastSyncAt(null); await storage.set('dataSource', 'seed'); await storage.delete('lastSyncAt'); };
+
+  if (!loaded) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
+  if (!currentUser) return <AccessGate><LoginScreen onLogin={handleLogin} /></AccessGate>;
+
+  const isManager = currentUser.role === 'manager';
+  const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
+  const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
+  const pendingCount = submissions.filter(s => s.status === 'pending').length;
+
+  const counterNavItems = [
+    { id: 'count',          label: 'นับสต็อก', icon: ScanLine },
+    { id: 'review',         label: 'ตรวจสอบ',  icon: ClipboardCheck, badge: myEntries.length },
+    { id: 'my_submissions', label: 'ที่ส่งแล้ว', icon: Send },
+  ];
+  const managerNavItems = [
+    { id: 'dashboard', label: 'แดชบอร์ด',    icon: Home },
+    { id: 'inbox',     label: 'รีวิว',         icon: Inbox, badge: pendingCount },
+    { id: 'compare',   label: 'เปรียบเทียบ',  icon: ArrowLeftRight },
+    { id: 'invoice',   label: 'สแกนบิล',      icon: Receipt },
+    { id: 'settings',  label: 'ตั้งค่า',        icon: SettingsIcon },
+  ];
+  const navItems = isManager ? managerNavItems : counterNavItems;
+
   return (
-    <button onClick={onClick} disabled={disabled}
-      style={{ background: disabled ? C.border : bg, color: disabled ? C.muted : "#fff", border: "none", borderRadius: 8, padding: pad, fontWeight: 700, fontSize: size === "sm" ? 12 : 14, cursor: disabled ? "not-allowed" : "pointer", width: full ? "100%" : undefined, opacity: disabled ? 0.6 : 1, transition: "all .15s", ...style }}>
-      {children}
-    </button>
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`${isManager ? 'bg-indigo-600' : 'bg-emerald-600'} text-white p-2 rounded-lg`}><Package size={20} /></div>
+            <div><h1 className="font-bold text-slate-800">KUUHOO</h1><p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงานนับ'} • {currentUser.name}</p></div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-emerald-50 text-emerald-700' : connectionStatus === 'error' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}><Cloud size={10} />Supabase</div>}
+            <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded"><LogOut size={14} />ออก</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4 pb-24">
+        {!isManager && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
+        {!isManager && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
+        {!isManager && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
+        {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
+        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
+        {isManager && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onUseSeed={useSeedData} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
+        <div className="max-w-6xl mx-auto flex">
+          {navItems.map(item => {
+            const Icon = item.icon; const active = view === item.id;
+            return (
+              <button key={item.id} onClick={() => setView(item.id)} style={{ flex: 1 }}
+                className={`relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px] ${active ? (isManager ? 'text-indigo-600 bg-indigo-50' : 'text-emerald-600 bg-emerald-50') : 'text-slate-500 hover:bg-slate-50'}`}>
+                <Icon size={18} />
+                <span className="font-medium">{item.label}</span>
+                {item.badge > 0 && <span className="absolute top-1.5 right-1/2 translate-x-4 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] text-center">{item.badge}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
   );
 }
 
-function Input({ value, onChange, placeholder, type = "text", mono = false, style = {} }) {
-  return <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-    style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "10px 14px", fontSize: 13, width: "100%", outline: "none", fontFamily: mono ? C.mono : undefined, boxSizing: "border-box", ...style }} />;
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+function AccessGate({ children }) {
+  const [authed, setAuthed] = React.useState(() => sessionStorage.getItem('__auth__') === '1');
+  const [code, setCode] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const handleSubmit = async () => {
+    setLoading(true); setError('');
+    try {
+      const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+      const data = await r.json();
+      if (data.ok) { sessionStorage.setItem('__auth__', '1'); setAuthed(true); }
+      else setError(data.msg || 'รหัสไม่ถูกต้อง');
+    } catch { setError('เกิดข้อผิดพลาด'); }
+    setLoading(false);
+  };
+  if (authed) return children;
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Lock size={28}/></div><h1 className="text-xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500 mt-1">ใส่รหัสเพื่อเข้าใช้งาน</p></div>
+        <input type="password" value={code} onChange={e => { setCode(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="รหัสเข้าใช้งาน" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-center text-lg tracking-widest" autoFocus />
+        {error && <div className="text-sm text-red-600 text-center">{error}</div>}
+        <button onClick={handleSubmit} disabled={!code || loading} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-lg font-semibold">{loading ? 'กำลังตรวจสอบ...' : 'เข้าใช้งาน'}</button>
+      </div>
+    </div>
+  );
 }
 
-// ── LOGIN — 3-step flow ──────────────────────────────────────────────────────
-const FEATURES = [
-  {
-    id: "stock_compare",
-    icon: "⚖️",
-    label: "นับ Stock & Compare",
-    sub: "นับสต็อก + เปรียบเทียบกับฐานข้อมูล",
-    tags: ["นับสต็อก", "เปรียบเทียบ", "รีวิว"],
-    accentColor: "#4f6ef7",
-    roles: ["counter", "manager"],
-  },
-  {
-    id: "stock_only",
-    icon: "📦",
-    label: "Record Helper",
-    sub: "บันทึกและส่งให้ผู้จัดการ ไม่เปรียบเทียบ",
-    tags: ["นับสต็อก", "รีวิว"],
-    accentColor: "#22c55e",
-    roles: ["counter", "manager"],
-  },
-  {
-    id: "invoice",
-    icon: "🧾",
-    label: "Invoice Scanner (AI)",
-    sub: "อ่านใบกำกับภาษีด้วย Claude AI",
-    tags: ["AI", "OCR", "Export"],
-    accentColor: "#a855f7",
-    roles: ["counter", "manager"],
-  },
-];
+function LoginScreen({ onLogin }) {
+  const [name, setName] = useState(''); const [role, setRole] = useState(null); const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  const handleLogin = async () => {
+    if (!name.trim()) return setError('กรุณาใส่ชื่อ');
+    if (role === 'manager') {
+      setLoading(true);
+      try { const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) }); const d = await r.json(); if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; } } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
+      setLoading(false);
+    }
+    const stableId = `${role}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
+    onLogin({ id: stableId, name: name.trim(), role, loginAt: new Date().toISOString() });
+  };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div><h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p></div>
+        {!role ? (
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-slate-700">เลือกบทบาท</div>
+            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div><div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการอนุมัติ</div></div></button>
+            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div><div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div></button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <button onClick={() => { setRole(null); setPin(''); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
+            <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-2">{role === 'manager' ? <Shield className="text-indigo-600" size={20}/> : <User className="text-emerald-600" size={20}/>}<span className="text-sm font-medium text-slate-700">{role === 'manager' ? 'ผู้จัดการ' : 'พนักงานนับสต็อก'}</span></div>
+            <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label><input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/></div>
+            {role === 'manager' && <div><label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label><input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/></div>}
+            {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-2">{error}</div>}
+            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-function Login({ onLogin }) {
-  const [step, setStep] = useState(1);   // 1=role, 2=feature, 3=name
-  const [role, setRole] = useState(null);
-  const [feature, setFeature] = useState(null);
-  const [name, setName] = useState("");
+// ─── COUNTER VIEWS ────────────────────────────────────────────────────────────
+function EntryRow({ e, deleteEntry, highlight }) {
+  return (
+    <div className={`flex items-center gap-2 p-3 border-b last:border-0 ${highlight ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100'}`}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-sm font-medium text-slate-800 truncate">{e.productName}</span>
+          {e.notFound && <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">ไม่มีในระบบ</span>}
+        </div>
+        <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+          {e.barcode}
+          {e.location && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{e.location}</span>}
+        </div>
+      </div>
+      <div className="text-right mr-1">
+        <div className="font-bold text-slate-800">{e.qty}</div>
+        <div className={`text-xs font-mono font-semibold ${e.notFound ? 'text-amber-600' : 'text-emerald-600'}`}>{new Date(e.timestamp).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>
+        <div className="text-[10px] text-slate-400">{new Date(e.timestamp).toLocaleDateString('th-TH',{day:'2-digit',month:'short'})}</div>
+      </div>
+      <button onClick={() => deleteEntry(e.id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded"><Trash2 size={14}/></button>
+    </div>
+  );
+}
 
-  const roleCards = [
-    { id: "counter", emoji: "👷", label: "พนักงาน",  sub: "นับสต็อก · Invoice · ส่งรายการ", color: "#22c55e" },
-    { id: "manager", emoji: "👔", label: "ผู้จัดการ", sub: "รีวิว · เปรียบเทียบ · Export",   color: "#4f6ef7" },
-  ];
+function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft }) {
+  const [location, setLocation] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [scanMode, setScanMode] = useState(false);
+  const qtyInputRef = useRef(null); const barcodeInputRef = useRef(null);
+  const { barcode, qty, checkResult, error } = draft;
+  const setBarcode = v => updateDraft({ barcode: v });
+  const setQty = v => updateDraft({ qty: v });
+  const setCheckResult = v => updateDraft({ checkResult: v });
+  const setError = v => updateDraft({ error: v });
 
-  const availableFeatures = FEATURES.filter(f => f.roles.includes(role));
-  const selectedCard = roleCards.find(r => r.id === role);
-  const accentCol = feature?.accentColor || selectedCard?.color || C.accent;
+  const handleCheck = async (raw) => {
+    const code = (raw || barcode).trim(); if (!code) return;
+    setChecking(true); setError(''); setCheckResult(null);
+    try { const p = await checkBarcode(code); if (p) { setCheckResult(p); setBarcode(code); setTimeout(() => qtyInputRef.current?.focus(), 100); } else { setError(`ไม่พบรหัส "${code}"`); setBarcode(code); } }
+    catch (e) { setError(e.message || 'เกิดข้อผิดพลาด'); }
+    setChecking(false);
+  };
 
-  const goStep1 = () => { setStep(1); setRole(null); setFeature(null); setName(""); };
-  const goStep2 = (r) => { setRole(r); setFeature(null); setStep(2); };
-  const goStep3 = (f) => { setFeature(f); setStep(3); };
+  const handleAdd = () => {
+    if (!checkResult || !qty || parseInt(qty) <= 0) return;
+    if (!location.trim()) { alert('กรุณาระบุ Location ก่อน'); return; }
+    addEntry({ barcode: checkResult.barcode, productName: checkResult.name, productId: checkResult.id, unit: checkResult.unit, price: checkResult.price || 0, cost: checkResult.cost || 0, qty: parseInt(qty), countDate, location: location.trim() });
+    updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
+    setTimeout(() => barcodeInputRef.current?.focus(), 100);
+  };
 
-  const dots = [1, 2, 3];
+  const handleAddManually = () => {
+    if (!barcode.trim() || !qty || parseInt(qty) <= 0) return;
+    if (!location.trim()) { alert('กรุณาระบุ Location ก่อน'); return; }
+    addEntry({ barcode: barcode.trim(), productName: '(ไม่พบในระบบ)', productId: '', unit: '', qty: parseInt(qty), countDate, notFound: true, location: location.trim() });
+    updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
+    setTimeout(() => barcodeInputRef.current?.focus(), 100);
+  };
+
+  const totalQty = entries.reduce((s, e) => s + e.qty, 0);
+  const uniqueBarcodes = new Set(entries.map(e => e.barcode)).size;
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 400 }}>
-
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            width: 64, height: 64, borderRadius: 18,
-            background: "linear-gradient(135deg, #4f6ef7 0%, #a855f7 100%)",
-            fontSize: 30, marginBottom: 12, boxShadow: "0 0 32px #4f6ef740",
-          }}>📦</div>
-          <h1 style={{ color: C.text, fontSize: 34, fontWeight: 900, letterSpacing: "-0.04em", margin: "0 0 4px" }}>KUUHOO</h1>
-          <p style={{ color: C.muted, fontSize: 12, margin: 0 }}>Inventory Management System · Demo</p>
+    <div className="space-y-4">
+      <div className={`rounded-lg p-3 text-xs flex items-start gap-2 border ${!isSupabaseReady ? 'bg-red-50 border-red-200 text-red-800' : connectionStatus === 'error' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+        {!isSupabaseReady ? <WifiOff size={14} className="flex-shrink-0 mt-0.5"/> : <Zap size={14} className="flex-shrink-0 mt-0.5"/>}
+        <div>{!isSupabaseReady ? <><strong>ยังไม่ได้ตั้งค่า Supabase</strong> — แจ้งผู้จัดการก่อน</> : connectionStatus === 'error' ? <><strong>เชื่อม Supabase ไม่ได้</strong></> : <><strong>Supabase พร้อม</strong><span className="opacity-75"> • ค้นสดทีละบาร์โค้ด</span></>}</div>
+      </div>
+      <div className="bg-emerald-600 text-white rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-1"><ScanLine size={16}/><span className="text-xs uppercase tracking-wide opacity-90">นับสต็อกสด</span></div>
+        <h2 className="text-xl font-bold">สแกน/พิมพ์รหัสสินค้า</h2>
+        <div className="mt-3 pt-3 border-t border-white/20">
+          <div className="text-xs opacity-90 mb-1">วันที่นับ</div>
+          <input type="date" value={countDate} onChange={e => setCountDate(e.target.value)} className="w-full px-3 py-2 rounded-lg text-slate-800 font-semibold text-sm bg-white outline-none focus:ring-2 focus:ring-emerald-300"/>
         </div>
-
-        {/* Step dots */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 28 }}>
-          {dots.map(s => (
-            <div key={s} style={{
-              width: s === step ? 22 : 7, height: 7, borderRadius: 99,
-              background: s < step ? C.green : s === step ? accentCol : C.border,
-              transition: "all .3s",
-            }} />
-          ))}
+        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/20">
+          <div><div className="text-xs opacity-90">รายการที่นับ</div><div className="text-2xl font-bold">{entries.length}</div></div>
+          <div><div className="text-xs opacity-90">จำนวนรวม</div><div className="text-2xl font-bold">{totalQty.toLocaleString()}</div></div>
         </div>
-
-        {/* Step 1 — Role */}
-        {step === 1 && (
-          <div>
-            <p style={{ color: C.muted, fontSize: 12, textAlign: "center", marginBottom: 16 }}>เลือกบทบาทของคุณ</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {roleCards.map(r => (
-                <button key={r.id} onClick={() => goStep2(r.id)}
-                  style={{
-                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16,
-                    padding: "28px 16px", cursor: "pointer", textAlign: "center",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-                    transition: "all .2s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = r.color; e.currentTarget.style.background = C.surfaceHi; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.surface; }}>
-                  <div style={{
-                    width: 56, height: 56, borderRadius: 16, fontSize: 28,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: r.color + "20", border: `2px solid ${r.color}40`,
-                  }}>{r.emoji}</div>
-                  <div>
-                    <div style={{ color: C.text, fontWeight: 800, fontSize: 17 }}>{r.label}</div>
-                    <div style={{ color: C.muted, fontSize: 10, marginTop: 4, lineHeight: 1.5 }}>{r.sub}</div>
-                  </div>
-                </button>
-              ))}
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <button onClick={() => setScanMode(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-3 flex items-center justify-center gap-2 font-semibold"><Camera size={18}/>สแกนบาร์โค้ด</button>
+        <div>
+          <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1"><MapPin size={12}/>Location <span className="text-red-500">*</span></label>
+          <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="เช่น A1, ชั้น 2, โซน B..." className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${!location.trim() ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}/>
+          {!location.trim() && <div className="text-xs text-red-500 mt-0.5">กรุณาระบุ location ก่อนเพิ่มสินค้า</div>}
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700 mb-1 block">รหัสสินค้า / บาร์โค้ด</label>
+          <div className="flex gap-2">
+            <input ref={barcodeInputRef} type="text" value={barcode} onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleCheck()} placeholder="พิมพ์หรือสแกนรหัสสินค้า..." className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono"/>
+            <button onClick={() => handleCheck()} disabled={!barcode.trim() || checking} className="px-4 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center gap-1">{checking ? <RefreshCw size={14} className="animate-spin"/> : <Search size={14}/>}ตรวจ</button>
+          </div>
+        </div>
+        {checkResult && <div className="bg-green-50 border border-green-200 rounded-lg p-3"><div className="flex items-start gap-2"><CheckCircle2 size={18} className="text-green-600 flex-shrink-0 mt-0.5"/><div className="flex-1 min-w-0"><div className="text-xs text-green-700">พบสินค้า</div><div className="font-semibold text-slate-800 truncate">{checkResult.name}</div><div className="text-xs text-slate-600 font-mono">รหัส: {checkResult.productCode}</div><div className="text-xs text-slate-600">{checkResult.unit}</div></div></div></div>}
+        {error && (
+          <div className="space-y-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3"><div className="flex items-start gap-2"><XCircle size={18} className="text-red-600 flex-shrink-0 mt-0.5"/><div className="text-sm text-red-800">{error}</div></div></div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-amber-800"><AlertCircle size={14} className="flex-shrink-0"/>ยังไม่มีสินค้านี้ในระบบ — สามารถนับไว้ก่อนได้</div>
+              {qty && parseInt(qty) > 0 && <button onClick={handleAddManually} className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2"><Plus size={15}/>นับไว้ก่อน (ยังไม่มีในระบบ)</button>}
             </div>
           </div>
         )}
-
-        {/* Step 2 — Feature */}
-        {step === 2 && (
+        {(checkResult || error) && <>
           <div>
-            <button onClick={goStep1}
-              style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, marginBottom: 14, padding: 0 }}>
-              ← เปลี่ยนบทบาท
-            </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <span style={{ fontSize: 18 }}>{selectedCard?.emoji}</span>
-              <p style={{ color: C.muted, fontSize: 12, margin: 0 }}>
-                <b style={{ color: C.text }}>{selectedCard?.label}</b> — เลือก Feature
-              </p>
+            <label className="text-sm font-medium text-slate-700 mb-1 block">จำนวนที่นับได้</label>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setQty(String(Math.max(0,(parseInt(qty)||0)-1)))} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center justify-center"><Minus size={18}/></button>
+              <input ref={qtyInputRef} type="number" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} onKeyDown={e => e.key === 'Enter' && (checkResult ? handleAdd() : handleAddManually())} placeholder="0" className="flex-1 h-12 text-center text-2xl font-bold border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"/>
+              <button onClick={() => setQty(String((parseInt(qty)||0)+1))} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center justify-center"><Plus size={18}/></button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {availableFeatures.map(f => (
-                <button key={f.id} onClick={() => goStep3(f)}
-                  style={{
-                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-                    padding: "16px 18px", cursor: "pointer", textAlign: "left",
-                    display: "flex", alignItems: "center", gap: 14, transition: "all .2s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = f.accentColor; e.currentTarget.style.background = C.surfaceHi; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.surface; }}>
-                  <div style={{
-                    width: 46, height: 46, borderRadius: 12, fontSize: 22,
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                    background: f.accentColor + "20", border: `1.5px solid ${f.accentColor}40`,
-                  }}>{f.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{f.label}</div>
-                    <div style={{ color: C.muted, fontSize: 11, marginTop: 3 }}>{f.sub}</div>
-                    <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-                      {f.tags.map(t => (
-                        <span key={t} style={{ background: f.accentColor + "20", color: f.accentColor, fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 99 }}>{t}</span>
-                      ))}
+            <div className="grid grid-cols-5 gap-1.5 mt-2">{[1,5,10,20,50].map(n => <button key={n} onClick={() => setQty(String(n))} className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">{n}</button>)}</div>
+          </div>
+          {checkResult && <button onClick={handleAdd} disabled={!qty || parseInt(qty) <= 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"><Plus size={18}/>เพิ่มในรายการ</button>}
+        </>}
+      </div>
+      {entries.length > 0 && <>
+        <button onClick={() => setView('review')} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><Layers size={18}/>รวมยอด & ส่งผู้จัดการ ({uniqueBarcodes} บาร์โค้ด)<ArrowRight size={18}/></button>
+        {entries.filter(e => !e.notFound).length > 0 && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden"><div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-600"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({entries.filter(e=>!e.notFound).length} รายการ)</h3></div><div className="max-h-48 overflow-y-auto">{entries.filter(e=>!e.notFound).slice(0,20).map(e=><EntryRow key={e.id} e={e} deleteEntry={deleteEntry}/>)}</div></div>}
+        {entries.filter(e => e.notFound).length > 0 && <div className="bg-white rounded-xl border border-amber-200 overflow-hidden"><div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2"><AlertCircle size={14} className="text-amber-600"/><h3 className="font-semibold text-amber-800 text-sm">ไม่พบในระบบ ({entries.filter(e=>e.notFound).length} รายการ)</h3></div><div className="max-h-48 overflow-y-auto">{entries.filter(e=>e.notFound).map(e=><EntryRow key={e.id} e={e} deleteEntry={deleteEntry} highlight/>)}</div></div>}
+      </>}
+      {scanMode && <ScannerModal products={products} onScan={(code) => { setScanMode(false); setBarcode(code); handleCheck(code); }} onClose={() => setScanMode(false)}/>}
+    </div>
+  );
+}
+
+function GroupedRow({ g, highlight, onEditQty }) {
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState(String(g.qty));
+  const confirmEdit = () => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onEditQty && onEditQty(g.barcode, v); setEditing(false); };
+  return (
+    <div className={`p-3 flex items-center gap-3 ${highlight ? 'bg-amber-50/40' : ''}`}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-mono text-sm text-slate-800">{g.barcode}</span>
+          {g.notFound && <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full">ไม่มีในระบบ</span>}
+          {g.location && <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{g.location}</span>}
+        </div>
+        <div className="text-xs text-slate-500 truncate">{g.productName}</div>
+      </div>
+      {onEditQty && editing ? (
+        <div className="flex items-center gap-1">
+          <input autoFocus type="number" value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')confirmEdit();if(e.key==='Escape')setEditing(false);}} className="w-16 h-8 text-center font-bold border border-indigo-400 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 text-sm"/>
+          <button onClick={confirmEdit} className="p-1 bg-indigo-600 text-white rounded"><Check size={14}/></button>
+          <button onClick={()=>setEditing(false)} className="p-1 bg-slate-200 text-slate-600 rounded"><X size={14}/></button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <div className="text-right"><div className={`text-lg font-bold ${highlight?'text-amber-600':'text-emerald-600'}`}>{g.qty}</div>{g.scans>1&&<div className="text-xs text-slate-400">{g.scans} ครั้ง</div>}</div>
+          {onEditQty && <button onClick={()=>{setEditVal(String(g.qty));setEditing(true);}} className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-indigo-600 rounded"><Edit3 size={14}/></button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser }) {
+  const [note, setNote] = useState('');
+  const [submitted, setSubmitted] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [qtyOverrides, setQtyOverrides] = useState({});
+  const editQty = (barcode, newQty) => setQtyOverrides(prev => ({ ...prev, [barcode]: newQty }));
+  const grouped = useMemo(() => {
+    const map = new Map();
+    [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(e => {
+      if (map.has(e.barcode)) { const ex = map.get(e.barcode); ex.qty += e.qty; ex.scans += 1; }
+      else map.set(e.barcode, { barcode: e.barcode, productName: e.productName, unit: e.unit||'', price: e.price||0, cost: e.cost||0, qty: e.qty, scans: 1, scannedAt: e.timestamp, notFound: !!e.notFound, location: e.location||'' });
+    });
+    return Array.from(map.values()).map(g => ({ ...g, qty: qtyOverrides[g.barcode] !== undefined ? qtyOverrides[g.barcode] : g.qty, overridden: qtyOverrides[g.barcode] !== undefined })).sort((a, b) => a.barcode.localeCompare(b.barcode));
+  }, [entries, qtyOverrides]);
+  const totalItems = grouped.length, totalQty = grouped.reduce((s, g) => s + g.qty, 0);
+  const handleSubmit = async () => { if (!confirming) { setConfirming(true); return; } const sub = await submitForReview(grouped, note); clearMyEntries(); setSubmitted(sub); };
+  if (submitted) return (
+    <div className="space-y-4">
+      <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-6 text-center"><div className="bg-emerald-600 text-white p-3 rounded-full inline-block mb-3"><Send size={32}/></div><h2 className="text-xl font-bold text-emerald-900">ส่งเรียบร้อยแล้ว!</h2><p className="text-sm text-emerald-700 mt-1">รายการถูกส่งให้ผู้จัดการรีวิวแล้ว</p>{submitted.docNo&&<div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5 inline-block"><span className="text-xs text-emerald-600">เลขที่เอกสาร </span><span className="font-bold font-mono text-emerald-900">{submitted.docNo}</span></div>}<div className="bg-white rounded-lg p-3 mt-4 grid grid-cols-2 gap-2"><div><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="font-bold text-slate-800">{submitted.itemCount}</div></div><div><div className="text-xs text-slate-500">จำนวนรวม</div><div className="font-bold text-slate-800">{submitted.totalQty.toLocaleString()}</div></div></div></div>
+      <button onClick={() => setView('count')} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><ScanLine size={18}/>เริ่มนับรอบใหม่</button>
+      <button onClick={() => setView('my_submissions')} className="w-full border border-slate-300 hover:bg-slate-50 py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
+    </div>
+  );
+  if (entries.length === 0) return (
+    <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบ</h2></div>
+      <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><ClipboardCheck className="mx-auto text-slate-300 mb-2" size={48}/><div className="text-slate-500 mb-4">ยังไม่ได้นับสินค้า</div><button onClick={() => setView('count')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">ไปหน้านับสต็อก</button></div>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบและส่ง</h2><p className="text-sm text-slate-500">รวมบาร์โค้ดซ้ำ ตรวจก่อนส่งผู้จัดการ</p></div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-2xl font-bold text-slate-800">{totalItems}</div></div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-2xl font-bold text-emerald-600">{totalQty.toLocaleString()}</div></div>
+      </div>
+      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-slate-200 overflow-hidden"><div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-600"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-emerald-600 hover:underline">← แก้ไข</button></div><div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
+      {grouped.filter(g=>g.notFound).length>0&&<div className="bg-white rounded-xl border border-amber-200 overflow-hidden"><div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2"><AlertCircle size={14} className="text-amber-600"/><h3 className="font-semibold text-amber-800 text-sm">ไม่พบในระบบ ({grouped.filter(g=>g.notFound).length} รายการ)</h3></div><div className="divide-y divide-amber-100 max-h-56 overflow-y-auto">{grouped.filter(g=>g.notFound).map(g=><GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty}/>)}</div></div>}
+      <div className="bg-white rounded-xl border border-slate-200 p-4"><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว..." rows={2} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"/></div>
+      {!confirming ? (
+        <button onClick={handleSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg"><Send size={20}/>ส่งให้ผู้จัดการรีวิว</button>
+      ) : (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 space-y-3">
+          <div className="text-center"><AlertCircle className="mx-auto text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยืนยันส่ง?</div><div className="text-xs text-amber-800 mt-1">{totalItems} บาร์โค้ด • {totalQty.toLocaleString()} ชิ้น</div></div>
+          <div className="flex gap-2"><button onClick={()=>setConfirming(false)} className="flex-1 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg font-medium text-sm">ยกเลิก</button><button onClick={handleSubmit} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2"><Send size={14}/>ยืนยันส่ง</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MySubmissionsView({ submissions, setView }) {
+  const [expanded, setExpanded] = useState(null);
+  const statusConfig = { pending:{label:'รอรีวิว',color:'bg-amber-100 text-amber-700',icon:Clock}, approved:{label:'อนุมัติแล้ว',color:'bg-green-100 text-green-700',icon:ThumbsUp}, rejected:{label:'ส่งกลับแก้ไข',color:'bg-red-100 text-red-700',icon:ThumbsDown} };
+  return (
+    <div className="space-y-4">
+      <div><h2 className="text-2xl font-bold text-slate-800">รายการที่ส่งแล้ว</h2><p className="text-sm text-slate-500">ติดตามสถานะการรีวิว</p></div>
+      {submissions.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><Send className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500 mb-3">ยังไม่มีรายการที่ส่ง</div><button onClick={()=>setView('count')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">ไปนับสต็อก</button></div> : (
+        <div className="space-y-2">
+          {submissions.map(s => {
+            const cfg = statusConfig[s.status]||statusConfig.pending; const Icon = cfg.icon;
+            return (
+              <div key={s.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="p-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg ${cfg.color}`}><Icon size={18}/></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.label}</span><span className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span></div>
+                      <div className="flex gap-4 mt-1 text-xs text-slate-600"><span><strong>{s.itemCount}</strong> บาร์โค้ด</span><span><strong>{s.totalQty.toLocaleString()}</strong> ชิ้น</span></div>
+                      {s.note&&<div className="text-xs text-slate-500 mt-1 italic">"{s.note}"</div>}
+                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-green-50 text-green-800':'bg-red-50 text-red-800'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
                     </div>
                   </div>
-                  <span style={{ color: C.muted, fontSize: 20 }}>›</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Step 3 — Name */}
-        {step === 3 && feature && (
-          <div>
-            <button onClick={() => setStep(2)}
-              style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, marginBottom: 16, padding: 0 }}>
-              ← เปลี่ยน Feature
-            </button>
-
-            {/* Summary badge */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 12, marginBottom: 20,
-              background: accentCol + "12", border: `1px solid ${accentCol}30`,
-              borderRadius: 12, padding: "12px 16px",
-            }}>
-              <span style={{ fontSize: 24 }}>{feature.icon}</span>
-              <div>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{feature.label}</div>
-                <div style={{ color: C.muted, fontSize: 11 }}>{selectedCard?.emoji} {selectedCard?.label}</div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: C.muted, fontSize: 11, display: "block", marginBottom: 6 }}>ชื่อของคุณ</label>
-              <Input value={name} onChange={setName} placeholder="เช่น สมหญิง"
-                style={{ fontSize: 15, padding: "12px 14px" }} />
-            </div>
-
-            <button
-              onClick={() => name.trim() && onLogin({ name: name.trim(), role, feature: feature.id })}
-              disabled={!name.trim()}
-              style={{
-                width: "100%", padding: "14px", borderRadius: 12, border: "none",
-                background: name.trim() ? `linear-gradient(135deg, ${accentCol}, ${accentCol}bb)` : C.border,
-                color: name.trim() ? "#fff" : C.muted,
-                fontWeight: 800, fontSize: 15, cursor: name.trim() ? "pointer" : "not-allowed",
-                boxShadow: name.trim() ? `0 4px 20px ${accentCol}40` : "none",
-                transition: "all .2s",
-              }}>
-              เข้าสู่ระบบ →
-            </button>
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
-// ── COUNTER: Count View ───────────────────────────────────────────────────────
-function CountView({ user, entries, onAdd, onDelete, onNext }) {
-  const [barcode, setBarcode] = useState("");
-  const [qty, setQty] = useState("");
-  const [loc, setLoc] = useState("");
-  const [found, setFound] = useState(null);
-  const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState("");
-
-  const lookup = () => {
-    const code = barcode.trim();
-    if (!code) return;
-    const p = PRODUCTS.find(x => x.barcode === code);
-    if (p) { setFound(p); setNotFound(false); setErr(""); }
-    else { setFound(null); setNotFound(true); setErr(`ไม่พบ "${code}" ในระบบ`); }
-  };
-
-  const addEntry = () => {
-    if (!loc.trim()) { setErr("กรุณาระบุ Location"); return; }
-    if (!qty || parseInt(qty) <= 0) return;
-    onAdd({
-      id: `e${Date.now()}`,
-      barcode: found ? found.barcode : barcode.trim(),
-      productName: found ? found.name : "(ไม่พบในระบบ)",
-      unit: found?.unit || "", price: found?.price || 0, cost: found?.cost || 0,
-      qty: parseInt(qty), location: loc.trim(), notFound: !found,
-      timestamp: new Date().toISOString(),
-    });
-    setBarcode(""); setQty(""); setFound(null); setNotFound(false); setErr("");
-  };
-
-  const quickFill = (p) => { setBarcode(p.barcode); setFound(p); setNotFound(false); setErr(""); };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Card style={{ textAlign: "center", padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>รายการ</div>
-          <div style={{ color: C.text, fontSize: 28, fontWeight: 900 }}>{entries.length}</div>
-        </Card>
-        <Card style={{ textAlign: "center", padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>จำนวนรวม</div>
-          <div style={{ color: C.green, fontSize: 28, fontWeight: 900 }}>{fmt(entries.reduce((s, e) => s + e.qty, 0))}</div>
-        </Card>
-      </div>
-
-      {/* Quick pick */}
-      <Card>
-        <p style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>⚡ Demo — เลือกสินค้าตัวอย่าง</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {PRODUCTS.slice(0, 6).map(p => (
-            <button key={p.barcode} onClick={() => quickFill(p)}
-              style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>
-              {p.name.slice(0, 14)}
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      {/* Input */}
-      <Card>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ color: C.muted, fontSize: 11, display: "block", marginBottom: 6 }}>บาร์โค้ด</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Input value={barcode} onChange={v => { setBarcode(v); setFound(null); setNotFound(false); setErr(""); }} placeholder="8851234567001..." mono />
-            <Btn onClick={lookup} size="sm">ตรวจ</Btn>
-          </div>
-        </div>
-
-        {found && (
-          <div style={{ background: C.greenLo, border: `1px solid ${C.green}30`, borderRadius: 8, padding: 10, marginBottom: 12 }}>
-            <div style={{ color: C.green, fontSize: 11, fontWeight: 700 }}>✓ พบสินค้า</div>
-            <div style={{ color: C.text, fontWeight: 700, marginTop: 2 }}>{found.name}</div>
-            <div style={{ color: C.muted, fontSize: 11 }}>{found.unit} · ราคา ฿{found.price}</div>
-          </div>
-        )}
-
-        {err && (
-          <div style={{ background: C.redLo, border: `1px solid ${C.red}30`, borderRadius: 8, padding: 10, marginBottom: 12, color: C.red, fontSize: 12 }}>{err}</div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-          <div>
-            <label style={{ color: C.muted, fontSize: 11, display: "block", marginBottom: 6 }}>Location *</label>
-            <Input value={loc} onChange={setLoc} placeholder="A1, ชั้น 2..." />
-          </div>
-          <div>
-            <label style={{ color: C.muted, fontSize: 11, display: "block", marginBottom: 6 }}>จำนวน</label>
-            <Input value={qty} onChange={setQty} placeholder="0" type="number" />
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-          {[1, 5, 10, 20, 50].map(n => (
-            <button key={n} onClick={() => setQty(String(n))}
-              style={{ flex: 1, background: C.surfaceHi, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}>{n}</button>
-          ))}
-        </div>
-
-        <Btn full onClick={addEntry} disabled={(!found && !notFound) || !qty || parseInt(qty) <= 0} color={notFound ? "ghost" : "green"}>
-          {notFound ? "+ นับไว้ก่อน (ไม่มีในระบบ)" : "+ เพิ่มในรายการ"}
-        </Btn>
-      </Card>
-
-      {/* List */}
-      {entries.length > 0 && (
-        <Card style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>รายการที่นับ</span>
-            <Btn size="sm" color="accent" onClick={onNext}>ตรวจสอบ & ส่ง →</Btn>
-          </div>
-          {entries.map(e => (
-            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}20` }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: C.text, fontSize: 12, fontWeight: 600 }}>{e.productName}</div>
-                <div style={{ color: C.muted, fontSize: 10, fontFamily: C.mono }}>{e.barcode} · {e.location}</div>
-              </div>
-              <div style={{ color: e.notFound ? C.amber : C.green, fontWeight: 900, fontSize: 18 }}>{e.qty}</div>
-              <button onClick={() => onDelete(e.id)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14 }}>✕</button>
-            </div>
-          ))}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ── COUNTER: Review & Submit ──────────────────────────────────────────────────
-function ReviewView({ entries, user, onSubmit, onBack }) {
-  const [note, setNote] = useState("");
-  const [done, setDone] = useState(null);
-
-  const grouped = useMemo(() => {
-    const map = {};
-    entries.forEach(e => {
-      if (map[e.barcode]) { map[e.barcode].qty += e.qty; map[e.barcode].scans++; }
-      else map[e.barcode] = { ...e, scans: 1 };
-    });
-    return Object.values(map);
-  }, [entries]);
-
-  const totalQty = grouped.reduce((s, g) => s + g.qty, 0);
-
-  const submit = () => {
-    const sub = {
-      id: `sub${Date.now()}`, docNo: `RC-${new Date().toISOString().slice(0,10).replace(/-/g,"")}${String(Math.floor(Math.random()*9000)+1000)}`,
-      counter: user.name, submittedAt: new Date().toISOString(),
-      status: "pending", itemCount: grouped.length, totalQty, note, data: grouped,
-    };
-    onSubmit(sub);
-    setDone(sub);
-  };
-
-  if (done) return (
-    <Card style={{ textAlign: "center", padding: 32 }}>
-      <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
-      <h2 style={{ color: C.green, fontSize: 20, fontWeight: 900, margin: "0 0 8px" }}>ส่งเรียบร้อย!</h2>
-      <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>เลขที่ <span style={{ color: C.accent, fontFamily: C.mono }}>{done.docNo}</span></div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
-        <div style={{ background: C.surfaceHi, borderRadius: 8, padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10 }}>บาร์โค้ด</div>
-          <div style={{ color: C.text, fontSize: 22, fontWeight: 900 }}>{done.itemCount}</div>
-        </div>
-        <div style={{ background: C.surfaceHi, borderRadius: 8, padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10 }}>จำนวนรวม</div>
-          <div style={{ color: C.green, fontSize: 22, fontWeight: 900 }}>{done.totalQty}</div>
-        </div>
-      </div>
-      <Btn full color="accent" onClick={onBack}>นับรอบใหม่</Btn>
-    </Card>
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Card style={{ textAlign: "center", padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10 }}>บาร์โค้ด</div>
-          <div style={{ color: C.text, fontSize: 26, fontWeight: 900 }}>{grouped.length}</div>
-        </Card>
-        <Card style={{ textAlign: "center", padding: 12 }}>
-          <div style={{ color: C.muted, fontSize: 10 }}>จำนวนรวม</div>
-          <div style={{ color: C.green, fontSize: 26, fontWeight: 900 }}>{fmt(totalQty)}</div>
-        </Card>
-      </div>
-
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>รายการรวม</span>
-        </div>
-        {grouped.map(g => (
-          <div key={g.barcode} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}20` }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: C.text, fontSize: 12, fontWeight: 600 }}>{g.productName}</div>
-              <div style={{ color: C.muted, fontSize: 10, fontFamily: C.mono }}>{g.barcode}</div>
-              {g.scans > 1 && <Badge color="muted">{g.scans} ครั้ง</Badge>}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ color: g.notFound ? C.amber : C.green, fontWeight: 900, fontSize: 20 }}>{g.qty}</div>
-              <div style={{ color: C.muted, fontSize: 10 }}>{g.unit}</div>
-            </div>
-          </div>
-        ))}
-      </Card>
-
-      <Card>
-        <label style={{ color: C.muted, fontSize: 11, display: "block", marginBottom: 6 }}>หมายเหตุถึงผู้จัดการ</label>
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-          style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "10px 14px", fontSize: 13, width: "100%", resize: "none", outline: "none", boxSizing: "border-box" }}
-          placeholder="นับโซน A เสร็จแล้ว..." />
-      </Card>
-
-      <Btn full color="green" size="lg" onClick={submit}>📤 ส่งให้ผู้จัดการ</Btn>
-      <Btn full color="ghost" onClick={onBack}>← กลับแก้ไข</Btn>
-    </div>
-  );
-}
-
-// ── MANAGER: Dashboard ────────────────────────────────────────────────────────
-function DashboardView({ submissions, setView }) {
-  const pending = submissions.filter(s => s.status === "pending").length;
-  const approved = submissions.filter(s => s.status === "approved").length;
-  const totalItems = submissions.reduce((s, sub) => s + sub.itemCount, 0);
-  const totalQty = submissions.reduce((s, sub) => s + sub.totalQty, 0);
-
-  const stats = [
-    { label: "รอรีวิว", value: pending, color: "amber" },
-    { label: "อนุมัติแล้ว", value: approved, color: "green" },
-    { label: "บาร์โค้ดรวม", value: totalItems, color: "accent" },
-    { label: "จำนวนรวม", value: fmt(totalQty), color: "muted" },
-  ];
-
-  const colorMap = { amber: C.amber, green: C.green, accent: C.accent, muted: C.text };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {pending > 0 && (
-        <button onClick={() => setView("inbox")}
-          style={{ background: C.amberLo, border: `1px solid ${C.amber}40`, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left" }}>
-          <span style={{ fontSize: 24 }}>📬</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: C.amber, fontWeight: 700, fontSize: 14 }}>มี {pending} รายการรอรีวิว</div>
-            <div style={{ color: C.muted, fontSize: 11 }}>คลิกเพื่อตรวจสอบ</div>
-          </div>
-          <span style={{ color: C.amber }}>→</span>
-        </button>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {stats.map(s => (
-          <Card key={s.label} style={{ padding: 14 }}>
-            <div style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>{s.label}</div>
-            <div style={{ color: colorMap[s.color], fontSize: 26, fontWeight: 900 }}>{s.value}</div>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <div style={{ color: C.text, fontWeight: 700, fontSize: 13, marginBottom: 12 }}>กิจกรรมล่าสุด</div>
-        {submissions.slice(0, 5).map(s => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 10, marginBottom: 10, borderBottom: `1px solid ${C.border}40` }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: s.status === "pending" ? C.amber : s.status === "approved" ? C.green : C.red, flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ color: C.text, fontSize: 12, fontWeight: 600 }}>{s.counter}</div>
-              <div style={{ color: C.muted, fontSize: 10 }}>{timeStr(s.submittedAt)}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ color: C.text, fontSize: 12, fontWeight: 700 }}>{s.itemCount} · {s.totalQty}</div>
-              <Badge color={s.status === "pending" ? "amber" : s.status === "approved" ? "green" : "red"}>
-                {s.status === "pending" ? "รอ" : s.status === "approved" ? "อนุมัติ" : "ส่งกลับ"}
-              </Badge>
-            </div>
-          </div>
-        ))}
-      </Card>
-    </div>
-  );
-}
-
-// ── MANAGER: Inbox ────────────────────────────────────────────────────────────
-function InboxView({ submissions, onReview }) {
-  const [selected, setSelected] = useState(null);
-  const [note, setNote] = useState("");
-  const [tab, setTab] = useState("pending");
-  const [err, setErr] = useState("");
-
-  const filtered = submissions.filter(s => s.status === tab);
-
-  const approve = () => { onReview(selected.id, "approved", note); setSelected(null); setNote(""); setErr(""); };
-  const reject = () => {
-    if (!note.trim()) { setErr("กรุณาใส่เหตุผลก่อนส่งกลับ"); return; }
-    onReview(selected.id, "rejected", note); setSelected(null); setNote(""); setErr("");
-  };
-
-  const tabs = [
-    { id: "pending", label: "รอรีวิว", color: "amber" },
-    { id: "approved", label: "อนุมัติ", color: "green" },
-    { id: "rejected", label: "ส่งกลับ", color: "red" },
-  ];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}>
-        {tabs.map(t => {
-          const cnt = submissions.filter(s => s.status === t.id).length;
-          const cmap = { amber: C.amber, green: C.green, red: C.red };
-          return (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ flex: 1, padding: "10px", background: "none", border: "none", borderBottom: `2px solid ${tab === t.id ? cmap[t.color] : "transparent"}`, color: tab === t.id ? cmap[t.color] : C.muted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-              {t.label} {cnt > 0 && <span style={{ color: cmap[t.color] }}>({cnt})</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13 }}>ไม่มีรายการ</div>
-      ) : filtered.map(s => (
-        <Card key={s.id}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-            <div>
-              <span style={{ color: C.accent, fontFamily: C.mono, fontSize: 11, fontWeight: 700 }}>{s.docNo}</span>
-              <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{s.counter}</div>
-            </div>
-            <Badge color={s.status === "pending" ? "amber" : s.status === "approved" ? "green" : "red"}>
-              {s.status === "pending" ? "รอรีวิว" : s.status === "approved" ? "อนุมัติ" : "ส่งกลับ"}
-            </Badge>
-          </div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
-            <span style={{ color: C.muted, fontSize: 12 }}><b style={{ color: C.text }}>{s.itemCount}</b> บาร์โค้ด</span>
-            <span style={{ color: C.muted, fontSize: 12 }}><b style={{ color: C.green }}>{fmt(s.totalQty)}</b> ชิ้น</span>
-            <span style={{ color: C.muted, fontSize: 11 }}>{timeStr(s.submittedAt)}</span>
-          </div>
-          {s.note && <div style={{ background: C.surfaceHi, borderRadius: 6, padding: "6px 10px", fontSize: 11, color: C.muted, marginBottom: 8, fontStyle: "italic" }}>"{s.note}"</div>}
-
-          {/* Items preview */}
-          <div style={{ background: C.surfaceHi, borderRadius: 8, padding: 8, marginBottom: 10, fontSize: 11 }}>
-            {s.data.slice(0, 3).map((d, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", color: C.muted, paddingBottom: 4 }}>
-                <span>{d.productName}</span>
-                <span style={{ color: C.green, fontWeight: 700 }}>{d.qty} {d.unit}</span>
-              </div>
-            ))}
-            {s.data.length > 3 && <div style={{ color: C.muted, fontSize: 10 }}>+{s.data.length - 3} รายการ...</div>}
-          </div>
-
-          {s.status === "pending" && (
-            <Btn size="sm" color="accent" onClick={() => { setSelected(s); setNote(""); setErr(""); }}>รีวิว →</Btn>
-          )}
-        </Card>
-      ))}
-
-      {/* Review Modal */}
-      {selected && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", zIndex: 100, display: "flex", alignItems: "flex-end", padding: 16 }}>
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 480, margin: "0 auto", overflow: "hidden" }}>
-            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ color: C.text, fontWeight: 700 }}>รีวิว: {selected.counter}</div>
-                <div style={{ color: C.muted, fontSize: 11 }}>{selected.itemCount} รายการ · {fmt(selected.totalQty)} ชิ้น</div>
-              </div>
-              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18 }}>✕</button>
-            </div>
-            <div style={{ padding: 16, maxHeight: 300, overflowY: "auto" }}>
-              {selected.data.map((d, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}30`, fontSize: 12 }}>
-                  <div><div style={{ color: C.text }}>{d.productName}</div><div style={{ color: C.muted, fontFamily: C.mono, fontSize: 10 }}>{d.barcode} · {d.location}</div></div>
-                  <div style={{ color: C.green, fontWeight: 900 }}>{d.qty} {d.unit}</div>
+                  <button onClick={()=>setExpanded(expanded===s.id?null:s.id)} className="w-full mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500 hover:text-slate-700">{expanded===s.id?'▲ ซ่อนรายการ':'▼ ดูรายการ'}</button>
+                  {expanded===s.id&&<div className="mt-2 bg-slate-50 rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
                 </div>
-              ))}
-            </div>
-            <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
-              <textarea value={note} onChange={e => { setNote(e.target.value); setErr(""); }} rows={2}
-                style={{ background: C.surfaceHi, border: `1px solid ${err ? C.red : C.border}`, color: C.text, borderRadius: 8, padding: "8px 12px", fontSize: 12, width: "100%", resize: "none", outline: "none", boxSizing: "border-box", marginBottom: 4 }}
-                placeholder="หมายเหตุ / เหตุผล (บังคับถ้าส่งกลับ)..." />
-              {err && <div style={{ color: C.red, fontSize: 11, marginBottom: 8 }}>{err}</div>}
-              <div style={{ display: "flex", gap: 8 }}>
-                <Btn full color="red" onClick={reject}>✕ ส่งกลับ</Btn>
-                <Btn full color="green" onClick={approve}>✓ อนุมัติ</Btn>
               </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PDFDownloadButton({ sub }) {
+  return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-rose-50 hover:bg-rose-100 rounded text-rose-700 font-medium"><Download size={12}/>PDF</button>;
+}
+
+function ManagerInboxView({ submissions, onReview, onDelete }) {
+  const [selected, setSelected] = useState(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [tab, setTab] = useState('pending');
+  const [driveSaving, setDriveSaving] = useState(null);
+  const [driveResult, setDriveResult] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [rejectError, setRejectError] = useState('');
+  const filtered = submissions.filter(s => s.status === tab);
+  const statusConfig = { pending:{label:'รอรีวิว',color:'text-amber-600'}, approved:{label:'อนุมัติแล้ว',color:'text-green-600'}, rejected:{label:'ส่งกลับ',color:'text-red-600'} };
+  const handleApprove = () => { onReview(selected.id,'approved',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
+  const handleReject = () => { if(!reviewNote.trim()){setRejectError('กรุณาใส่เหตุผลก่อนส่งกลับ');return;} onReview(selected.id,'rejected',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
+
+  const uploadToDrive = async (sub, type) => {
+    const key = `${sub.id}_${type}`;
+    setDriveSaving(key);
+    try {
+      const base = sub.docNo || sub.id;
+      let filename, mimeType, content, isBase64 = false;
+      if (type === 'csv') {
+        filename = `${base}.csv`; mimeType = 'text/csv';
+        content = sub.data.map(d => `${d.barcode},${d.qty},${d.price||0},0`).join('\n');
+      } else if (type === 'excel') {
+        filename = `${base}.xlsx`; mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const allRows = buildStockExcelRows(sub.data, sub.docNo, sub.startedAt||sub.submittedAt);
+        const ws = XLSX.utils.aoa_to_sheet(allRows);
+        ws['!cols'] = [{wch:20},{wch:30},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20}];
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+        content = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' }); isBase64 = true;
+      }
+      const response = await fetch('/api/drive-upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType, content, isBase64 }) });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Drive error');
+      setDriveResult(prev => ({ ...prev, [key]: { ok: true, link: data.link, type } }));
+    } catch (e) { setDriveResult(prev => ({ ...prev, [`${sub.id}_${type}`]: { ok: false, err: e.message, type } })); }
+    setDriveSaving(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div><h2 className="text-2xl font-bold text-slate-800">รีวิวผลการนับ</h2><p className="text-sm text-slate-500">ตรวจสอบและอนุมัติ / ส่งกลับ</p></div>
+      <div className="flex border-b border-slate-200">
+        {['pending','approved','rejected'].map(t => { const cnt = submissions.filter(s=>s.status===t).length; return <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-2.5 text-sm font-medium ${tab===t?'text-indigo-600 border-b-2 border-indigo-600':'text-slate-500'}`}>{statusConfig[t].label}{cnt>0&&<span className={`ml-1 text-xs font-bold ${statusConfig[t].color}`}>({cnt})</span>}</button>; })}
+      </div>
+      {filtered.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><Inbox className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500">ไม่มีรายการ{statusConfig[tab].label}</div></div> : (
+        <div className="space-y-2">
+          {filtered.map(s => (
+            <div key={s.id} className="bg-white rounded-xl border border-slate-200 p-3">
+              <div className="flex items-center gap-2"><span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
+              <div className="grid grid-cols-2 gap-x-3 mt-1">
+                <div><div className="text-[10px] text-slate-400">เริ่มนับ</div><div className="text-xs font-mono text-blue-700 font-semibold">{s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>
+                <div><div className="text-[10px] text-slate-400">ส่งงาน</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>
+              </div>
+              <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-emerald-700 font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
+              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-slate-50 rounded p-1.5">"{s.note}"</div>}
+              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-green-50 text-green-800':'bg-red-50 text-red-800'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
+              {['excel','csv'].map(type => { const r = driveResult[`${s.id}_${type}`]; if(!r)return null; return r.ok?<div key={type} className="mt-1 bg-green-50 border border-green-200 rounded-lg px-2 py-1 text-xs text-green-800 flex items-center gap-2"><CheckCircle2 size={11}/><span className="uppercase font-bold">{type}</span> อัพโหลดแล้ว{r.link&&<a href={r.link} target="_blank" rel="noopener noreferrer" className="underline">เปิด →</a>}</div>:<div key={type} className="mt-1 bg-red-50 border border-red-200 rounded-lg px-2 py-1 text-xs text-red-800"><span className="uppercase font-bold">{type}</span> error: {r.err}</div>; })}
+              <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-slate-100">
+                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
+                <button onClick={()=>uploadToDrive(s,'excel')} disabled={driveSaving===`${s.id}_excel`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-violet-50 hover:bg-violet-100 disabled:opacity-60 rounded text-violet-700 font-medium">{driveSaving===`${s.id}_excel`?<RefreshCw size={12} className="animate-spin"/>:<FileSpreadsheet size={12}/>}{driveSaving===`${s.id}_excel`?'...':'Excel'}</button>
+                <button onClick={()=>uploadToDrive(s,'csv')} disabled={driveSaving===`${s.id}_csv`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 rounded text-indigo-700 font-medium">{driveSaving===`${s.id}_csv`?<RefreshCw size={12} className="animate-spin"/>:<Download size={12}/>}{driveSaving===`${s.id}_csv`?'...':'CSV'}</button>
+                <PDFDownloadButton sub={s}/>
+                <button onClick={()=>downloadStockExcel(s.data,`${s.docNo||s.id}.xlsx`,s.docNo,s.startedAt||s.submittedAt)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 rounded text-emerald-700 font-medium"><Download size={12}/>Excel↓</button>
+                <button onClick={()=>downloadStockCSV(s.data,`${s.docNo||s.id}.csv`)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><Download size={12}/>CSV↓</button>
+                {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold">รีวิว →</button>}
+                {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-red-600 font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-red-600 text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded" title="ลบ"><Trash2 size={14}/></button>}
+              </div>
+              {expandedId===s.id&&(
+                <div className="mt-2 pt-2 border-t border-slate-100">
+                  <div className="bg-slate-50 rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-slate-100">
+                    {s.data.map((d,i)=><div key={i} className="py-1.5 px-1 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-700">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400">{d.location}</div>}</div><div className="text-sm font-bold text-emerald-600 ml-3 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {selected&&(
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิวผลการนับ</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-2"><div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-emerald-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-emerald-600">{selected.totalQty.toLocaleString()}</div></div></div>
+              {selected.note&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800"><strong>หมายเหตุ:</strong> {selected.note}</div>}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden"><div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-slate-100">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-emerald-600 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
+              <div><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุ / เหตุผล <span className="text-red-500 text-xs">(บังคับถ้าส่งกลับ)</span></label><textarea value={reviewNote} onChange={e=>{setReviewNote(e.target.value);setRejectError('');}} placeholder="เพิ่มหมายเหตุ..." rows={2} className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none ${rejectError?'border-red-400 bg-red-50':'border-slate-300'}`}/>{rejectError&&<div className="text-xs text-red-600 mt-1 flex items-center gap-1"><XCircle size={12}/>{rejectError}</div>}</div>
+              <div className="flex gap-2"><button onClick={handleReject} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsDown size={16}/>ส่งกลับแก้ไข</button><button onClick={handleApprove} className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsUp size={16}/>อนุมัติ</button></div>
             </div>
           </div>
         </div>
@@ -677,455 +903,794 @@ function InboxView({ submissions, onReview }) {
   );
 }
 
-// ── MANAGER: Compare (simplified) ────────────────────────────────────────────
-function CompareView({ submissions }) {
-  const [sel, setSel] = useState(null);
-  const approved = submissions.filter(s => s.status === "approved");
+function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt, pendingCount }) {
+  const pending = submissions.filter(s=>s.status==='pending');
+  const approved = submissions.filter(s=>s.status==='approved');
+  const today = new Date().toDateString();
+  const todaySubmissions = submissions.filter(s=>new Date(s.submittedAt).toDateString()===today);
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2"><div><h2 className="text-2xl font-bold text-slate-800">แดชบอร์ด</h2><p className="text-sm text-slate-500">ภาพรวมระบบ</p></div><button onClick={()=>setView('settings')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${isSupabaseReady?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-red-50 border-red-200 text-red-600'}`}><Cloud size={12}/>{isSupabaseReady?'Supabase':'ยังไม่ได้ตั้งค่า'}</button></div>
+      {pendingCount>0&&<button onClick={()=>setView('inbox')} className="w-full bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"><div className="bg-amber-500 text-white p-2 rounded-lg"><Inbox size={20}/></div><div className="flex-1"><div className="font-semibold text-amber-900">มี {pendingCount} รายการรอรีวิว</div><div className="text-xs text-amber-700">คลิกเพื่อตรวจสอบ</div></div><ArrowRight size={18} className="text-amber-600"/></button>}
+      <div className="grid grid-cols-2 gap-3">
+        {[{label:'รอรีวิว',value:pending.length,color:'amber'},{label:'อนุมัติแล้ว',value:approved.length,color:'green'},{label:'ส่งวันนี้',value:todaySubmissions.length,color:'indigo'},{label:'สินค้า cache',value:products.length.toLocaleString(),color:'slate'}].map(c=>(
+          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-amber-50 text-amber-700 border-amber-100':c.color==='green'?'bg-green-50 text-green-700 border-green-100':c.color==='indigo'?'bg-indigo-50 text-indigo-700 border-indigo-100':'bg-slate-50 text-slate-700 border-slate-200'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl p-4 border border-slate-200">
+        <div className="flex justify-between items-center mb-3"><h3 className="font-semibold text-slate-800">ส่งล่าสุด</h3>{submissions.length>0&&<button onClick={()=>setView('inbox')} className="text-xs text-indigo-600 hover:underline">ดูทั้งหมด</button>}</div>
+        {submissions.length===0?<div className="text-center py-6 text-slate-400 text-sm">ยังไม่มีรายการ</div>:(
+          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-amber-400':s.status==='approved'?'bg-green-500':'bg-red-400'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-amber-600':s.status==='approved'?'text-green-600':'text-red-500'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-  const compareData = useMemo(() => {
-    if (!sel) return [];
-    return sel.data.map(d => {
-      const master = PRODUCTS.find(p => p.barcode === d.barcode);
-      const sale = Math.floor(Math.random() * 5);
-      const purchase = 0;
-      const adjCount = d.qty - sale + purchase;
-      const stockNow = master?.stock ?? null;
-      const adjStock = stockNow !== null ? adjCount - stockNow : null;
-      return { ...d, sale, purchase, adjCount, stockNow, adjStock, found: !!master };
+function CompareStockView({ submissions, supabaseConfig, compareState, setCompareState }) {
+  const { selectedSub, compareData, loading, loadProgress, error, driveSaving, driveResult } = compareState;
+  const set = (patch) => setCompareState(prev => ({ ...prev, ...patch }));
+  const approvedSubs = submissions.filter(s => s.status === 'approved');
+  const { url: sbUrl, anonKey: sbKey, tableName } = supabaseConfig;
+
+  const fetchAndCompare = async (sub) => {
+    const now = new Date().toISOString();
+    set({ selectedSub: sub, loading: true, error: '', compareData: [], driveResult: null, compareAt: now });
+    const groupedByBarcode = {};
+    sub.data.forEach(d => {
+      if (!groupedByBarcode[d.barcode]) groupedByBarcode[d.barcode] = { barcode: d.barcode, productName: d.productName, unit: d.unit||'', qty: 0, scannedAt: d.scannedAt, locations: [], notFound: !!d.notFound };
+      const g = groupedByBarcode[d.barcode];
+      g.qty += d.qty;
+      if (d.scannedAt && (!g.scannedAt || d.scannedAt < g.scannedAt)) g.scannedAt = d.scannedAt;
+      if (d.location && !g.locations.includes(d.location)) g.locations.push(d.location);
     });
-  }, [sel]);
+    const groupedData = Object.values(groupedByBarcode);
+    const codes = [...new Set(groupedData.map(d => d.barcode))];
+    const submittedAt = sub.submittedAt;
+    const minScannedAt = groupedData.reduce((min, d) => d.scannedAt && d.scannedAt < min ? d.scannedAt : min, submittedAt);
+    const table = tableName || 'product_stock';
+    const batchSize = 50;
+    try {
+      let stockRows = [];
+      for (let i = 0; i < codes.length; i += batchSize) {
+        set({ loadProgress: `[1/3] ยอดปัจจุบัน ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
+        const batch = codes.slice(i, i+batchSize);
+        const inList = batch.map(c => encodeURIComponent(c)).join(',');
+        const colCode = encodeURIComponent('รหัสสินค้า');
+        const colSel = encodeURIComponent('รหัสสินค้า') + ',' + encodeURIComponent('ชื่อสินค้า') + ',' + encodeURIComponent('หน่วย') + ',' + encodeURIComponent('รวม');
+        const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}`);
+        stockRows = stockRows.concat(rows);
+      }
+      const sbMap = {};
+      stockRows.forEach(r => { const code = String(r['รหัสสินค้า']||''); sbMap[code] = { name: String(r['ชื่อสินค้า']||''), unit: String(r['หน่วย']||'ชิ้น'), currentStock: parseInt(String(r['รวม']||'0').replace(/[^\d-]/g,''))||0 }; });
+      const saleMap = {};
+      const startDate = minScannedAt.slice(0, 10);
+      const endDate = submittedAt.slice(0, 10);
+      for (let i = 0; i < codes.length; i += batchSize) {
+        set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
+        const batch = codes.slice(i, i+batchSize);
+        const inList = batch.map(c => encodeURIComponent(c)).join(',');
+        const qs = `${encodeURIComponent('สินค้า')}=in.(${inList})&${encodeURIComponent('วันที่')}=gte.${startDate}&${encodeURIComponent('วันที่')}=lte.${endDate}&select=${encodeURIComponent('สินค้า')},${encodeURIComponent('วันที่')},${encodeURIComponent('เวลา')},${encodeURIComponent('จำนวน')}`;
+        const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
+        rows.forEach(r => {
+          const code = String(r['สินค้า']||'');
+          const rawTime = r['เวลา'] ? String(r['เวลา']) : '00:00:00';
+          const rawDate = r['วันที่'] ? String(r['วันที่']).slice(0,10) : startDate;
+          const saleTime = new Date(`${rawDate}T${rawTime.slice(0,8)}`);
+          const item = groupedData.find(d => d.barcode === code);
+          const scannedAt = new Date(item?.scannedAt || minScannedAt);
+          if (saleTime >= scannedAt && saleTime <= new Date(submittedAt)) saleMap[code] = (saleMap[code]||0) + (parseFloat(r['จำนวน'])||0);
+        });
+      }
+      const receiveMap = {};
+      for (let i = 0; i < codes.length; i += batchSize) {
+        set({ loadProgress: `[3/3] ยอดรับสินค้าระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
+        const batch = codes.slice(i, i+batchSize);
+        const inList = batch.map(c => encodeURIComponent(c)).join(',');
+        const qs = `barcode=in.(${inList})&created_at=gte.${encodeURIComponent(minScannedAt)}&created_at=lte.${encodeURIComponent(submittedAt)}&select=barcode,qty,created_at`;
+        const rows = await sbFetch(sbUrl, sbKey, 'imp_data', qs);
+        rows.forEach(r => {
+          const code = String(r.barcode||'');
+          const recvTime = new Date(r.created_at);
+          const item = groupedData.find(d => d.barcode === code);
+          const scannedAt = new Date(item?.scannedAt || minScannedAt);
+          if (recvTime >= scannedAt && recvTime <= new Date(submittedAt)) receiveMap[code] = (receiveMap[code]||0) + (parseFloat(r.qty)||0);
+        });
+      }
+      const compared = groupedData.map(d => {
+        const sb = sbMap[d.barcode]||null;
+        const counted = d.qty, sale = Math.round(saleMap[d.barcode]||0), purchase = Math.round(receiveMap[d.barcode]||0);
+        const stockAtSubmit = sb ? sb.currentStock : null;
+        const adjustedCount = counted - sale + purchase;
+        const adjustStock = stockAtSubmit !== null ? adjustedCount - stockAtSubmit : null;
+        return { barcode: d.barcode, productName: sb?sb.name:d.productName, unit: sb?sb.unit:(d.unit||''), scannedAt: d.scannedAt||null, locations: d.locations||[], counted, sale, purchase, adjustedCount, stockAtSubmit, adjustStock, found: !!sb, notFound: !!d.notFound };
+      });
+      set({ compareData: compared });
+    } catch (e) { set({ error: e.message }); }
+    set({ loading: false, loadProgress: '' });
+  };
+
+  const buildSimpleCSV = () => compareData.map(d => `${d.barcode},${d.adjustStock??''}`).join('\n');
+  const buildFullCSV = () => {
+    const info = selectedSub ? [`# Counter: ${selectedSub.counter}`,`# time_submit: ${new Date(selectedSub.submittedAt).toLocaleString('th-TH')}`,`# compare_at: ${compareState.compareAt?new Date(compareState.compareAt).toLocaleString('th-TH'):'-'}`].join('\n') : '';
+    const header = 'รหัสสินค้า,ชื่อสินค้า,หน่วย,location,นับได้,ขายระหว่างนับ,รับระหว่างนับ,Adjusted_count,stock_at_submit,Adjust_stock,พบในระบบ';
+    const rows = compareData.map(d => `${d.barcode},"${d.productName}",${d.unit},"${(d.locations||[]).join('|')}",${d.counted},${d.sale},${d.purchase},${d.adjustedCount},${d.stockAtSubmit??'N/A'},${d.adjustStock??'N/A'},${d.found?'Y':'N'}`);
+    return (info?info+'\n':'')+header+'\n'+rows.join('\n');
+  };
+  const getFilename = (ext='csv') => { const date = new Date().toISOString().slice(0,10); const counter = selectedSub?selectedSub.counter.replace(/[^a-zA-Z0-9ก-๙]/g,'_'):'compare'; return `compare_${counter}_${date}.${ext}`; };
+  const downloadCompareCSV = () => downloadBlob(new Blob(['﻿'+buildFullCSV()],{type:'text/csv;charset=utf-8'}), getFilename('csv'));
+  const downloadCompareExcel = () => {
+    const rows = [['รหัสสินค้า','ชื่อสินค้า','หน่วย','location','นับได้(count)','ขายระหว่างนับ','รับระหว่างนับ','Adjusted_count','stock_at_submit','Adjust_stock','พบในระบบ'], ...compareData.map(d=>[d.barcode,d.productName,d.unit,(d.locations||[]).join('|'),d.counted,d.sale,d.purchase,d.adjustedCount,d.stockAtSubmit??'N/A',d.adjustStock??'N/A',d.found?'Y':'N'])];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:18},{wch:28},{wch:8},{wch:14},{wch:10},{wch:12},{wch:12},{wch:14},{wch:14},{wch:12},{wch:8}];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Compare');
+    downloadBlob(new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), getFilename('xlsx'));
+  };
+  const saveToDrive = async () => {
+    set({ driveSaving: true, driveResult: null });
+    try {
+      const response = await fetch('/api/drive-upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename: getFilename('txt'), mimeType:'text/csv', content: buildSimpleCSV(), isBase64: false }) });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error||'Drive error');
+      set({ driveResult: { ok: true, link: data.link } });
+    } catch (e) { set({ driveResult: { ok: false, err: e.message } }); }
+    set({ driveSaving: false });
+  };
+
+  if (!sbUrl || !sbKey) return (
+    <div className="space-y-4"><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><AlertCircle className="text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยังไม่ได้ตั้งค่า Supabase</div></div>
+    </div>
+  );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <Card>
-        <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>เลือก submission ที่อนุมัติแล้ว</div>
-        {approved.length === 0 ? (
-          <div style={{ color: C.muted, fontSize: 12, textAlign: "center", padding: 20 }}>ยังไม่มีรายการที่อนุมัติ — ไปรีวิวก่อน</div>
-        ) : approved.map(s => (
-          <button key={s.id} onClick={() => setSel(s)}
-            style={{ display: "block", width: "100%", textAlign: "left", background: sel?.id === s.id ? C.accentLo : C.surfaceHi, border: `1px solid ${sel?.id === s.id ? C.accent : C.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: C.accent, fontFamily: C.mono, fontSize: 11 }}>{s.docNo}</span>
-              <span style={{ color: C.muted, fontSize: 11 }}>{s.counter}</span>
-            </div>
-            <div style={{ color: C.muted, fontSize: 11 }}>{s.itemCount} รายการ · {fmt(s.totalQty)} ชิ้น</div>
-          </button>
-        ))}
-      </Card>
-
+    <div className="space-y-4">
+      <div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2><p className="text-sm text-slate-500">เปรียบเทียบยอดนับกับ Supabase ผ่าน REST API</p></div>
+      {approvedSubs.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><ArrowLeftRight className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500">ยังไม่มีรายการที่อนุมัติแล้ว</div></div> : (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+          {approvedSubs.map(s => (
+            <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-indigo-400 bg-indigo-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'} disabled:opacity-50`}>
+              <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-indigo-700">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
+              <div className="text-xs text-slate-500 mt-0.5">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})} • {s.itemCount} รายการ</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && <div className="bg-white rounded-xl border border-slate-200 p-6 text-center"><div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3"/><div className="text-sm text-slate-600">{loadProgress || 'กำลังดึงข้อมูล...'}</div></div>}
+      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 text-sm"><strong>ข้อผิดพลาด:</strong> {error}</div>}
       {compareData.length > 0 && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            {[
-              { label: "พบในระบบ", v: compareData.filter(d => d.found).length, color: "green" },
-              { label: "ส่วนต่าง≠0", v: compareData.filter(d => d.adjStock !== null && d.adjStock !== 0).length, color: "amber" },
-              { label: "ไม่พบ", v: compareData.filter(d => !d.found).length, color: "red" },
-            ].map(x => (
-              <Card key={x.label} style={{ textAlign: "center", padding: 10 }}>
-                <div style={{ color: C.muted, fontSize: 9 }}>{x.label}</div>
-                <div style={{ color: { green: C.green, amber: C.amber, red: C.red }[x.color], fontSize: 22, fontWeight: 900 }}>{x.v}</div>
-              </Card>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
+            <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>
+            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive</button>
+            {driveResult?.ok && <span className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12}/>อัพโหลดแล้ว{driveResult.link&&<a href={driveResult.link} target="_blank" rel="noopener noreferrer" className="underline ml-1">เปิด</a>}</span>}
+            {driveResult?.err && <span className="text-xs text-red-600">Error: {driveResult.err}</span>}
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            {[{label:'พบในระบบ',v:compareData.filter(d=>d.found).length,c:'emerald'},{label:'ไม่พบ',v:compareData.filter(d=>!d.found).length,c:'amber'},{label:'ส่วนต่าง≠0',v:compareData.filter(d=>d.adjustStock!==null&&d.adjustStock!==0).length,c:'red'}].map(x=>(
+              <div key={x.label} className={`rounded-lg p-2 border ${x.c==='emerald'?'bg-emerald-50 border-emerald-100 text-emerald-700':x.c==='amber'?'bg-amber-50 border-amber-100 text-amber-700':'bg-red-50 border-red-100 text-red-700'}`}><div className="text-lg font-bold">{x.v}</div><div className="opacity-75">{x.label}</div></div>
             ))}
           </div>
-
-          <Card style={{ padding: 0, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-              <thead>
-                <tr style={{ background: C.surfaceHi }}>
-                  {["สินค้า", "นับได้", "ขาย", "Adj.Count", "ยอดSB", "Adj.Stock"].map(h => (
-                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: C.muted, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {compareData.map((d, i) => {
-                  const adjColor = d.adjStock === null ? C.muted : d.adjStock === 0 ? C.green : d.adjStock > 0 ? C.accent : C.red;
-                  return (
-                    <tr key={i} style={{ borderTop: `1px solid ${C.border}30` }}>
-                      <td style={{ padding: "8px 10px", color: C.text }}>{d.productName.slice(0, 16)}</td>
-                      <td style={{ padding: "8px 10px", color: C.text, fontWeight: 700 }}>{d.qty}</td>
-                      <td style={{ padding: "8px 10px", color: C.amber }}>{d.sale}</td>
-                      <td style={{ padding: "8px 10px", color: C.text, fontWeight: 700 }}>{d.adjCount}</td>
-                      <td style={{ padding: "8px 10px", color: C.muted }}>{d.stockNow ?? "N/A"}</td>
-                      <td style={{ padding: "8px 10px", color: adjColor, fontWeight: 900 }}>{d.adjStock !== null ? (d.adjStock > 0 ? "+" : "") + d.adjStock : "N/A"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
-        </>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200"><tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {compareData.map((d,i) => {
+                    const adjColor = d.adjustStock===null?'text-slate-400':d.adjustStock===0?'text-emerald-600':d.adjustStock>0?'text-blue-600':'text-red-600';
+                    return <tr key={i} className={d.notFound?'bg-amber-50/30':''}><td className="px-3 py-2 font-mono text-slate-700">{d.barcode}</td><td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{d.productName}</td><td className="px-3 py-2 font-semibold text-slate-800">{d.counted}</td><td className="px-3 py-2 text-orange-600">{d.sale}</td><td className="px-3 py-2 text-blue-600">{d.purchase}</td><td className="px-3 py-2 font-semibold">{d.adjustedCount}</td><td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-amber-500">N/A</span>}</td><td className={`px-3 py-2 font-bold ${adjColor}`}>{d.adjustStock!==null?d.adjustStock:<span className="text-slate-400">N/A</span>}</td></tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-
-// ── COUNTER: My Submissions ───────────────────────────────────────────────────
-function MySubsView({ submissions }) {
-  const [expanded, setExpanded] = useState(null);
-  const statusCfg = {
-    pending:  { label: "รอรีวิว",      color: C.amber, bg: C.amberLo },
-    approved: { label: "อนุมัติแล้ว",  color: C.green, bg: C.greenLo },
-    rejected: { label: "ส่งกลับแก้ไข", color: C.red,   bg: C.redLo  },
-  };
-
-  if (submissions.length === 0) return (
-    <Card style={{ textAlign: "center", padding: 40 }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-      <div style={{ color: C.muted, fontSize: 13 }}>ยังไม่มีรายการที่ส่ง</div>
-    </Card>
-  );
-
+function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource, lastSyncAt, productCount }) {
+  const [url, setUrl] = useState(config.url||''); const [anonKey, setAnonKey] = useState(config.anonKey||''); const [tableName, setTableName] = useState(config.tableName||'product_price');
+  const [showKey, setShowKey] = useState(false); const [testing, setTesting] = useState(false); const [testResult, setTestResult] = useState(null); const [saveMsg, setSaveMsg] = useState('');
+  const cfg = { url: url.trim(), anonKey: anonKey.trim(), tableName: tableName.trim()||'product_price' };
+  const handleSave = async () => { await onSave(cfg); setSaveMsg('บันทึกแล้ว'); setTimeout(()=>setSaveMsg(''), 2000); };
+  const handleTest = async () => { setTesting(true); setTestResult(null); try { await handleSave(); const count = await onTestConnection(cfg); setTestResult({ok:true,msg:`เชื่อมต่อสำเร็จ! มี ${count.toLocaleString()} แถว ใน ${cfg.tableName}`}); } catch(e) { setTestResult({ok:false,msg:e.message}); } setTesting(false); };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>รายการที่ส่งแล้ว</div>
-      {submissions.map(s => {
-        const cfg = statusCfg[s.status] || statusCfg.pending;
-        const isOpen = expanded === s.id;
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2>
+      <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-emerald-50 border-emerald-200':'bg-slate-50 border-slate-200'}`}>
+        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (ข้อมูลจริง)':dataSource==='seed'?'ข้อมูลตัวอย่าง':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache</div></div></div>
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Anon Key</label><div className="relative"><input type={showKey?'text':'password'} value={anonKey} onChange={e=>{setAnonKey(e.target.value);setTestResult(null);}} placeholder="eyJ..." className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/><button onClick={()=>setShowKey(!showKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1">{showKey?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></div>
+        <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อตาราง (สินค้า)</label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+        {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-green-50 border border-green-200 text-green-800':'bg-red-50 border border-red-200 text-red-800'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
+        <div className="flex gap-2">
+          <button onClick={handleTest} disabled={testing||!url||!anonKey} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">{testing?<RefreshCw size={14} className="animate-spin"/>:<Zap size={14}/>}{testing?'กำลังทดสอบ...':'ทดสอบการเชื่อมต่อ'}</button>
+          <button onClick={handleSave} disabled={!url||!anonKey} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium"><Save size={14} className="inline mr-1"/>บันทึก</button>
+        </div>
+        {saveMsg&&<div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-2 text-center">{saveMsg}</div>}
+      </div>
+      <div className="pt-2 border-t border-slate-200"><button onClick={async()=>{if(confirm('สลับไปใช้ข้อมูลตัวอย่าง?'))await onUseSeed();}} className="w-full py-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-600">ใช้ข้อมูลตัวอย่าง (Demo)</button></div>
+    </div>
+  );
+}
+
+// ─── INVOICE SCANNER ──────────────────────────────────────────────────────────
+function StepBar({ current }) {
+  return (
+    <div className="flex items-center justify-between mb-6">
+      {STEPS.map((label, i) => {
+        const n = i+1, done = current > n, active = current === n;
         return (
-          <Card key={s.id}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div>
-                <span style={{ color: C.accent, fontFamily: C.mono, fontSize: 11 }}>{s.docNo}</span>
-                <div style={{ color: C.text, fontSize: 13, fontWeight: 700, marginTop: 2 }}>{timeStr(s.submittedAt)}</div>
-              </div>
-              <span style={{ background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99 }}>{cfg.label}</span>
+          <React.Fragment key={n}>
+            <div className="flex flex-col items-center gap-1">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-indigo-600 border-indigo-600 text-white':active?'bg-white border-indigo-600 text-indigo-600':'bg-white border-slate-300 text-slate-400'}`}>{done?'✓':n}</div>
+              <span className={`text-[10px] whitespace-nowrap ${active?'text-indigo-600 font-semibold':'text-slate-400'}`}>{label}</span>
             </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
-              <span style={{ color: C.muted, fontSize: 12 }}><b style={{ color: C.text }}>{s.itemCount}</b> บาร์โค้ด</span>
-              <span style={{ color: C.muted, fontSize: 12 }}><b style={{ color: C.green }}>{fmt(s.totalQty)}</b> ชิ้น</span>
-            </div>
-            {s.note && <div style={{ background: C.surfaceHi, borderRadius: 6, padding: "6px 10px", fontSize: 11, color: C.muted, marginBottom: 8, fontStyle: "italic" }}>"{s.note}"</div>}
-            {s.status !== "pending" && s.reviewNote && (
-              <div style={{ background: cfg.bg, border: `1px solid ${cfg.color}30`, borderRadius: 8, padding: "8px 10px", fontSize: 11, color: cfg.color, marginBottom: 8 }}>
-                <b>{s.reviewedBy}:</b> {s.reviewNote}
-              </div>
-            )}
-            <button onClick={() => setExpanded(isOpen ? null : s.id)}
-              style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0 }}>
-              {isOpen ? "▲ ซ่อนรายการ" : "▼ ดูรายการ"}
-            </button>
-            {isOpen && (
-              <div style={{ marginTop: 8, background: C.surfaceHi, borderRadius: 8, padding: 8, fontSize: 11 }}>
-                {s.data.map((d, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: C.muted }}>
-                    <span>{d.productName}</span>
-                    <span style={{ color: C.green, fontWeight: 700 }}>{d.qty} {d.unit}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n+1?'bg-indigo-600':current > n?'bg-indigo-300':'bg-slate-200'}`}/>}
+          </React.Fragment>
         );
       })}
     </div>
   );
 }
 
-// ── MANAGER: Invoice Demo ─────────────────────────────────────────────────────
-const DEMO_INVOICE = {
-  invoice_no: "INV-2025-0582",
-  invoice_date: "2025-05-17",
-  vendor_name: "บริษัท เบเวอเรจ ซัพพลาย จำกัด",
-  vendor_tax_id: "0105555012345",
-  document_type: "invoice",
-  price_type: "excl",
-  products: [
-    { no: 1, description: "น้ำดื่มสิงห์ 600ml",    qty: 240, price_ea: 6.5,  amount: 1560, vat: "v", barcode: "8851234567001" },
-    { no: 2, description: "โค้ก 325ml",             qty: 120, price_ea: 11,   amount: 1320, vat: "v", barcode: "8851234567003" },
-    { no: 3, description: "เป๊ปซี่ 325ml",           qty: 96,  price_ea: 11,   amount: 1056, vat: "v", barcode: "8851234567004" },
-    { no: 4, description: "มาม่าหมูสับ",             qty: 480, price_ea: 3.8,  amount: 1824, vat: "v", barcode: "8851234567005" },
-    { no: 5, description: "มาม่าต้มยำกุ้ง",          qty: 480, price_ea: 3.8,  amount: 1824, vat: "v", barcode: "8851234567006" },
-  ],
-};
+function DropZone({ onFiles, multiple, accept, children }) {
+  const [drag, setDrag] = useState(false); const ref = useRef();
+  const handle = fs => { if (fs?.length) onFiles(Array.from(fs)); };
+  return (
+    <div ref={ref} onClick={() => ref.current.querySelector('input')?.click()}
+      onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
+      onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files);}}
+      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-indigo-400 bg-indigo-50':'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'}`}>
+      <input type="file" multiple={multiple} accept={accept} className="hidden" onChange={e=>handle(e.target.files)}/>
+      {children}
+    </div>
+  );
+}
 
-function InvoiceDemoView() {
+function InvFileThumb({ file }) {
+  const [url, setUrl] = useState('');
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
+  return url ? <img src={url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }}/> : <div style={{ width: 56, height: 56, background: '#f1f5f9', borderRadius: 6 }}/>;
+}
+
+function Spinner({ size = 16 }) {
+  return <span style={{ display:'inline-block', width:size, height:size, borderRadius:'50%', border:'2px solid #e5e7eb', borderTopColor:'#111', animation:'spin 0.7s linear infinite', flexShrink:0 }}/>;
+}
+
+function InvoiceScannerModule({ supabaseConfig }) {
+  const w = useWinWidth(), mob = w < 600;
+  const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
+  const [invoices, setInvoices] = useState([]);
+  const [productFiles, setPFiles] = useState([]);
+  const [selPFileIds, setSelPFIds] = useState(new Set());
+  const [barcodeMap, setBMap] = useState({});
+  const [scanResults, setSRes] = useState([]);
   const [scanning, setScanning] = useState(false);
-  const [data, setData] = useState(null);
-  const [saved, setSaved] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [driveStatus, setDSt] = useState(null);
+  const [driveUrl, setDUrl] = useState(null);
+  const [driveErr, setDErr] = useState(null);
+  const [sbSt, setSbSt] = useState(null);
+  const [sbErr, setSbErr] = useState(null);
+  const [gReady, setGReady] = useState(false);
+  const [gToken, setGToken] = useState(null);
+  const [gClientId, setGClientId] = useState(() => safeGet('g_client',''));
+  const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', DRIVE_FOLDER_DEFAULT));
+  const [showInvCfg, setShowInvCfg] = useState(false);
+  const [nameStatus, setNameStatus] = useState(null);
+  const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
 
-  const simulateScan = () => {
-    setScanning(true);
-    setTimeout(() => { setData(DEMO_INVOICE); setScanning(false); setStep(2); }, 2200);
+  useEffect(() => {
+    if (window.google?.accounts) { setGReady(true); return; }
+    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.onload = () => setGReady(true); document.head.appendChild(s);
+    return () => { try { document.head.removeChild(s); } catch {} };
+  }, []);
+
+  const connectGoogle = () => {
+    if (!gClientId) { alert('กรุณาใส่ Google Client ID ก่อน'); setShowInvCfg(true); return; }
+    if (!gReady || !window.google?.accounts) { alert('Google library ยังไม่โหลด'); return; }
+    const client = window.google.accounts.oauth2.initTokenClient({ client_id: gClientId, scope: 'https://www.googleapis.com/auth/drive.file', callback: resp => { if (resp.access_token) setGToken(resp.access_token); else if (resp.error) setDErr('OAuth: '+resp.error); }, error_callback: err => setDErr('OAuth error: '+(err.message||err.type)) });
+    client.requestAccessToken();
+  };
+  const disconnectGoogle = () => { if (gToken && window.google?.accounts) window.google.accounts.oauth2.revoke(gToken, () => {}); setGToken(null); };
+
+  const uploadFileToDrive = async (filename, blob, mimeType) => {
+    const metadata = { name: filename, mimeType };
+    if (driveFolder) metadata.parents = [driveFolder];
+    const form = new FormData(); form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'})); form.append('file', blob);
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name', { method:'POST', headers:{Authorization:`Bearer ${gToken}`}, body:form });
+    if (!res.ok) { const t = await res.text(); if (res.status === 401) { setGToken(null); throw new Error('Token หมดอายุ — กรุณา connect ใหม่'); } throw new Error(`Drive ${res.status}: ${t.slice(0,150)}`); }
+    return res.json();
   };
 
-  const totalAmt = data ? data.products.reduce((s, p) => s + p.amount, 0) : 0;
-  const vatAmt = +(totalAmt * 0.07).toFixed(2);
-  const net = +(totalAmt + vatAmt).toFixed(2);
+  const HEADER_KEYS = ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','vendor_branch','vendor_no','price_type','_vendorFromDB'];
+  const mergePageData = (pagesData) => {
+    let merged = {}, allProducts = [];
+    for (const pd of pagesData) { if (!pd) continue; for (const k of HEADER_KEYS) if (merged[k]==null&&pd[k]!=null) merged[k]=pd[k]; allProducts=[...allProducts,...(pd.products||[])]; }
+    if (!allProducts.length && !Object.keys(merged).length) return null;
+    const pt = merged.price_type ?? 'incl';
+    merged.products = allProducts.map((p,i) => recalc({...p, no:i+1, _pt:pt}));
+    if (merged.invoice_date) merged.invoice_date = toYMD(merged.invoice_date)||merged.invoice_date;
+    return merged;
+  };
 
-  const STEPS = ["อัปโหลด", "ตรวจสอบ", "บันทึก"];
+  const readSinglePage = async (file) => {
+    const { base64, mediaType } = await imgToBase64(file);
+    const content = [{type:'image',source:{type:'base64',media_type:mediaType,data:base64}},{type:'text',text:INVOICE_PROMPT}];
+    const res = await callClaude(content, {}, model);
+    const tb = res.content?.find(b => b.type === 'text');
+    let data;
+    try { data = extractJSON(tb?.text||''); } catch { const r2 = await callClaude([content[0],{type:'text',text:INVOICE_PROMPT+'\n\nตอบ JSON เท่านั้น:'}],{},model); data = extractJSON(r2.content?.find(b=>b.type==='text')?.text||''); }
+    if (data.invoice_date) data.invoice_date = toYMD(data.invoice_date)||null;
+    data.vendor_no = null;
+    if (data.vendor_name && sbUrl && sbKey) { try { const no = await lookupVendorREST(sbUrl, sbKey, data.vendor_name); if (no) { data.vendor_no=no; data._vendorFromDB=true; } } catch {} }
+    return data;
+  };
+
+  const updateGroupPage = (gi, pi, pageData, status) => {
+    setInvoices(prev => {
+      const n=[...prev], g={...n[gi]};
+      const pagesData=[...g.pagesData]; pagesData[pi]=pageData;
+      const pageStatus=[...g.pageStatus]; pageStatus[pi]=status;
+      const merged=mergePageData(pagesData);
+      const allDone=pageStatus.every(s=>s==='done'||s==='error');
+      n[gi]={...g,pagesData,pageStatus,data:merged,status:allDone?(merged?'done':'error'):'processing'};
+      return n;
+    });
+  };
+
+  const readPages = async (gi, files, pageIndices) => {
+    setInvoices(prev => { const n=[...prev],g={...n[gi]},ps=[...g.pageStatus]; pageIndices.forEach(pi=>ps[pi]='processing'); n[gi]={...g,pageStatus:ps,status:'processing'}; return n; });
+    await Promise.all(pageIndices.map(async pi => { try { const data=await readSinglePage(files[pi]); updateGroupPage(gi,pi,data,'done'); } catch { updateGroupPage(gi,pi,null,'error'); } }));
+  };
+
+  const makeGroup = (files) => ({ files, pagesData:files.map(()=>null), pageStatus:files.map(()=>'pending'), status:'pending', data:null, error:null });
+  const addFiles = fs => { const arr=Array.from(fs); setInvoices(prev=>[...prev,makeGroup(arr)]); };
+  const removeInv = i => { setInvoices(prev=>prev.filter((_,j)=>j!==i)); };
+  const updateData = (i, data) => setInvoices(prev => { const n=[...prev]; n[i]={...n[i],data}; return n; });
+  const reprocessInvoice = async (gi) => { await readPages(gi, invoices[gi].files, invoices[gi].files.map((_,i)=>i)); };
+  const processAll = async () => {
+    setInvoices(prev=>prev.map(g=>({...g,status:'processing',pageStatus:g.pageStatus.map(s=>s==='pending'?'processing':s)})));
+    await Promise.all(invoices.map(async (inv,gi) => { const pending=inv.pagesData.map((d,i)=>d===null?i:-1).filter(i=>i>=0); if(pending.length===0)return; await readPages(gi,inv.files,pending); }));
+    setStep(2);
+  };
+
+  const mkPFileId = () => Math.random().toString(36).slice(2,10);
+  const buildMap = (results) => { const map={}; results.forEach(r=>{if(r.match&&r.barcode)map[String(r.match).trim()]=r.barcode;}); return map; };
+  const applyBarcodeMap = (newMap) => {
+    const normMap={}; Object.entries(newMap).forEach(([k,v])=>{if(k&&v)normMap[String(k).trim()]=v;});
+    setInvoices(prev=>prev.map(inv=>{if(!inv.data)return inv;const products=(inv.data.products||[]).map(p=>{const desc=String(p.description||'').trim();if(normMap[desc])return{...p,barcode:normMap[desc]};return p;});return{...inv,data:{...inv.data,products}};}));
+    setBMap(normMap);
+  };
+
+  const scanProductItems = async (items) => {
+    if (!items.length) return;
+    const scanIds = new Set(items.map(it=>it.id));
+    setPFiles(prev=>prev.map(it=>scanIds.has(it.id)?{...it,status:'processing'}:it));
+    setScanning(true);
+    const allP = invoices.filter(i=>i.status==='done'&&i.data?.products).flatMap(i=>i.data.products).filter((p,i,a)=>a.findIndex(x=>x.description===p.description)===i);
+    const list = allP.map(p=>p.description).filter(Boolean).join('\n');
+    const kept = scanResults.filter(r=>!scanIds.has(r._fileId));
+    const newResults = await Promise.all(items.map(async it => {
+      try {
+        const { base64, mediaType } = await imgToBase64(it.file);
+        const res = await callClaude([{type:'image',source:{type:'base64',media_type:mediaType,data:base64}},{type:'text',text:BARCODE_PROMPT(list)}],{},model);
+        const tb = res.content?.find(b=>b.type==='text');
+        const raw = extractJSON(tb?.text||'null');
+        const arr = Array.isArray(raw)?raw:(raw?[raw]:[{barcode:null,match:null,description_image:null}]);
+        const expanded = arr.flatMap(r=>{
+          const barcodes=(r.barcode||'').split(/[,，\n]/).map(s=>s.trim()).filter(Boolean);
+          const descs=(r.description_image||'').split(/[,，\n]/).map(s=>s.trim()).filter(Boolean);
+          const matches=(r.match||'').split(/[,，\n]/).map(s=>s.trim()).filter(Boolean);
+          if(barcodes.length<=1)return[r];
+          return barcodes.map((bc,i)=>({barcode:bc||null,description_image:descs[i]||descs[0]||null,match:matches[i]||null}));
+        });
+        setPFiles(prev=>prev.map(p=>p.id===it.id?{...p,status:'done'}:p));
+        return expanded.map(r=>({...r,_fileId:it.id}));
+      } catch { setPFiles(prev=>prev.map(p=>p.id===it.id?{...p,status:'error'}:p)); return [{barcode:null,match:null,description_image:null,_fileId:it.id}]; }
+    }));
+    const combined = [...kept,...newResults.flat()];
+    setSRes(combined); applyBarcodeMap(buildMap(combined)); setScanning(false);
+  };
+
+  const addProductFiles = async (newFiles) => { const items=Array.from(newFiles).map(f=>({file:f,id:mkPFileId(),status:'pending'})); setPFiles(prev=>[...prev,...items]); await scanProductItems(items); };
+  const deleteProductFile = (id) => { setPFiles(prev=>prev.filter(it=>it.id!==id)); setSelPFIds(prev=>{const s=new Set(prev);s.delete(id);return s;}); const remaining=scanResults.filter(r=>r._fileId!==id); setSRes(remaining); applyBarcodeMap(buildMap(remaining)); };
+  const rescanSelectedPFiles = async () => { const items=productFiles.filter(it=>selPFileIds.has(it.id)); setSelPFIds(new Set()); await scanProductItems(items); };
+
+  const buildXLSXBlob = () => {
+    const X = XLSX, wb = X.utils.book_new();
+    const done = invoices.filter(i=>i.status==='done'&&i.data);
+    const str = v => v!=null?{t:'s',v:String(v).trim()}:null;
+    const ws1 = X.utils.aoa_to_sheet([
+      ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','total_amount','net_total','excl_vat','vat_amount','vendor_branch','vendor_no','price_type'],
+      ...done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[str(d.invoice_no),d.invoice_date??null,d.vendor_name??null,str(d.vendor_tax_id),d.document_type??null,d.vendor_address??null,+rawAmt.toFixed(2)||null,vs.netTotal,vs.excl,vs.vatAmt,str(d.vendor_branch),str(d.vendor_no),d.price_type??'incl'];})
+    ]);
+    X.utils.book_append_sheet(wb, ws1, 'bill_header');
+    const ws2 = X.utils.aoa_to_sheet([
+      ['invoice_no','no','description','qty','price_ea','amount','special_discount','total','excl_vat','vat_amt','vat','barcode'],
+      ...done.flatMap(inv=>(inv.data.products||[]).map(p=>{
+        const qty=p.qty!=null?+p.qty:null,pea=p.price_ea!=null?+p.price_ea:null,am=p.amount!=null?+p.amount:null,sd=p.special_discount!=null?+p.special_discount:0;
+        const tot=(qty!=null&&pea!=null)?+(qty*pea-sd).toFixed(2):null;
+        const vatV=p.vat==='v',pt=inv.data.price_type??'incl';
+        const exclV=tot!=null?(vatV?(pt==='incl'?+(tot/1.07).toFixed(2):tot):tot):null;
+        const vatAmtV=tot!=null?(vatV?(pt==='incl'?+(tot-tot/1.07).toFixed(2):+(tot*0.07).toFixed(2)):0):null;
+        return[str(inv.data.invoice_no),p.no??null,p.description??null,qty,pea,am,sd||null,tot,exclV,vatAmtV,p.vat??null,str(p.barcode??barcodeMap[String(p.description||'').trim()]??null)];
+      }))
+    ]);
+    X.utils.book_append_sheet(wb, ws2, 'invoice');
+    const buf = X.write(wb, {type:'array',bookType:'xlsx'});
+    return new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  };
+
+  const buildImpDataCSV = () => {
+    const done = invoices.filter(i=>i.status==='done'&&i.data);
+    const rows=[];
+    for (const inv of done) { for (const p of (inv.data.products||[])) { const qty=p.qty!=null?+p.qty:0,pea=p.price_ea!=null?+p.price_ea:null,sd=p.special_discount!=null?+p.special_discount:0; const tot=(qty>0&&pea!=null)?+(qty*pea-sd).toFixed(2):null; const totPerQty=(tot!=null&&qty>0)?+(tot/qty).toFixed(4):0; const barcode=p.barcode??barcodeMap[String(p.description||'').trim()]??''; rows.push([barcode,qty,totPerQty,0]); } }
+    return new Blob(['﻿'+rows.map(r=>r.join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+  };
+
+  const buildBillHeaderCSV = () => {
+    const done = invoices.filter(i=>i.status==='done'&&i.data);
+    const rows = done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[d.invoice_no??'',d.invoice_date??'',d.vendor_name??'',d.vendor_tax_id??'',+rawAmt.toFixed(2)||0,vs.netTotal,vs.vatAmt].join(',');});
+    return new Blob(['﻿'+'invoice_no,invoice_date,vendor_name,vendor_tax_id,total_amount,net_total,vat_amount\r\n'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  };
+
+  const uploadToDrive = async () => {
+    if (!gToken) { alert('กรุณาเชื่อมต่อ Google Drive ก่อน'); return; }
+    setDSt('uploading'); setDUrl(null); setDErr(null);
+    try {
+      const fname = fileName||'invoice';
+      const r1 = await uploadFileToDrive(fname+'_bill_header.csv', buildBillHeaderCSV(), 'text/csv');
+      await uploadFileToDrive(fname+'_imp_data.csv', buildImpDataCSV(), 'text/csv');
+      setDUrl(r1.webViewLink); setDSt('done');
+    } catch(e) { setDErr(e.message); setDSt('error'); }
+  };
+
+  const saveToSupabase = async () => {
+    if (!sbUrl || !sbKey) { setSbErr('ยังไม่ได้ตั้งค่า Supabase'); setSbSt('error'); return; }
+    setSbSt('saving'); setSbErr(null);
+    const fn = fileName||null;
+    const h = { apikey:sbKey, Authorization:`Bearer ${sbKey}`, 'Content-Type':'application/json' };
+    try {
+      const done = invoices.filter(i=>i.status==='done'&&i.data);
+      for (const inv of done) {
+        const d=inv.data, invNo=d.invoice_no??null;
+        if (!invNo||!fn) continue;
+        const rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0), vs=vatSummary(d.products);
+        const r1 = await fetch(`${sbUrl}/rest/v1/bill_header`,{method:'POST',headers:{...h,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({invoice_no:invNo,file_name:fn,invoice_date:d.invoice_date??null,vendor_name:d.vendor_name??null,vendor_tax_id:d.vendor_tax_id?String(d.vendor_tax_id).replace(/\s/g,''):null,document_type:d.document_type??null,vendor_address:d.vendor_address??null,vendor_branch:d.vendor_branch?String(d.vendor_branch):null,vendor_no:d.vendor_no?String(d.vendor_no):null,price_type:d.price_type??'incl',total_amount:+rawAmt.toFixed(2)||null,net_total:vs.netTotal,excl_vat:vs.excl,vat_amount:vs.vatAmt})});
+        if (!r1.ok) throw new Error('insert bill_header: '+(await r1.text()));
+        for (const p of (d.products||[])) {
+          const qty=p.qty!=null?+p.qty:null,pea=p.price_ea!=null?+p.price_ea:null,am=p.amount!=null?+p.amount:null,sd=p.special_discount!=null?+p.special_discount:0;
+          const tot=(qty!=null&&pea!=null)?+(qty*pea-sd).toFixed(2):null;
+          const vatV=p.vat==='v',pt=d.price_type??'incl';
+          const exclV=tot!=null?(vatV?(pt==='incl'?+(tot/1.07).toFixed(2):tot):tot):null;
+          const vatAmtV=tot!=null?(vatV?(pt==='incl'?+(tot-tot/1.07).toFixed(2):+(tot*0.07).toFixed(2)):0):null;
+          const r2 = await fetch(`${sbUrl}/rest/v1/imp_data`,{method:'POST',headers:{...h,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({invoice_no:invNo,file_name:fn,no:p.no??null,description:p.description??null,qty,price_ea:pea,amount:am,special_discount:sd||null,total:tot,excl_vat:exclV,vat_amt:vatAmtV,vat:p.vat??null,barcode:p.barcode??barcodeMap[String(p.description||'').trim()]??null})});
+          if (!r2.ok) throw new Error('insert imp_data: '+(await r2.text()));
+        }
+      }
+      setSbSt('done');
+    } catch(e) { setSbErr(e.message); setSbSt('error'); }
+  };
+
+  useEffect(() => {
+    if (step===4&&!fileName&&sbUrl&&sbKey) {
+      (async()=>{
+        const d=new Date(),yy=String(d.getFullYear()).slice(-2),mm=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'),dateKey=yy+mm+dd;
+        try {
+          const r=await fetch(`${sbUrl}/rest/v1/rpc/get_next_filename`,{method:'POST',headers:{apikey:sbKey,Authorization:`Bearer ${sbKey}`,'Content-Type':'application/json'},body:JSON.stringify({date_prefix:dateKey})});
+          if(r.ok){const name=await r.json();if(typeof name==='string'&&name.length===10){setFileName(name);return;}}
+        } catch {}
+        const cur=parseInt(safeGet('filename_counter_'+dateKey,'0'))||0;
+        safeSet('filename_counter_'+dateKey,String(cur+1));
+        setFileName(dateKey+String(cur+1).padStart(4,'0'));
+      })();
+    }
+  }, [step]);
+
+  useEffect(() => {
+    if (step!==4||!fileName){setNameStatus(null);return;}
+    if (!sbUrl||!sbKey){return;}
+    setNameStatus('checking');
+    const t=setTimeout(async()=>{
+      try{const r=await fetch(`${sbUrl}/rest/v1/rpc/check_filename_exists`,{method:'POST',headers:{apikey:sbKey,Authorization:`Bearer ${sbKey}`,'Content-Type':'application/json'},body:JSON.stringify({filename:fileName})});if(!r.ok){setNameStatus('error');return;}const exists=await r.json();setNameStatus(exists?'duplicate':'available');}catch{setNameStatus('error');}
+    },500);
+    return ()=>clearTimeout(t);
+  },[fileName,step,sbUrl,sbKey]);
+
+  const doneInvs = invoices.filter(i=>i.status==='done'&&i.data);
+  const processing = invoices.some(i=>i.status==='processing');
+  const allProds = doneInvs.flatMap(inv=>inv.data.products.map(p=>({...p,invoice_no:inv.data.invoice_no,_pt:inv.data.price_type??'incl'})));
+  const grandTotal = allProds.reduce((s,p)=>s+(+p.amount||0),0);
+  const allVs = vatSummary(allProds);
+  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setDSt(null);setDUrl(null);setDErr(null);setSbSt(null);setSbErr(null); };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Step bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-        {STEPS.map((label, i) => {
-          const n = i + 1, done = step > n, active = step === n;
-          const col = done ? C.green : active ? C.accent : C.muted;
-          return (
-            <div key={n} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : undefined }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", border: `2px solid ${col}`, background: done ? C.green : active ? C.accentLo : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, color: done ? "#fff" : col }}>
-                  {done ? "✓" : n}
-                </div>
-                <span style={{ fontSize: 9, color: col, whiteSpace: "nowrap" }}>{label}</span>
-              </div>
-              {i < STEPS.length - 1 && <div style={{ flex: 1, height: 2, background: step > n + 1 ? C.green : step > n ? C.accent : C.border, margin: "0 6px", marginBottom: 14 }} />}
-            </div>
-          );
-        })}
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 className="text-xl font-bold text-slate-800">สแกนใบกำกับภาษี</h2>
+        <div className="flex gap-2 items-center flex-wrap">
+          <select value={model} onChange={e=>setModel(e.target.value)} className="text-xs px-2 py-1 border border-slate-300 rounded-lg bg-white text-slate-600">
+            {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <button onClick={()=>setShowInvCfg(!showInvCfg)} className="text-xs px-3 py-1 border border-slate-300 rounded-lg hover:bg-slate-50">⚙ ตั้งค่า</button>
+          {step>1&&<button onClick={reset} className="text-xs px-3 py-1 border border-red-200 bg-red-50 text-red-600 rounded-lg">↺ ใหม่</button>}
+        </div>
       </div>
 
-      {/* Step 1 */}
-      {step === 1 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Card style={{ textAlign: "center", padding: 32, border: `2px dashed ${C.border}` }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>🧾</div>
-            <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 4 }}>อัปโหลดใบกำกับภาษี</div>
-            <div style={{ color: C.muted, fontSize: 12 }}>รองรับ JPG, PNG, PDF</div>
-          </Card>
-          <div style={{ background: C.amberLo, border: `1px solid ${C.amber}30`, borderRadius: 10, padding: 12, fontSize: 12, color: C.amber }}>
-            💡 Demo mode — คลิก "จำลองการสแกน" เพื่อดูผลลัพธ์ AI
-          </div>
-          <Btn full color="accent" size="lg" onClick={simulateScan} disabled={scanning}>
-            {scanning ? "🤖 Claude กำลังอ่านใบกำกับ..." : "🤖 จำลองการสแกน AI"}
-          </Btn>
-          {scanning && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {["กำลังอ่านรูปภาพ...", "วิเคราะห์ header...", "สกัดรายการสินค้า..."].map((t, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.muted }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, animation: "pulse 1s infinite", animationDelay: `${i * 0.3}s` }} />
-                  {t}
+      {showInvCfg&&(
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
+          <div className="font-semibold text-slate-800">ตั้งค่า Google Drive</div>
+          <div><label className="text-xs text-slate-500 block mb-1">Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs"/></div>
+          <div><label className="text-xs text-slate-500 block mb-1">Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs"/></div>
+          <button onClick={()=>setShowInvCfg(false)} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm">บันทึก</button>
+        </div>
+      )}
+
+      <StepBar current={step}/>
+
+      {step===1&&(
+        <div className="space-y-4">
+          <DropZone multiple accept="image/*,.pdf" onFiles={addFiles}>
+            <div className="text-4xl mb-2">📄</div>
+            <div className="font-semibold text-slate-700 mb-1">ลากหรือคลิกเพื่ออัปโหลดใบกำกับภาษี</div>
+            <div className="text-xs text-slate-400">รองรับ JPG, PNG, PDF (หลายไฟล์)</div>
+          </DropZone>
+          {invoices.length>0&&(
+            <div>
+              {invoices.map((inv,gi)=>(
+                <div key={gi} className="bg-white border border-slate-200 rounded-xl p-3 mb-3">
+                  <div className="flex justify-between items-center mb-2"><span className="font-semibold text-slate-700 text-sm">กลุ่ม {gi+1} • {inv.files.length} หน้า</span><button onClick={()=>removeInv(gi)} className="text-red-500 text-sm">✕ ลบ</button></div>
+                  <div className="flex gap-2 flex-wrap">
+                    {inv.files.map((f,pi)=>(
+                      <div key={pi} className="relative">
+                        <InvFileThumb file={f}/>
+                        <div className="absolute bottom-1 right-1 text-[9px] bg-black/60 text-white rounded px-1">{inv.pageStatus[pi]==='processing'?'⏳':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':'⋯'}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
+              <button onClick={processAll} disabled={processing} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl flex items-center justify-center gap-2">
+                {processing?<><Spinner size={18}/>กำลังประมวลผล...</>:<>🤖 ประมวลผลทุกใบ ({invoices.length} กลุ่ม)</>}
+              </button>
             </div>
           )}
         </div>
       )}
 
-      {/* Step 2 */}
-      {step === 2 && data && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Card>
-            <div style={{ color: C.muted, fontSize: 10, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: C.green }}>✓</span> AI อ่านสำเร็จ — ตรวจสอบและแก้ไขได้
+      {step===2&&(
+        <div className="space-y-4">
+          <div className="font-semibold text-slate-700">สแกนรูปสินค้าเพื่อดึงบาร์โค้ด</div>
+          <DropZone multiple accept="image/*" onFiles={addProductFiles}>
+            <div className="text-3xl mb-2">📷</div>
+            <div className="font-semibold text-slate-700 text-sm">ลากรูปสินค้าที่มีบาร์โค้ด</div>
+            <div className="text-xs text-slate-400">Claude จะอ่านบาร์โค้ดจากรูปและจับคู่กับรายการสินค้า</div>
+          </DropZone>
+          {productFiles.length>0&&(
+            <div className="bg-white border border-slate-200 rounded-xl p-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold text-slate-700 text-sm">รูปสินค้า ({productFiles.length})</span>
+                {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg">{scanning?'สแกน...':'Re-scan ที่เลือก'}</button>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {productFiles.map(it=>(
+                  <div key={it.id} className="relative cursor-pointer" onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
+                    <InvFileThumb file={it.file}/>
+                    <div className={`absolute top-1 right-1 text-[9px] text-white rounded px-1 ${it.status==='done'?'bg-emerald-500':it.status==='error'?'bg-red-500':it.status==='processing'?'bg-amber-500':'bg-slate-500'}`}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
+                    {selPFileIds.has(it.id)&&<div className="absolute inset-0 border-2 border-indigo-600 rounded-lg bg-indigo-600/10"/>}
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {[["เลขที่", data.invoice_no], ["วันที่", data.invoice_date], ["Vendor", data.vendor_name], ["เลขภาษี", data.vendor_tax_id]].map(([k, v]) => (
-                <div key={k}>
-                  <div style={{ color: C.muted, fontSize: 9, marginBottom: 3 }}>{k}</div>
-                  <div style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 10px", fontSize: 11, color: C.text, fontWeight: 600 }}>{v}</div>
-                </div>
-              ))}
+          )}
+          {scanResults.length>0&&(
+            <div className="bg-white border border-slate-200 rounded-xl p-3 overflow-x-auto">
+              <div className="font-semibold text-slate-700 text-sm mb-2">ผลการจับคู่บาร์โค้ด ({scanResults.length})</div>
+              <table className="w-full text-xs border-collapse">
+                <thead><tr className="bg-slate-50">{['#','บาร์โค้ด','รูป','จับคู่'].map(h=><th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500">{h}</th>)}</tr></thead>
+                <tbody>
+                  {scanResults.map((r,i)=>(
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-2 py-1 text-slate-400">{i+1}</td>
+                      <td className="px-2 py-1"><input value={r.barcode??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} className="w-32 font-mono text-xs border border-slate-200 rounded px-1 py-0.5 text-emerald-700"/></td>
+                      <td className="px-2 py-1"><input value={r.description_image??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}} className="w-44 text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
+                      <td className="px-2 py-1">
+                        <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} className="w-44 text-xs border border-slate-200 rounded px-1 py-0.5">
+                          <option value="">— เลือก —</option>
+                          {doneInvs.flatMap(inv=>inv.data.products).map((p,idx)=><option key={idx} value={p.description}>{(p.description||'').slice(0,40)}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </Card>
+          )}
+          <button onClick={()=>setStep(3)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">ตรวจสอบข้อมูล →</button>
+        </div>
+      )}
 
-          <Card style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, color: C.text, fontWeight: 700, fontSize: 12 }}>
-              รายการสินค้า ({data.products.length} รายการ)
-            </div>
-            {data.products.map((p, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", borderBottom: `1px solid ${C.border}20`, fontSize: 11 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: C.text, fontWeight: 600 }}>{p.description}</div>
-                  <div style={{ color: C.muted }}>{p.qty} × ฿{p.price_ea}</div>
+      {step===3&&(
+        <div className="space-y-4">
+          <div className="font-semibold text-slate-700">ตรวจสอบข้อมูลใบกำกับ</div>
+          {doneInvs.map((inv,gi)=>{
+            const d=inv.data, vs=vatSummary(d.products||[]);
+            return (
+              <div key={gi} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                  <span className="font-bold text-slate-700 text-sm">ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</span>
+                  <button onClick={()=>reprocessInvoice(gi)} className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded">อ่านใหม่</button>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ color: C.green, fontWeight: 700 }}>฿{fmt(p.amount)}</div>
-                  {p.barcode && <div style={{ color: C.accent, fontSize: 9, fontFamily: C.mono }}>{p.barcode}</div>}
+                <div className="p-4">
+                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    {[['เลขที่','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภท','document_type']].map(([label,key])=>(
+                      <div key={key}><div className="text-slate-400 mb-1">{label}</div><input value={d[key]??''} onChange={e=>updateData(gi,{...d,[key]:e.target.value||null})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs"/></div>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead><tr className="bg-slate-50">{['#','สินค้า','จำนวน','ราคา/หน่วย','ยอด','VAT','บาร์โค้ด'].map(h=><th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500">{h}</th>)}</tr></thead>
+                      <tbody>
+                        {(d.products||[]).map((p,pi)=>{
+                          const bc=p.barcode??barcodeMap[String(p.description||'').trim()]??null;
+                          return (
+                            <tr key={pi} className="border-t border-slate-100">
+                              <td className="px-2 py-1 text-slate-400">{p.no??pi+1}</td>
+                              <td className="px-2 py-1 max-w-[180px]"><input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}} className="w-full text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
+                              <td className="px-2 py-1"><input type="number" value={p.qty??''} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],qty:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} className="w-14 text-center text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
+                              <td className="px-2 py-1 text-emerald-700 font-medium">{p.price_ea!=null?Number(p.price_ea).toLocaleString():'-'}</td>
+                              <td className="px-2 py-1 font-semibold text-slate-700">{p.total!=null?Number(p.total).toLocaleString():'-'}</td>
+                              <td className="px-2 py-1"><select value={p.vat??'v'} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],vat:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} className="text-xs border border-slate-200 rounded px-1 py-0.5"><option value="v">7%</option><option value="0">0%</option></select></td>
+                              <td className="px-2 py-1"><input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}} className="w-32 font-mono text-xs border border-slate-200 rounded px-1 py-0.5 text-emerald-700"/></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-end gap-4 mt-2 text-xs text-slate-500">
+                    <span>ยอดสุทธิ: <strong className="text-slate-700">฿{vs.netTotal.toLocaleString()}</strong></span>
+                    <span>VAT: <strong className="text-slate-700">฿{vs.vatAmt.toLocaleString()}</strong></span>
+                    <span>ไม่รวม VAT: <strong className="text-slate-700">฿{vs.excl.toLocaleString()}</strong></span>
+                  </div>
                 </div>
               </div>
-            ))}
-            <div style={{ padding: "10px 14px", background: C.surfaceHi, display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", color: C.muted }}><span>ยอดก่อน VAT</span><span>฿{fmt(totalAmt)}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", color: C.muted }}><span>VAT 7%</span><span>฿{fmt(vatAmt)}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", color: C.text, fontWeight: 700, fontSize: 14 }}><span>ยอดรวม</span><span style={{ color: C.green }}>฿{fmt(net)}</span></div>
-            </div>
-          </Card>
-
-          <Btn full color="green" onClick={() => setStep(3)}>บันทึก & ส่งออก →</Btn>
+            );
+          })}
+          <div className="flex gap-2">
+            <button onClick={()=>setStep(2)} className="px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-semibold text-slate-700 text-sm">← กลับ</button>
+            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm">สรุปและบันทึก →</button>
+          </div>
         </div>
       )}
 
-      {/* Step 3 */}
-      {step === 3 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Card style={{ textAlign: "center", padding: 24 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-            <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 12 }}>พร้อม Export</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-              {[["ใบกำกับ", "1 ใบ"], ["สินค้า", `${DEMO_INVOICE.products.length} รายการ`], ["ยอดรวม", `฿${fmt(net)}`], ["VAT", `฿${fmt(vatAmt)}`]].map(([k, v]) => (
-                <div key={k} style={{ background: C.surfaceHi, borderRadius: 8, padding: 10 }}>
-                  <div style={{ color: C.muted, fontSize: 9 }}>{k}</div>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{v}</div>
-                </div>
+      {step===4&&(
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="font-bold text-slate-700 mb-3">สรุปภาพรวม</div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {[['ใบกำกับ',`${doneInvs.length} ใบ`],['สินค้า',`${allProds.length} รายการ`],['ยอดรวม',`฿${grandTotal.toLocaleString()}`]].map(([k,v])=>(
+                <div key={k} className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-400 mb-1">{k}</div><div className="font-bold text-slate-700">{v}</div></div>
               ))}
             </div>
-          </Card>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { label: "📥 Excel", color: "#16a34a", sub: "bill_header + invoice" },
-              { label: "📋 CSV",   color: C.accent,  sub: "imp_data format" },
-              { label: "☁️ Drive",  color: "#4285f4", sub: "Google Drive" },
-              { label: "💾 Supabase", color: "#3ecf8e", sub: "bill_header + imp_data" },
-            ].map(b => (
-              <button key={b.label} onClick={() => setSaved(true)}
-                style={{ background: C.surfaceHi, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 10px", cursor: "pointer", textAlign: "center" }}>
-                <div style={{ fontSize: 20, marginBottom: 4 }}>{b.label.split(" ")[0]}</div>
-                <div style={{ color: b.color, fontWeight: 700, fontSize: 12 }}>{b.label.split(" ").slice(1).join(" ")}</div>
-                <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>{b.sub}</div>
-              </button>
-            ))}
-          </div>
-          {saved && (
-            <div style={{ background: C.greenLo, border: `1px solid ${C.green}30`, borderRadius: 10, padding: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-              <span style={{ fontSize: 20 }}>✅</span>
-              <div style={{ color: C.green }}>บันทึกสำเร็จ! (Demo mode — ไม่ได้ส่งจริง)</div>
+            <div className="mb-3">
+              <label className="text-sm font-medium text-slate-700 block mb-1">ชื่อไฟล์</label>
+              <div className="flex gap-2 items-center">
+                <input value={fileName} onChange={e=>setFileName(e.target.value)} placeholder="260517xxxx" className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono ${nameStatus==='duplicate'?'border-red-400':'nameStatus'==='available'?'border-emerald-400':'border-slate-300'}`}/>
+                {nameStatus==='checking'&&<Spinner size={16}/>}
+                {nameStatus==='duplicate'&&<span className="text-red-500 text-xs">ซ้ำ!</span>}
+                {nameStatus==='available'&&<span className="text-emerald-500 text-xs">✓</span>}
+              </div>
             </div>
-          )}
-          <Btn full color="ghost" onClick={() => { setStep(1); setData(null); setSaved(false); }}>↺ เริ่มใหม่</Btn>
+            <div className="border-t border-slate-100 pt-3 space-y-3">
+              <div className="font-semibold text-slate-700 text-sm">Google Drive</div>
+              <div className="flex gap-2 flex-wrap">
+                {!gToken ? <button onClick={connectGoogle} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-semibold">🔗 Connect Google Drive</button>
+                : <><button onClick={uploadToDrive} disabled={driveStatus==='uploading'} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold flex items-center gap-2">{driveStatus==='uploading'?<><Spinner size={14}/>กำลังอัปโหลด...</>:'📤 อัปโหลด CSV'}</button><button onClick={disconnectGoogle} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs">ยกเลิก Google</button></>}
+              </div>
+              {driveStatus==='done'&&driveUrl&&<div className="text-sm text-emerald-600">✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">เปิดใน Drive →</a></div>}
+              {driveStatus==='error'&&driveErr&&<div className="text-sm text-red-600">✗ {driveErr}</div>}
+            </div>
+            <div className="border-t border-slate-100 pt-3 mt-3 space-y-2">
+              <div className="font-semibold text-slate-700 text-sm">Supabase</div>
+              {!sbUrl||!sbKey ? <div className="text-xs text-amber-600">⚠ ยังไม่ได้ตั้งค่า Supabase</div> : (
+                <div className="flex gap-2 items-center flex-wrap">
+                  <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold flex items-center gap-2">{sbSt==='saving'?<><Spinner size={14}/>บันทึก...</>:'💾 บันทึก Supabase'}</button>
+                  {sbSt==='done'&&<span className="text-emerald-600 text-sm">✓ บันทึกแล้ว!</span>}
+                  {sbSt==='error'&&sbErr&&<span className="text-red-600 text-xs">✗ {sbErr}</span>}
+                </div>
+              )}
+            </div>
+            <div className="border-t border-slate-100 pt-3 mt-3">
+              <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">⬇ ดาวน์โหลด Excel</button>
+            </div>
+          </div>
+          <button onClick={()=>setStep(3)} className="w-full py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-semibold text-slate-700 text-sm">← แก้ไขข้อมูล</button>
         </div>
       )}
     </div>
   );
 }
 
-// ── MAIN APP ──────────────────────────────────────────────────────────────────
-// Nav config per feature
-const NAV_MAP = {
-  // counter features
-  stock_compare_counter: [
-    { id: "count",    label: "นับสต็อก",   icon: "📦" },
-    { id: "review",   label: "ตรวจสอบ",    icon: "📋" },
-    { id: "my_subs",  label: "ที่ส่งแล้ว", icon: "📤" },
-  ],
-  stock_only_counter: [
-    { id: "count",    label: "นับสต็อก",   icon: "📦" },
-    { id: "review",   label: "ตรวจสอบ",    icon: "📋" },
-    { id: "my_subs",  label: "ที่ส่งแล้ว", icon: "📤" },
-  ],
-  // manager features
-  stock_compare_manager: [
-    { id: "dashboard", label: "แดชบอร์ด",    icon: "🏠" },
-    { id: "inbox",     label: "รีวิว",        icon: "📬" },
-    { id: "compare",   label: "เปรียบเทียบ",  icon: "⚖️" },
-  ],
-  stock_only_manager: [
-    { id: "dashboard", label: "แดชบอร์ด",    icon: "🏠" },
-    { id: "inbox",     label: "รีวิว",        icon: "📬" },
-  ],
-  invoice_counter: [
-    { id: "invoice",   label: "สแกนบิล",     icon: "🧾" },
-  ],
-  invoice_manager: [
-    { id: "invoice",   label: "สแกนบิล",     icon: "🧾" },
-  ],
-};
+// ─── SCANNER MODAL ────────────────────────────────────────────────────────────
+function ScannerModal({ products, onScan, onClose }) {
+  const [tab, setTab] = useState('camera');
+  const [manualBarcode, setManualBarcode] = useState('');
+  const [scanError, setScanError] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef(null);
+  const html5QrRef = useRef(null);
 
-const FEATURE_ACCENT = {
-  stock_compare: "#4f6ef7",
-  stock_only:    "#22c55e",
-  invoice:       "#a855f7",
-};
+  useEffect(() => {
+    if (tab !== 'camera') { if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}); html5QrRef.current = null; } return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+        if (cancelled) return;
+        html5QrRef.current = new Html5Qrcode('__qr_reader__', { formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+        await html5QrRef.current.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, (text) => { if (!cancelled) onScan(text); });
+      } catch (e) { if (!cancelled) setScanError('เปิดกล้องไม่ได้: ' + (e.message || e)); }
+    })();
+    return () => { cancelled = true; if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}); html5QrRef.current = null; } };
+  }, [tab]);
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState("count");
-  const [entries, setEntries] = useState([]);
-  const [submissions, setSubmissions] = useState(DEMO_SUBMISSIONS);
+  const preprocessImage = (file, deg = 0) => new Promise((resolve) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const sw = deg === 90 || deg === 270;
+      const c = document.createElement('canvas');
+      c.width = sw ? img.height : img.width; c.height = sw ? img.width : img.height;
+      const ctx = c.getContext('2d');
+      if (deg !== 0) { ctx.translate(c.width/2,c.height/2); ctx.rotate((deg*Math.PI)/180); ctx.drawImage(img,-img.width/2,-img.height/2); ctx.resetTransform(); } else { ctx.drawImage(img,0,0); }
+      const d = ctx.getImageData(0,0,c.width,c.height);
+      for (let i=0;i<d.data.length;i+=4) { const gray=Math.round(0.299*d.data[i]+0.587*d.data[i+1]+0.114*d.data[i+2]); const boosted=Math.min(255,Math.max(0,((gray-128)*1.8)+128)); d.data[i]=d.data[i+1]=d.data[i+2]=boosted; }
+      ctx.putImageData(d,0,0); URL.revokeObjectURL(url);
+      c.toBlob(blob=>resolve(new File([blob],'scan.jpg',{type:'image/jpeg'})),'image/jpeg',0.95);
+    };
+    img.src = url;
+  });
 
-  const onLogin = u => {
-    setUser(u);
-    if (u.feature === "invoice") setView("invoice");
-    else if (u.role === "manager") setView("dashboard");
-    else setView("count");
+  const decodeWithQuagga = (dataUrl) => new Promise((resolve, reject) => {
+    import('@ericblade/quagga2').then(({ default: Quagga }) => {
+      Quagga.decodeSingle({ decoder: { readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader'], multiple: false }, locate: true, src: dataUrl }, (result) => { if (result?.codeResult?.code) resolve(result.codeResult.code); else reject(new Error('not found')); });
+    }).catch(reject);
+  });
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setScanError(''); setScanning(true);
+    try {
+      for (const deg of [0,180,90,270]) {
+        try { const processed = await preprocessImage(file,deg); const dataUrl = await new Promise(res=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.readAsDataURL(processed);}); const code = await decodeWithQuagga(dataUrl); onScan(code); setScanning(false); return; } catch (_) {}
+      }
+      setScanError('ไม่พบบาร์โค้ด — ลองถ่ายให้ชัด');
+    } catch (err) { setScanError('เกิดข้อผิดพลาด: ' + err.message); }
+    setScanning(false);
   };
-  const onLogout = () => { setUser(null); setView("count"); setEntries([]); };
-
-  const addEntry = e => setEntries(p => [e, ...p]);
-  const deleteEntry = id => setEntries(p => p.filter(e => e.id !== id));
-  const onSubmit = sub => setSubmissions(p => [sub, ...p]);
-  const onReview = (id, status, note) => setSubmissions(p =>
-    p.map(s => s.id === id ? { ...s, status, reviewNote: note, reviewedAt: new Date().toISOString(), reviewedBy: user.name } : s)
-  );
-
-  if (!user) return <Login onLogin={onLogin} />;
-
-  const isManager = user.role === "manager";
-  const feat = user.feature || "stock_compare";
-  const pendingCount = submissions.filter(s => s.status === "pending").length;
-
-  // nav tabs per feature
-  const NAV_BY_FEATURE = {
-    stock_compare: isManager
-      ? [{ id:"dashboard",label:"แดชบอร์ด",icon:"🏠"},{id:"inbox",label:"รีวิว",icon:"📬"},{id:"compare",label:"เปรียบเทียบ",icon:"⚖️"}]
-      : [{id:"count",label:"นับสต็อก",icon:"📦"},{id:"review",label:"ตรวจสอบ",icon:"📋"},{id:"my_subs",label:"ที่ส่งแล้ว",icon:"📤"}],
-    stock_only: isManager
-      ? [{id:"dashboard",label:"แดชบอร์ด",icon:"🏠"},{id:"inbox",label:"รีวิว",icon:"📬"}]
-      : [{id:"count",label:"นับสต็อก",icon:"📦"},{id:"review",label:"ตรวจสอบ",icon:"📋"},{id:"my_subs",label:"ที่ส่งแล้ว",icon:"📤"}],
-    invoice: [{id:"invoice",label:"สแกนบิล",icon:"🧾"}],
-  };
-
-  const navBase = NAV_BY_FEATURE[feat] || NAV_BY_FEATURE.stock_compare;
-  const nav = navBase.map(item => ({
-    ...item,
-    badge: item.id === "inbox" ? pendingCount : item.id === "review" ? entries.length : 0,
-  }));
-
-  const ACCENT_BY_FEATURE = { stock_compare: "#4f6ef7", stock_only: "#22c55e", invoice: "#a855f7" };
-  const accentCol = ACCENT_BY_FEATURE[feat] || C.accent;
-  const featureLabel = FEATURES.find(f => f.id === feat)?.label || "";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
-      {/* Header */}
-      <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg, ${accentCol}, ${accentCol}99)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>📦</div>
-          <div>
-            <div style={{ fontWeight: 900, fontSize: 15, letterSpacing: "-0.02em" }}>KUUHOO</div>
-            <div style={{ color: C.muted, fontSize: 9 }}>{isManager ? "👔" : "👷"} {user.name} · <span style={{ color: accentCol }}>{featureLabel}</span></div>
-          </div>
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto">
+        <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white z-10">
+          <h3 className="font-semibold">สแกนบาร์โค้ด</h3><button onClick={onClose}><X size={20}/></button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Badge color="accent">Demo</Badge>
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>ออก</button>
+        <div className="flex border-b border-slate-200 sticky top-[57px] bg-white z-10">
+          {[{id:'camera',label:'กล้อง',icon:Camera},{id:'upload',label:'อัพโหลด',icon:ImageIcon},{id:'manual',label:'พิมพ์',icon:Edit3}].map(t=>{const Icon=t.icon;return(<button key={t.id} onClick={()=>{setScanError('');setTab(t.id);}} className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${tab===t.id?'text-emerald-600 border-b-2 border-emerald-600':'text-slate-500'}`}><Icon size={16}/>{t.label}</button>);})}
         </div>
+        {tab==='camera'&&<div className="p-2"><div id="__qr_reader__" className="w-full rounded-lg overflow-hidden"/>{scanError&&<div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>}<p className="text-center text-xs text-slate-400 mt-2">จ่อบาร์โค้ดให้อยู่ในกรอบ</p></div>}
+        {tab==='upload'&&<div className="p-4 space-y-3"><button onClick={()=>fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl p-8 flex flex-col items-center gap-2"><div className="bg-emerald-100 p-3 rounded-full"><Upload className="text-emerald-600" size={24}/></div><div className="text-sm font-medium text-slate-700">{scanning?'กำลังอ่าน...':'เลือกรูปบาร์โค้ด'}</div></button>{scanError&&<div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>}<input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden"/></div>}
+        {tab==='manual'&&<div className="p-4 space-y-3"><input type="text" value={manualBarcode} onChange={e=>setManualBarcode(e.target.value)} placeholder="พิมพ์รหัสสินค้า..." className="w-full px-3 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono" autoFocus/><button onClick={()=>manualBarcode&&onScan(manualBarcode)} disabled={!manualBarcode} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium">ใช้รหัสนี้</button>{products.length>0&&<div><div className="text-xs text-slate-500 mb-2">ตัวอย่าง:</div><div className="grid grid-cols-2 gap-2">{products.slice(0,4).map(p=><button key={p.id} onClick={()=>onScan(p.id)} className="text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs"><div className="font-medium text-slate-700 truncate">{p.name}</div><div className="text-slate-500 font-mono">{p.id}</div></button>)}</div></div>}</div>}
       </div>
-
-      {/* Content */}
-      <div style={{ padding: "16px", paddingBottom: nav.length > 0 ? 80 : 16, maxWidth: 560, margin: "0 auto" }}>
-        {!isManager && view === "count"     && <CountView    user={user} entries={entries} onAdd={addEntry} onDelete={deleteEntry} onNext={() => setView("review")} />}
-        {!isManager && view === "review"    && <ReviewView   user={user} entries={entries} onSubmit={onSubmit} onBack={() => setView("count")} />}
-        {!isManager && view === "my_subs"   && <MySubsView   submissions={submissions.filter(s => s.counter === user.name)} />}
-        {isManager  && view === "dashboard" && <DashboardView submissions={submissions} setView={setView} />}
-        {isManager  && view === "inbox"     && <InboxView    submissions={submissions} onReview={onReview} />}
-        {isManager  && view === "compare"   && <CompareView  submissions={submissions} />}
-        {isManager  && view === "invoice"   && <InvoiceDemoView />}
-        {/* invoice for counter if ever needed */}
-        {!isManager && view === "invoice"   && <InvoiceDemoView />}
-      </div>
-
-      {/* Bottom Nav */}
-      {nav.length > 0 && (
-        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.surface, borderTop: `1px solid ${C.border}`, display: "flex" }}>
-          {nav.map(item => {
-            const active = view === item.id;
-            return (
-              <button key={item.id} onClick={() => setView(item.id)}
-                style={{ flex: 1, padding: "10px 4px 12px", background: "none", border: "none", borderTop: `2px solid ${active ? accentCol : "transparent"}`, color: active ? accentCol : C.muted, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative" }}>
-                <span style={{ fontSize: 18 }}>{item.icon}</span>
-                <span style={{ fontSize: 10, fontWeight: 700 }}>{item.label}</span>
-                {item.badge > 0 && (
-                  <span style={{ position: "absolute", top: 6, left: "55%", background: C.red, color: "#fff", fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 99 }}>{item.badge}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

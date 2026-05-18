@@ -1667,6 +1667,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
           <div style={{ fontWeight:600, fontSize:15, color:'#374151' }}>ตรวจสอบข้อมูลใบกำกับ</div>
           {doneInvs.map((inv,gi)=>{
             const d=inv.data, vs=vatSummary(d.products||[]);
+            const upd = (patch) => updateData(gi, {...d, ...patch});
+            const updP = (pi, patch) => { const prods=[...d.products]; prods[pi]=recalc({...prods[pi],...patch,_pt:d.price_type??'incl'}); updateData(gi,{...d,products:prods}); };
             return (
               <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden' }}>
                 <div style={{ background:'#f8fafc', padding:'10px 14px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -1674,26 +1676,67 @@ function InvoiceScannerModule({ supabaseConfig }) {
                   <button onClick={()=>reprocessInvoice(gi)} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, background:'#e0e7ff', color:'#4f46e5', border:'none', cursor:'pointer' }}>อ่านใหม่</button>
                 </div>
                 <div style={{ padding:14 }}>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, fontSize:12 }}>
-                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type']].map(([label,key])=>(
-                      <div key={key}><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>updateData(gi,{...d,[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
-                    ))}
+                  {/* Header fields */}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:6, marginBottom:10, fontSize:12 }}>
+                    <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ชื่อร้าน / บริษัท</div><input value={d.vendor_name??''} onChange={e=>upd({vendor_name:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
                   </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:10, fontSize:12 }}>
+                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type'],['สาขา','vendor_branch'],['รหัสผู้ขาย (vendor_no)','vendor_no']].map(([label,key])=>(
+                      <div key={key}><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>upd({[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
+                    ))}
+                    <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ราคา</div>
+                      <select value={d.price_type??'incl'} onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12 }}>
+                        <option value="incl">รวม VAT แล้ว (incl)</option>
+                        <option value="excl">ยังไม่รวม VAT (excl)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom:10, fontSize:12 }}>
+                    <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ที่อยู่</div>
+                    <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, resize:'vertical', boxSizing:'border-box' }}/>
+                  </div>
+                  {/* Product table */}
                   <div style={{ overflowX:'auto' }}>
-                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse' }}>
-                      <thead><tr style={{ background:'#f8fafc' }}>{['#','สินค้า','จำนวน','ราคา/หน่วย','ยอด','VAT','บาร์โค้ด'].map(h=><th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>)}</tr></thead>
+                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse', minWidth:900 }}>
+                      <thead>
+                        <tr style={{ background:'#f8fafc' }}>
+                          {['#','สินค้า','ขนาดลัง','ลัง','ชิ้น','รวม','ราคา/หน่วย','ยอดตามใบ','ส่วนลด','ยอดสุทธิ','VAT','บาร์โค้ด'].map(h=>(
+                            <th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
                       <tbody>
                         {(d.products||[]).map((p,pi)=>{
                           const bc=p.barcode??barcodeMap[String(p.description||'').trim()]??null;
+                          const inp = (field, w=50, type='number') => (
+                            <input type={type} value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value===''?null:e.target.value})}
+                              style={{ width:w, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/>
+                          );
                           return (
                             <tr key={pi} style={{ borderTop:'1px solid #f1f5f9' }}>
                               <td style={{ padding:'4px 8px', color:'#9ca3af' }}>{p.no??pi+1}</td>
-                              <td style={{ padding:'4px 8px', maxWidth:200 }}><input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}} style={{ width:'100%', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
-                              <td style={{ padding:'4px 8px' }}><input type="number" value={p.qty??''} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],qty:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} style={{ width:60, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/></td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontSize:11, color:'#059669' }}>{p.price_ea!=null?Number(p.price_ea).toLocaleString():'-'}</span></td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontSize:11, fontWeight:600, color:'#374151' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
-                              <td style={{ padding:'4px 8px' }}><select value={p.vat??'v'} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],vat:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} style={{ fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}><option value="v">7%</option><option value="0">0%</option></select></td>
-                              <td style={{ padding:'4px 8px' }}><input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}} style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#065f46' }}/></td>
+                              <td style={{ padding:'4px 8px', minWidth:160 }}>
+                                <input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}}
+                                  style={{ width:'100%', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/>
+                              </td>
+                              <td style={{ padding:'4px 8px' }}>{inp('carton_size',50)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inp('carton',45)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inp('ea',45)}</td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#374151' }}>{p.qty??'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}>{inp('price_ea',70)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inp('amount',70)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inp('special_discount',60)}</td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#059669' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}>
+                                <select value={p.vat??'v'} onChange={e=>updP(pi,{vat:e.target.value})}
+                                  style={{ fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}>
+                                  <option value="v">7%</option><option value="0">0%</option>
+                                </select>
+                              </td>
+                              <td style={{ padding:'4px 8px' }}>
+                                <input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}}
+                                  style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#065f46' }}/>
+                              </td>
                             </tr>
                           );
                         })}

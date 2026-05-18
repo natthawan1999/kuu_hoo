@@ -326,7 +326,11 @@ export default function CombinedApp() {
   const [view, setView] = useState('count');
   const [loaded, setLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price' });
+  const [supabaseConfig, setSupabaseConfig] = useState({
+    url:       import.meta.env.VITE_SUPABASE_URL      || '',
+    anonKey:   import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+    tableName: import.meta.env.VITE_SUPABASE_TABLE    || 'product_price',
+  });
   const [dataSource, setDataSource] = useState('none');
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('unknown');
@@ -346,7 +350,11 @@ export default function CombinedApp() {
       await tryLoad('countEntries', setCountEntries);
       await tryLoad('submissions', setSubmissions);
       await tryLoad('lastSyncAt', setLastSyncAt, false);
-      let cfg = { url: '', anonKey: '', tableName: 'product_price' };
+      let cfg = {
+        url:       import.meta.env.VITE_SUPABASE_URL      || '',
+        anonKey:   import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+        tableName: import.meta.env.VITE_SUPABASE_TABLE    || 'product_price',
+      };
       try { const r = await storage.get('supabaseConfig'); if (r?.value) { cfg = JSON.parse(r.value); setSupabaseConfig(cfg); } } catch {}
       let src = 'none';
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
@@ -452,7 +460,8 @@ export default function CombinedApp() {
 
   // ── Nav items based on feature ──────────────────────────────────────────────
   const counterNavItems = feat === 'invoice' ? [
-    { id: 'invoice', label: 'สแกนบิล', icon: Receipt },
+    { id: 'invoice',         label: 'สแกนบิล', icon: Receipt },
+    { id: 'invoice_history', label: 'ประวัติ',  icon: Clock },
   ] : [
     { id: 'count',          label: 'นับสต็อก', icon: ScanLine },
     { id: 'review',         label: 'ตรวจสอบ',  icon: ClipboardCheck, badge: myEntries.length },
@@ -460,8 +469,9 @@ export default function CombinedApp() {
   ];
 
   const managerNavItems = feat === 'invoice' ? [
-    { id: 'invoice',  label: 'สแกนบิล', icon: Receipt },
-    { id: 'settings', label: 'ตั้งค่า',   icon: SettingsIcon },
+    { id: 'invoice',         label: 'สแกนบิล', icon: Receipt },
+    { id: 'invoice_history', label: 'ประวัติ',  icon: Clock },
+    { id: 'settings',        label: 'ตั้งค่า',   icon: SettingsIcon },
   ] : feat === 'stock_compare' ? [
     { id: 'dashboard', label: 'แดชบอร์ด',   icon: Home },
     { id: 'inbox',     label: 'รีวิว',        icon: Inbox, badge: pendingCount },
@@ -495,10 +505,12 @@ export default function CombinedApp() {
         {!isManager && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
         {!isManager && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
         {!isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {!isManager && view === 'invoice_history' && <InvoiceHistoryView supabaseConfig={supabaseConfig} />}
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
         {isManager && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {isManager && view === 'invoice_history' && <InvoiceHistoryView supabaseConfig={supabaseConfig} />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onUseSeed={useSeedData} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
@@ -1796,6 +1808,197 @@ function ScannerModal({ products, onScan, onClose }) {
         {tab==='upload'&&<div className="p-4 space-y-3"><button onClick={()=>fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl p-8 flex flex-col items-center gap-2"><div className="bg-emerald-100 p-3 rounded-full"><Upload className="text-emerald-600" size={24}/></div><div className="text-sm font-medium text-slate-700">{scanning?'กำลังอ่าน...':'เลือกรูปบาร์โค้ด'}</div></button>{scanError&&<div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>}<input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden"/></div>}
         {tab==='manual'&&<div className="p-4 space-y-3"><input type="text" value={manualBarcode} onChange={e=>setManualBarcode(e.target.value)} placeholder="พิมพ์รหัสสินค้า..." className="w-full px-3 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono" autoFocus/><button onClick={()=>manualBarcode&&onScan(manualBarcode)} disabled={!manualBarcode} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium">ใช้รหัสนี้</button>{products.length>0&&<div><div className="text-xs text-slate-500 mb-2">ตัวอย่าง:</div><div className="grid grid-cols-2 gap-2">{products.slice(0,4).map(p=><button key={p.id} onClick={()=>onScan(p.id)} className="text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs"><div className="font-medium text-slate-700 truncate">{p.name}</div><div className="text-slate-500 font-mono">{p.id}</div></button>)}</div></div>}</div>}
       </div>
+    </div>
+  );
+}
+
+// ─── INVOICE HISTORY VIEW ─────────────────────────────────────────────────────
+function InvoiceHistoryView({ supabaseConfig }) {
+  const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [details, setDetails] = useState([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE = 30;
+
+  const fetchHistory = async () => {
+    if (!sbUrl || !sbKey) return;
+    setLoading(true); setError('');
+    try {
+      const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
+      const qs = `select=invoice_no,invoice_date,vendor_name,vendor_tax_id,document_type,total_amount,net_total,vat_amount,file_name&order=invoice_date.desc,invoice_no.desc&limit=200`;
+      const r = await fetch(`${sbUrl}/rest/v1/bill_header?${qs}`, { headers: h });
+      if (!r.ok) throw new Error(`Supabase ${r.status}`);
+      setRows(await r.json());
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+
+  const fetchDetail = async (inv) => {
+    setSelected(inv); setDetails([]); setLoadingDetail(true);
+    try {
+      const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
+      const invNo = encodeURIComponent(inv.invoice_no);
+      const r = await fetch(`${sbUrl}/rest/v1/imp_data?invoice_no=eq.${invNo}&select=no,description,qty,price_ea,amount,total,excl_vat,vat_amt,vat,barcode&order=no.asc`, { headers: h });
+      if (!r.ok) throw new Error(`Supabase ${r.status}`);
+      setDetails(await r.json());
+    } catch {}
+    setLoadingDetail(false);
+  };
+
+  useEffect(() => { fetchHistory(); }, [sbUrl, sbKey]);
+
+  const filtered = rows.filter(r =>
+    !search ||
+    (r.invoice_no||'').toLowerCase().includes(search.toLowerCase()) ||
+    (r.vendor_name||'').toLowerCase().includes(search.toLowerCase()) ||
+    (r.file_name||'').toLowerCase().includes(search.toLowerCase())
+  );
+  const paged = filtered.slice(page * PAGE, (page + 1) * PAGE);
+  const totalPages = Math.ceil(filtered.length / PAGE);
+
+  const docTypeLabel = (t) => ({ invoice:'ใบกำกับ', receipt:'ใบเสร็จ', credit_note:'ใบลดหนี้', debit_note:'ใบเพิ่มหนี้', quotation:'ใบเสนอราคา' }[t] || t || '—');
+  const docTypeColor = (t) => ({ invoice:'bg-indigo-100 text-indigo-700', receipt:'bg-green-100 text-green-700', credit_note:'bg-red-100 text-red-700', debit_note:'bg-orange-100 text-orange-700', quotation:'bg-slate-100 text-slate-600' }[t] || 'bg-slate-100 text-slate-500');
+
+  if (!sbUrl || !sbKey) return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold text-slate-800">ประวัติใบกำกับ</h2>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-sm"><AlertCircle className="inline mr-2" size={16}/>ยังไม่ได้ตั้งค่า Supabase</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">ประวัติใบกำกับ</h2>
+          <p className="text-sm text-slate-500">{filtered.length} รายการ จาก bill_header</p>
+        </div>
+        <button onClick={fetchHistory} disabled={loading} className="flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm text-slate-600 disabled:opacity-50">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>รีเฟรช
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+        <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="ค้นหาเลขที่, ชื่อผู้จำหน่าย, ชื่อไฟล์..." className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm"/>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-800 text-sm">{error}</div>}
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/></div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400">
+          <Receipt className="mx-auto mb-2" size={40}/>
+          <div>ไม่พบรายการ</div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['เลขที่','วันที่','ผู้จำหน่าย','ประเภท','ยอดรวม','VAT','ชื่อไฟล์'].map(h =>
+                    <th key={h} className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paged.map((r, i) => (
+                  <tr key={i} onClick={() => fetchDetail(r)} className="hover:bg-indigo-50 cursor-pointer transition-colors">
+                    <td className="px-3 py-2 font-mono font-semibold text-indigo-700">{r.invoice_no||'—'}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.invoice_date||'—'}</td>
+                    <td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{r.vendor_name||'—'}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${docTypeColor(r.document_type)}`}>{docTypeLabel(r.document_type)}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-700">{r.net_total!=null ? Number(r.net_total).toLocaleString() : '—'}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{r.vat_amount!=null ? Number(r.vat_amount).toLocaleString() : '—'}</td>
+                    <td className="px-3 py-2 text-slate-400 font-mono">{r.file_name||'—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+              <span>หน้า {page+1} / {totalPages}</span>
+              <div className="flex gap-2">
+                <button disabled={page===0} onClick={()=>setPage(p=>p-1)} className="px-3 py-1.5 border border-slate-300 rounded disabled:opacity-40 hover:bg-slate-50">← ก่อน</button>
+                <button disabled={page===totalPages-1} onClick={()=>setPage(p=>p+1)} className="px-3 py-1.5 border border-slate-300 rounded disabled:opacity-40 hover:bg-slate-50">ถัดไป →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Detail modal */}
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white">
+              <div>
+                <div className="font-bold text-indigo-700 font-mono">{selected.invoice_no}</div>
+                <div className="text-xs text-slate-500">{selected.vendor_name} • {selected.invoice_date}</div>
+              </div>
+              <button onClick={()=>setSelected(null)}><X size={20}/></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                {[
+                  ['ยอดสุทธิ', selected.net_total!=null?`฿${Number(selected.net_total).toLocaleString()}`:'—', 'text-slate-700'],
+                  ['VAT', selected.vat_amount!=null?`฿${Number(selected.vat_amount).toLocaleString()}`:'—', 'text-slate-500'],
+                  ['ประเภท', docTypeLabel(selected.document_type), 'text-indigo-600'],
+                ].map(([k,v,c]) => (
+                  <div key={k} className="bg-slate-50 rounded-lg p-2.5">
+                    <div className="text-slate-400 mb-1">{k}</div>
+                    <div className={`font-bold ${c}`}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Products table */}
+              {loadingDetail ? (
+                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/></div>
+              ) : details.length > 0 ? (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50"><tr>
+                      {['#','สินค้า','บาร์โค้ด','จำนวน','ราคา/หน่วย','ยอด','VAT'].map(h=>
+                        <th key={h} className="px-2 py-2 text-left font-semibold text-slate-500">{h}</th>
+                      )}
+                    </tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {details.map((d,i) => (
+                        <tr key={i}>
+                          <td className="px-2 py-1.5 text-slate-400">{d.no||i+1}</td>
+                          <td className="px-2 py-1.5 max-w-[160px] truncate text-slate-800">{d.description||'—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-emerald-700">{d.barcode||'—'}</td>
+                          <td className="px-2 py-1.5 text-center font-semibold">{d.qty??'—'}</td>
+                          <td className="px-2 py-1.5 text-right">{d.price_ea!=null?Number(d.price_ea).toLocaleString():'—'}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-slate-700">{d.total!=null?Number(d.total).toLocaleString():'—'}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${d.vat==='v'?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-500'}`}>{d.vat==='v'?'7%':'0%'}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-sm text-slate-400">ไม่พบรายการสินค้า</div>
+              )}
+              <button onClick={()=>setSelected(null)} className="w-full py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl text-sm font-medium text-slate-700">ปิด</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

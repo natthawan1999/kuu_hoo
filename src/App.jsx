@@ -915,7 +915,7 @@ function ManagerInboxView({ submissions, onReview, onDelete }) {
 
   return (
     <div className="space-y-4">
-      <div><h2 className="text-2xl font-bold text-slate-800">รีวิวผลการนับ</h2><p className="text-sm text-slate-500">ตรวจสอบและอนุมัติ / ส่งกลับ</p></div>
+      <div><h2 className="text-2xl font-bold text-slate-800">รีวิว Recorder</h2><p className="text-sm text-slate-500">ตรวจสอบและอนุมัติ / ส่งกลับ</p></div>
       <div className="flex border-b border-slate-200">
         {['pending','approved','rejected'].map(t => { const cnt = submissions.filter(s=>s.status===t).length; return <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-2.5 text-sm font-medium ${tab===t?'text-indigo-600 border-b-2 border-indigo-600':'text-slate-500'}`}>{statusConfig[t].label}{cnt>0&&<span className={`ml-1 text-xs font-bold ${statusConfig[t].color}`}>({cnt})</span>}</button>; })}
       </div>
@@ -954,7 +954,7 @@ function ManagerInboxView({ submissions, onReview, onDelete }) {
       {selected&&(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิวผลการนับ</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิว Recorder</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
             <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-2"><div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-emerald-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-emerald-600">{selected.totalQty.toLocaleString()}</div></div></div>
               {selected.note&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800"><strong>หมายเหตุ:</strong> {selected.note}</div>}
@@ -1025,8 +1025,9 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         set({ loadProgress: `[1/3] ยอดปัจจุบัน ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
-        const colCode = encodeURIComponent('รหัสสินค้า');
-        const colSel = encodeURIComponent('รหัสสินค้า') + ',' + encodeURIComponent('ชื่อสินค้า') + ',' + encodeURIComponent('หน่วย') + ',' + encodeURIComponent('รวม');
+        const qc = col => encodeURIComponent(`"${col}"`);
+        const colCode = qc('รหัสสินค้า');
+        const colSel = ['รหัสสินค้า','ชื่อสินค้า','หน่วย','รวม'].map(qc).join(',');
         const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}`);
         stockRows = stockRows.concat(rows);
       }
@@ -1043,10 +1044,10 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
-        const colSinc = encodeURIComponent('สินค้า');
-        const colDate = encodeURIComponent('วันที่');
-        const colTime = encodeURIComponent('เวลา');
-        const colQty  = encodeURIComponent('จำนวน');
+        const colSinc = qc('สินค้า');
+        const colDate = qc('วันที่');
+        const colTime = qc('เวลา');
+        const colQty  = qc('จำนวน');
         const qs = `${colSinc}=in.(${inList})&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=${colSinc},${colDate},${colTime},${colQty}`;
         const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
         rows.forEach(r => {

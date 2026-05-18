@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-
 import {
   Package, Search, ScanLine, Plus, Minus, Download, Home, List, X, Check,
   Camera, AlertCircle, Trash2, Edit3, Save, Image as ImageIcon, Upload, User,
@@ -17,12 +16,6 @@ const MODELS = [
   { id: "claude-sonnet-4-6",  label: "Sonnet 4.6 ✦" },
   { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
 ];
-const FEATURES = [
-  { id: 'stock_only',    label: 'นับสต็อก',                desc: 'นับสินค้าและส่งให้ผู้จัดการอนุมัติ',             icon: '📦' },
-  { id: 'stock_compare', label: 'นับสต็อก + Compare Stock', desc: 'นับสินค้าพร้อมเปรียบเทียบกับยอด Supabase',    icon: '📊' },
-  { id: 'invoice',       label: 'Invoice Scanner (AI)',      desc: 'สแกนใบกำกับภาษีด้วย AI แล้วบันทึกลง Supabase', icon: '🧾' },
-];
-
 const INVOICE_PROMPT = `ตอบด้วย JSON เท่านั้น ห้ามพิมพ์ข้อความอื่นใดก่อนหรือหลัง JSON ห้าม backtick ห้าม markdown
 สกัดข้อมูลจากใบกำกับภาษี/ใบส่งของที่อัปโหลดมา และตอบเป็น JSON ตามโครงสร้างนี้:
 {
@@ -318,7 +311,6 @@ async function generateDocNo() {
   return `RC-${dateStr}${String(seq).padStart(4,'0')}`;
 }
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function CombinedApp() {
   const [products, setProducts] = useState([]);
   const [countEntries, setCountEntries] = useState([]);
@@ -326,11 +318,7 @@ export default function CombinedApp() {
   const [view, setView] = useState('count');
   const [loaded, setLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [supabaseConfig, setSupabaseConfig] = useState({
-    url:       import.meta.env.VITE_SUPABASE_URL      || '',
-    anonKey:   import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-    tableName: import.meta.env.VITE_SUPABASE_TABLE    || 'product_price',
-  });
+  const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price' });
   const [dataSource, setDataSource] = useState('none');
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('unknown');
@@ -350,17 +338,13 @@ export default function CombinedApp() {
       await tryLoad('countEntries', setCountEntries);
       await tryLoad('submissions', setSubmissions);
       await tryLoad('lastSyncAt', setLastSyncAt, false);
-      let cfg = {
-        url:       import.meta.env.VITE_SUPABASE_URL      || '',
-        anonKey:   import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-        tableName: import.meta.env.VITE_SUPABASE_TABLE    || 'product_price',
-      };
+      let cfg = { url: '', anonKey: '', tableName: 'product_price' };
       try { const r = await storage.get('supabaseConfig'); if (r?.value) { cfg = JSON.parse(r.value); setSupabaseConfig(cfg); } } catch {}
       let src = 'none';
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
       if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
       setDataSource(src);
-      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); const defaultView = user.role === 'manager' ? (user.feature === 'invoice' ? 'invoice' : 'dashboard') : (user.feature === 'invoice' ? 'invoice' : 'count'); setView(defaultView); } } catch {}
+      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); } } catch {}
       setLoaded(true);
     })();
   }, []);
@@ -368,14 +352,7 @@ export default function CombinedApp() {
   useDebouncedStorage('countEntries', countEntries, loaded);
   useDebouncedStorage('submissions', submissions, loaded);
 
-  const handleLogin = (user) => {
-    const defaultView = user.role === 'manager'
-      ? (user.feature === 'invoice' ? 'invoice' : 'dashboard')
-      : (user.feature === 'invoice' ? 'invoice' : 'count');
-    setCurrentUser(user);
-    setView(defaultView);
-    storage.set('currentUser', JSON.stringify(user)).catch(() => {});
-  };
+  const handleLogin = (user) => { setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
 
   const checkBarcode = async (barcode) => {
@@ -453,36 +430,22 @@ export default function CombinedApp() {
   if (!currentUser) return <AccessGate><LoginScreen onLogin={handleLogin} /></AccessGate>;
 
   const isManager = currentUser.role === 'manager';
-  const feat = currentUser.feature || 'stock_only';
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
   const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
   const pendingCount = submissions.filter(s => s.status === 'pending').length;
 
-  // ── Nav items based on feature ──────────────────────────────────────────────
-  const counterNavItems = feat === 'invoice' ? [
-    { id: 'invoice',         label: 'สแกนบิล', icon: Receipt },
-    { id: 'invoice_history', label: 'ประวัติ',  icon: Clock },
-  ] : [
+  const counterNavItems = [
     { id: 'count',          label: 'นับสต็อก', icon: ScanLine },
     { id: 'review',         label: 'ตรวจสอบ',  icon: ClipboardCheck, badge: myEntries.length },
     { id: 'my_submissions', label: 'ที่ส่งแล้ว', icon: Send },
   ];
-
-  const managerNavItems = feat === 'invoice' ? [
-    { id: 'invoice',         label: 'สแกนบิล', icon: Receipt },
-    { id: 'invoice_history', label: 'ประวัติ',  icon: Clock },
-    { id: 'settings',        label: 'ตั้งค่า',   icon: SettingsIcon },
-  ] : feat === 'stock_compare' ? [
-    { id: 'dashboard', label: 'แดชบอร์ด',   icon: Home },
-    { id: 'inbox',     label: 'รีวิว',        icon: Inbox, badge: pendingCount },
-    { id: 'compare',   label: 'เปรียบเทียบ', icon: ArrowLeftRight },
-    { id: 'settings',  label: 'ตั้งค่า',       icon: SettingsIcon },
-  ] : [
-    { id: 'dashboard', label: 'แดชบอร์ด', icon: Home },
-    { id: 'inbox',     label: 'รีวิว',      icon: Inbox, badge: pendingCount },
-    { id: 'settings',  label: 'ตั้งค่า',     icon: SettingsIcon },
+  const managerNavItems = [
+    { id: 'dashboard', label: 'แดชบอร์ด',    icon: Home },
+    { id: 'inbox',     label: 'รีวิว',         icon: Inbox, badge: pendingCount },
+    { id: 'compare',   label: 'เปรียบเทียบ',  icon: ArrowLeftRight },
+    { id: 'invoice',   label: 'สแกนบิล',      icon: Receipt },
+    { id: 'settings',  label: 'ตั้งค่า',        icon: SettingsIcon },
   ];
-
   const navItems = isManager ? managerNavItems : counterNavItems;
 
   return (
@@ -504,13 +467,10 @@ export default function CombinedApp() {
         {!isManager && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
         {!isManager && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
         {!isManager && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
-        {!isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
-        {!isManager && view === 'invoice_history' && <InvoiceHistoryView supabaseConfig={supabaseConfig} />}
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
         {isManager && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
-        {isManager && view === 'invoice_history' && <InvoiceHistoryView supabaseConfig={supabaseConfig} />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onUseSeed={useSeedData} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
@@ -533,9 +493,8 @@ export default function CombinedApp() {
   );
 }
 
-// ─── AUTH ─────────────────────────────────────────────────────────────────────
 function AccessGate({ children }) {
-  const [authed, setAuthed] = React.useState(() => sessionStorage.getItem('__auth__') === '1');
+  const [authed, setAuthed] = React.useState(() => { try { return sessionStorage.getItem('__auth__') === '1'; } catch { return false; } });
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -544,7 +503,7 @@ function AccessGate({ children }) {
     try {
       const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       const data = await r.json();
-      if (data.ok) { sessionStorage.setItem('__auth__', '1'); setAuthed(true); }
+      if (data.ok) { try { sessionStorage.setItem('__auth__', '1'); } catch {} setAuthed(true); }
       else setError(data.msg || 'รหัสไม่ถูกต้อง');
     } catch { setError('เกิดข้อผิดพลาด'); }
     setLoading(false);
@@ -563,114 +522,35 @@ function AccessGate({ children }) {
 }
 
 function LoginScreen({ onLogin }) {
-  const [role, setRole] = useState(null);
-  const [feature, setFeature] = useState(null);
-  const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  // step 1=role, 2=feature, 3=name+pin
-  const step = !role ? 1 : !feature ? 2 : 3;
-
+  const [name, setName] = useState(''); const [role, setRole] = useState(null); const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
   const handleLogin = async () => {
     if (!name.trim()) return setError('กรุณาใส่ชื่อ');
     if (role === 'manager') {
       setLoading(true);
-      try {
-        const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
-        const d = await r.json();
-        if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; }
-      } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
+      try { const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) }); const d = await r.json(); if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; } } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
       setLoading(false);
     }
     const stableId = `${role}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: name.trim(), role, feature, loginAt: new Date().toISOString() });
+    onLogin({ id: stableId, name: name.trim(), role, loginAt: new Date().toISOString() });
   };
-
-  const accent = role === 'manager' ? 'indigo' : 'emerald';
-  const accentBtn = role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700';
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-        <div className="text-center">
-          <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
-          <h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1>
-          <p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p>
-        </div>
-
-        {/* Step indicator */}
-        <div className="flex items-center gap-1">
-          {[1,2,3].map(s => (
-            <React.Fragment key={s}>
-              <div className={`w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center ${step >= s ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'}`}>{s}</div>
-              {s < 3 && <div className={`flex-1 h-0.5 ${step > s ? 'bg-indigo-600' : 'bg-slate-200'}`}/>}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* Step 1: Role */}
-        {step === 1 && (
+        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div><h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p></div>
+        {!role ? (
           <div className="space-y-3">
             <div className="text-sm font-medium text-slate-700">เลือกบทบาท</div>
-            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div>
-              <div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการ</div></div>
-            </button>
-            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div>
-              <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิว อนุมัติ และจัดการข้อมูล</div></div>
-            </button>
+            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div><div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการอนุมัติ</div></div></button>
+            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div><div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div></button>
           </div>
-        )}
-
-        {/* Step 2: Feature */}
-        {step === 2 && (
+        ) : (
           <div className="space-y-3">
-            <button onClick={() => { setRole(null); setFeature(null); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
-            <div className="text-sm font-medium text-slate-700">เลือกฟีเจอร์</div>
-            {FEATURES.map(f => (
-              <button key={f.id} onClick={() => setFeature(f.id)}
-                className="w-full p-4 border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
-                <div className="text-2xl w-10 text-center">{f.icon}</div>
-                <div>
-                  <div className="font-semibold text-slate-800">{f.label}</div>
-                  <div className="text-xs text-slate-500">{f.desc}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Step 3: Name + PIN */}
-        {step === 3 && (
-          <div className="space-y-3">
-            <button onClick={() => { setFeature(null); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนฟีเจอร์</button>
-            <div className="flex gap-2">
-              <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs text-slate-600">
-                {role === 'manager' ? <Shield size={12} className="text-indigo-600"/> : <User size={12} className="text-emerald-600"/>}
-                {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
-              </div>
-              <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs text-slate-600">
-                <span>{FEATURES.find(f=>f.id===feature)?.icon}</span>
-                <span>{FEATURES.find(f=>f.id===feature)?.label}</span>
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
-              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleLogin()} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/>
-            </div>
-            {role === 'manager' && (
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label>
-                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleLogin()} placeholder="••••" maxLength={6} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/>
-              </div>
-            )}
+            <button onClick={() => { setRole(null); setPin(''); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
+            <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-2">{role === 'manager' ? <Shield className="text-indigo-600" size={20}/> : <User className="text-emerald-600" size={20}/>}<span className="text-sm font-medium text-slate-700">{role === 'manager' ? 'ผู้จัดการ' : 'พนักงานนับสต็อก'}</span></div>
+            <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label><input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/></div>
+            {role === 'manager' && <div><label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label><input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/></div>}
             {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-2">{error}</div>}
-            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${accentBtn}`}>
-              {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
-            </button>
+            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}</button>
           </div>
         )}
       </div>
@@ -678,7 +558,6 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ─── COUNTER VIEWS ────────────────────────────────────────────────────────────
 function EntryRow({ e, deleteEntry, highlight }) {
   return (
     <div className={`flex items-center gap-2 p-3 border-b last:border-0 ${highlight ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100'}`}>
@@ -986,8 +865,6 @@ function ManagerInboxView({ submissions, onReview, onDelete }) {
                 <button onClick={()=>uploadToDrive(s,'excel')} disabled={driveSaving===`${s.id}_excel`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-violet-50 hover:bg-violet-100 disabled:opacity-60 rounded text-violet-700 font-medium">{driveSaving===`${s.id}_excel`?<RefreshCw size={12} className="animate-spin"/>:<FileSpreadsheet size={12}/>}{driveSaving===`${s.id}_excel`?'...':'Excel'}</button>
                 <button onClick={()=>uploadToDrive(s,'csv')} disabled={driveSaving===`${s.id}_csv`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 rounded text-indigo-700 font-medium">{driveSaving===`${s.id}_csv`?<RefreshCw size={12} className="animate-spin"/>:<Download size={12}/>}{driveSaving===`${s.id}_csv`?'...':'CSV'}</button>
                 <PDFDownloadButton sub={s}/>
-                <button onClick={()=>downloadStockExcel(s.data,`${s.docNo||s.id}.xlsx`,s.docNo,s.startedAt||s.submittedAt)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 rounded text-emerald-700 font-medium"><Download size={12}/>Excel↓</button>
-                <button onClick={()=>downloadStockCSV(s.data,`${s.docNo||s.id}.csv`)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><Download size={12}/>CSV↓</button>
                 {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold">รีวิว →</button>}
                 {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-red-600 font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-red-600 text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded" title="ลบ"><Trash2 size={14}/></button>}
               </div>
@@ -1055,7 +932,9 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     set({ selectedSub: sub, loading: true, error: '', compareData: [], driveResult: null, compareAt: now });
     const groupedByBarcode = {};
     sub.data.forEach(d => {
-      if (!groupedByBarcode[d.barcode]) groupedByBarcode[d.barcode] = { barcode: d.barcode, productName: d.productName, unit: d.unit||'', qty: 0, scannedAt: d.scannedAt, locations: [], notFound: !!d.notFound };
+      if (!groupedByBarcode[d.barcode]) {
+        groupedByBarcode[d.barcode] = { barcode: d.barcode, productName: d.productName, unit: d.unit||'', qty: 0, scannedAt: d.scannedAt, locations: [], notFound: !!d.notFound };
+      }
       const g = groupedByBarcode[d.barcode];
       g.qty += d.qty;
       if (d.scannedAt && (!g.scannedAt || d.scannedAt < g.scannedAt)) g.scannedAt = d.scannedAt;
@@ -1067,6 +946,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     const minScannedAt = groupedData.reduce((min, d) => d.scannedAt && d.scannedAt < min ? d.scannedAt : min, submittedAt);
     const table = tableName || 'product_stock';
     const batchSize = 50;
+
     try {
       let stockRows = [];
       for (let i = 0; i < codes.length; i += batchSize) {
@@ -1079,7 +959,11 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         stockRows = stockRows.concat(rows);
       }
       const sbMap = {};
-      stockRows.forEach(r => { const code = String(r['รหัสสินค้า']||''); sbMap[code] = { name: String(r['ชื่อสินค้า']||''), unit: String(r['หน่วย']||'ชิ้น'), currentStock: parseInt(String(r['รวม']||'0').replace(/[^\d-]/g,''))||0 }; });
+      stockRows.forEach(r => {
+        const code = String(r['รหัสสินค้า']||'');
+        sbMap[code] = { name: String(r['ชื่อสินค้า']||''), unit: String(r['หน่วย']||'ชิ้น'), currentStock: parseInt(String(r['รวม']||'0').replace(/[^\d-]/g,''))||0 };
+      });
+
       const saleMap = {};
       const startDate = minScannedAt.slice(0, 10);
       const endDate = submittedAt.slice(0, 10);
@@ -1087,7 +971,11 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
-        const qs = `${encodeURIComponent('สินค้า')}=in.(${inList})&${encodeURIComponent('วันที่')}=gte.${startDate}&${encodeURIComponent('วันที่')}=lte.${endDate}&select=${encodeURIComponent('สินค้า')},${encodeURIComponent('วันที่')},${encodeURIComponent('เวลา')},${encodeURIComponent('จำนวน')}`;
+        const colSinc = encodeURIComponent('สินค้า');
+        const colDate = encodeURIComponent('วันที่');
+        const colTime = encodeURIComponent('เวลา');
+        const colQty  = encodeURIComponent('จำนวน');
+        const qs = `${colSinc}=in.(${inList})&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=${colSinc},${colDate},${colTime},${colQty}`;
         const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
         rows.forEach(r => {
           const code = String(r['สินค้า']||'');
@@ -1096,27 +984,37 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           const saleTime = new Date(`${rawDate}T${rawTime.slice(0,8)}`);
           const item = groupedData.find(d => d.barcode === code);
           const scannedAt = new Date(item?.scannedAt || minScannedAt);
-          if (saleTime >= scannedAt && saleTime <= new Date(submittedAt)) saleMap[code] = (saleMap[code]||0) + (parseFloat(r['จำนวน'])||0);
+          if (saleTime >= scannedAt && saleTime <= new Date(submittedAt)) {
+            saleMap[code] = (saleMap[code]||0) + (parseFloat(r['จำนวน'])||0);
+          }
         });
       }
+
       const receiveMap = {};
       for (let i = 0; i < codes.length; i += batchSize) {
         set({ loadProgress: `[3/3] ยอดรับสินค้าระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
-        const qs = `barcode=in.(${inList})&created_at=gte.${encodeURIComponent(minScannedAt)}&created_at=lte.${encodeURIComponent(submittedAt)}&select=barcode,qty,created_at`;
+        const isoStart = encodeURIComponent(minScannedAt);
+        const isoEnd   = encodeURIComponent(submittedAt);
+        const qs = `barcode=in.(${inList})&created_at=gte.${isoStart}&created_at=lte.${isoEnd}&select=barcode,qty,created_at`;
         const rows = await sbFetch(sbUrl, sbKey, 'imp_data', qs);
         rows.forEach(r => {
           const code = String(r.barcode||'');
           const recvTime = new Date(r.created_at);
           const item = groupedData.find(d => d.barcode === code);
           const scannedAt = new Date(item?.scannedAt || minScannedAt);
-          if (recvTime >= scannedAt && recvTime <= new Date(submittedAt)) receiveMap[code] = (receiveMap[code]||0) + (parseFloat(r.qty)||0);
+          if (recvTime >= scannedAt && recvTime <= new Date(submittedAt)) {
+            receiveMap[code] = (receiveMap[code]||0) + (parseFloat(r.qty)||0);
+          }
         });
       }
+
       const compared = groupedData.map(d => {
         const sb = sbMap[d.barcode]||null;
-        const counted = d.qty, sale = Math.round(saleMap[d.barcode]||0), purchase = Math.round(receiveMap[d.barcode]||0);
+        const counted = d.qty;
+        const sale = Math.round(saleMap[d.barcode]||0);
+        const purchase = Math.round(receiveMap[d.barcode]||0);
         const stockAtSubmit = sb ? sb.currentStock : null;
         const adjustedCount = counted - sale + purchase;
         const adjustStock = stockAtSubmit !== null ? adjustedCount - stockAtSubmit : null;
@@ -1129,24 +1027,29 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
 
   const buildSimpleCSV = () => compareData.map(d => `${d.barcode},${d.adjustStock??''}`).join('\n');
   const buildFullCSV = () => {
-    const info = selectedSub ? [`# Counter: ${selectedSub.counter}`,`# time_submit: ${new Date(selectedSub.submittedAt).toLocaleString('th-TH')}`,`# compare_at: ${compareState.compareAt?new Date(compareState.compareAt).toLocaleString('th-TH'):'-'}`].join('\n') : '';
+    const info = selectedSub ? [`# Counter: ${selectedSub.counter}`, `# time_submit: ${new Date(selectedSub.submittedAt).toLocaleString('th-TH')}`, `# compare_at: ${compareState.compareAt?new Date(compareState.compareAt).toLocaleString('th-TH'):'-'}`].join('\n') : '';
     const header = 'รหัสสินค้า,ชื่อสินค้า,หน่วย,location,นับได้,ขายระหว่างนับ,รับระหว่างนับ,Adjusted_count,stock_at_submit,Adjust_stock,พบในระบบ';
     const rows = compareData.map(d => `${d.barcode},"${d.productName}",${d.unit},"${(d.locations||[]).join('|')}",${d.counted},${d.sale},${d.purchase},${d.adjustedCount},${d.stockAtSubmit??'N/A'},${d.adjustStock??'N/A'},${d.found?'Y':'N'}`);
     return (info?info+'\n':'')+header+'\n'+rows.join('\n');
   };
   const getFilename = (ext='csv') => { const date = new Date().toISOString().slice(0,10); const counter = selectedSub?selectedSub.counter.replace(/[^a-zA-Z0-9ก-๙]/g,'_'):'compare'; return `compare_${counter}_${date}.${ext}`; };
+
   const downloadCompareCSV = () => downloadBlob(new Blob(['﻿'+buildFullCSV()],{type:'text/csv;charset=utf-8'}), getFilename('csv'));
   const downloadCompareExcel = () => {
     const rows = [['รหัสสินค้า','ชื่อสินค้า','หน่วย','location','นับได้(count)','ขายระหว่างนับ','รับระหว่างนับ','Adjusted_count','stock_at_submit','Adjust_stock','พบในระบบ'], ...compareData.map(d=>[d.barcode,d.productName,d.unit,(d.locations||[]).join('|'),d.counted,d.sale,d.purchase,d.adjustedCount,d.stockAtSubmit??'N/A',d.adjustStock??'N/A',d.found?'Y':'N'])];
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [{wch:18},{wch:28},{wch:8},{wch:14},{wch:10},{wch:12},{wch:12},{wch:14},{wch:14},{wch:12},{wch:8}];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Compare');
-    downloadBlob(new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), getFilename('xlsx'));
+    const buf = XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), getFilename('xlsx'));
   };
+
   const saveToDrive = async () => {
     set({ driveSaving: true, driveResult: null });
     try {
-      const response = await fetch('/api/drive-upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename: getFilename('txt'), mimeType:'text/csv', content: buildSimpleCSV(), isBase64: false }) });
+      const content = buildSimpleCSV();
+      const filename = getFilename('txt');
+      const response = await fetch('/api/drive-upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType:'text/csv', content, isBase64: false }) });
       const data = await response.json();
       if (!data.ok) throw new Error(data.error||'Drive error');
       set({ driveResult: { ok: true, link: data.link } });
@@ -1155,8 +1058,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   };
 
   if (!sbUrl || !sbKey) return (
-    <div className="space-y-4"><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><AlertCircle className="text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยังไม่ได้ตั้งค่า Supabase</div></div>
+    <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2></div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><AlertCircle className="text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยังไม่ได้ตั้งค่า Supabase</div><p className="text-sm text-amber-800 mt-1">ไปที่ ตั้งค่า เพื่อใส่ URL และ Anon Key ก่อน</p></div>
     </div>
   );
 
@@ -1165,10 +1068,11 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       <div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2><p className="text-sm text-slate-500">เปรียบเทียบยอดนับกับ Supabase ผ่าน REST API</p></div>
       {approvedSubs.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><ArrowLeftRight className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500">ยังไม่มีรายการที่อนุมัติแล้ว</div></div> : (
         <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+          <div className="text-sm font-semibold text-slate-700 mb-2">เลือก submission ที่จะเปรียบเทียบ:</div>
           {approvedSubs.map(s => (
             <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-indigo-400 bg-indigo-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'} disabled:opacity-50`}>
-              <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-indigo-700">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
-              <div className="text-xs text-slate-500 mt-0.5">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})} • {s.itemCount} รายการ</div>
+              <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
+              <div className="text-xs text-slate-500 mt-0.5">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})} • {s.itemCount} รายการ • {s.totalQty.toLocaleString()} ชิ้น</div>
             </button>
           ))}
         </div>
@@ -1180,7 +1084,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           <div className="flex flex-wrap gap-2">
             <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
             <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>
-            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive</button>
+            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive (รหัส,ผลต่าง)</button>
             {driveResult?.ok && <span className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12}/>อัพโหลดแล้ว{driveResult.link&&<a href={driveResult.link} target="_blank" rel="noopener noreferrer" className="underline ml-1">เปิด</a>}</span>}
             {driveResult?.err && <span className="text-xs text-red-600">Error: {driveResult.err}</span>}
           </div>
@@ -1192,11 +1096,24 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200"><tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr></thead>
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr>
+                </thead>
                 <tbody className="divide-y divide-slate-100">
                   {compareData.map((d,i) => {
                     const adjColor = d.adjustStock===null?'text-slate-400':d.adjustStock===0?'text-emerald-600':d.adjustStock>0?'text-blue-600':'text-red-600';
-                    return <tr key={i} className={d.notFound?'bg-amber-50/30':''}><td className="px-3 py-2 font-mono text-slate-700">{d.barcode}</td><td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{d.productName}</td><td className="px-3 py-2 font-semibold text-slate-800">{d.counted}</td><td className="px-3 py-2 text-orange-600">{d.sale}</td><td className="px-3 py-2 text-blue-600">{d.purchase}</td><td className="px-3 py-2 font-semibold">{d.adjustedCount}</td><td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-amber-500">N/A</span>}</td><td className={`px-3 py-2 font-bold ${adjColor}`}>{d.adjustStock!==null?d.adjustStock:<span className="text-slate-400">N/A</span>}</td></tr>;
+                    return (
+                      <tr key={i} className={d.notFound?'bg-amber-50/30':''}>
+                        <td className="px-3 py-2 font-mono text-slate-700">{d.barcode}</td>
+                        <td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{d.productName}{d.locations?.length>0&&<div className="text-[10px] text-slate-400">{d.locations.join(', ')}</div>}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-800">{d.counted}</td>
+                        <td className="px-3 py-2 text-orange-600">{d.sale}</td>
+                        <td className="px-3 py-2 text-blue-600">{d.purchase}</td>
+                        <td className="px-3 py-2 font-semibold">{d.adjustedCount}</td>
+                        <td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-amber-500">N/A</span>}</td>
+                        <td className={`px-3 py-2 font-bold ${adjColor}`}>{d.adjustStock!==null?d.adjustStock:<span className="text-slate-400">N/A</span>}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -1209,16 +1126,20 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
 }
 
 function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource, lastSyncAt, productCount }) {
-  const [url, setUrl] = useState(config.url||''); const [anonKey, setAnonKey] = useState(config.anonKey||''); const [tableName, setTableName] = useState(config.tableName||'product_price');
-  const [showKey, setShowKey] = useState(false); const [testing, setTesting] = useState(false); const [testResult, setTestResult] = useState(null); const [saveMsg, setSaveMsg] = useState('');
+  const [url, setUrl] = useState(config.url||'');
+  const [anonKey, setAnonKey] = useState(config.anonKey||'');
+  const [tableName, setTableName] = useState(config.tableName||'product_price');
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false); const [testResult, setTestResult] = useState(null);
+  const [saveMsg, setSaveMsg] = useState('');
   const cfg = { url: url.trim(), anonKey: anonKey.trim(), tableName: tableName.trim()||'product_price' };
   const handleSave = async () => { await onSave(cfg); setSaveMsg('บันทึกแล้ว'); setTimeout(()=>setSaveMsg(''), 2000); };
   const handleTest = async () => { setTesting(true); setTestResult(null); try { await handleSave(); const count = await onTestConnection(cfg); setTestResult({ok:true,msg:`เชื่อมต่อสำเร็จ! มี ${count.toLocaleString()} แถว ใน ${cfg.tableName}`}); } catch(e) { setTestResult({ok:false,msg:e.message}); } setTesting(false); };
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2>
+      <div><h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2></div>
       <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-emerald-50 border-emerald-200':'bg-slate-50 border-slate-200'}`}>
-        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (ข้อมูลจริง)':dataSource==='seed'?'ข้อมูลตัวอย่าง':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache</div></div></div>
+        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (ข้อมูลจริง)':dataSource==='seed'?'ข้อมูลตัวอย่าง':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
         <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
@@ -1236,7 +1157,6 @@ function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource,
   );
 }
 
-// ─── INVOICE SCANNER ──────────────────────────────────────────────────────────
 function StepBar({ current }) {
   return (
     <div className="flex items-center justify-between mb-6">
@@ -1296,12 +1216,14 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const [driveErr, setDErr] = useState(null);
   const [sbSt, setSbSt] = useState(null);
   const [sbErr, setSbErr] = useState(null);
+  const [selectedPages, setSelPages] = useState({});
   const [gReady, setGReady] = useState(false);
   const [gToken, setGToken] = useState(null);
   const [gClientId, setGClientId] = useState(() => safeGet('g_client',''));
   const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', DRIVE_FOLDER_DEFAULT));
   const [showInvCfg, setShowInvCfg] = useState(false);
   const [nameStatus, setNameStatus] = useState(null);
+
   const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
 
   useEffect(() => {
@@ -1370,11 +1292,13 @@ function InvoiceScannerModule({ supabaseConfig }) {
 
   const makeGroup = (files) => ({ files, pagesData:files.map(()=>null), pageStatus:files.map(()=>'pending'), status:'pending', data:null, error:null });
   const addFiles = fs => { const arr=Array.from(fs); setInvoices(prev=>[...prev,makeGroup(arr)]); };
-  const removeInv = i => { setInvoices(prev=>prev.filter((_,j)=>j!==i)); };
+
+  const removeInv = i => { setInvoices(prev=>prev.filter((_,j)=>j!==i)); setSelPages(prev=>{const n={...prev};delete n[i];return n;}); };
   const updateData = (i, data) => setInvoices(prev => { const n=[...prev]; n[i]={...n[i],data}; return n; });
   const reprocessInvoice = async (gi) => { await readPages(gi, invoices[gi].files, invoices[gi].files.map((_,i)=>i)); };
+
   const processAll = async () => {
-    setInvoices(prev=>prev.map(g=>({...g,status:'processing',pageStatus:g.pageStatus.map(s=>s==='pending'?'processing':s)})));
+    setInvoices(prev=>prev.map(g=>({...g,status:g.pageStatus.some(s=>s==='pending')?'processing':g.status,pageStatus:g.pageStatus.map(s=>s==='pending'?'processing':s)})));
     await Promise.all(invoices.map(async (inv,gi) => { const pending=inv.pagesData.map((d,i)=>d===null?i:-1).filter(i=>i>=0); if(pending.length===0)return; await readPages(gi,inv.files,pending); }));
     setStep(2);
   };
@@ -1382,8 +1306,13 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const mkPFileId = () => Math.random().toString(36).slice(2,10);
   const buildMap = (results) => { const map={}; results.forEach(r=>{if(r.match&&r.barcode)map[String(r.match).trim()]=r.barcode;}); return map; };
   const applyBarcodeMap = (newMap) => {
-    const normMap={}; Object.entries(newMap).forEach(([k,v])=>{if(k&&v)normMap[String(k).trim()]=v;});
-    setInvoices(prev=>prev.map(inv=>{if(!inv.data)return inv;const products=(inv.data.products||[]).map(p=>{const desc=String(p.description||'').trim();if(normMap[desc])return{...p,barcode:normMap[desc]};return p;});return{...inv,data:{...inv.data,products}};}));
+    const normMap={};
+    Object.entries(newMap).forEach(([k,v])=>{if(k&&v)normMap[String(k).trim()]=v;});
+    setInvoices(prev=>prev.map(inv=>{
+      if(!inv.data)return inv;
+      const products=(inv.data.products||[]).map(p=>{const desc=String(p.description||'').trim();if(normMap[desc])return{...p,barcode:normMap[desc]};return p;});
+      return{...inv,data:{...inv.data,products}};
+    }));
     setBMap(normMap);
   };
 
@@ -1422,15 +1351,16 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const rescanSelectedPFiles = async () => { const items=productFiles.filter(it=>selPFileIds.has(it.id)); setSelPFIds(new Set()); await scanProductItems(items); };
 
   const buildXLSXBlob = () => {
-    const X = XLSX, wb = X.utils.book_new();
+    if (!XLSX) return null;
+    const wb = XLSX.utils.book_new();
     const done = invoices.filter(i=>i.status==='done'&&i.data);
     const str = v => v!=null?{t:'s',v:String(v).trim()}:null;
-    const ws1 = X.utils.aoa_to_sheet([
+    const ws1 = XLSX.utils.aoa_to_sheet([
       ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','total_amount','net_total','excl_vat','vat_amount','vendor_branch','vendor_no','price_type'],
       ...done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[str(d.invoice_no),d.invoice_date??null,d.vendor_name??null,str(d.vendor_tax_id),d.document_type??null,d.vendor_address??null,+rawAmt.toFixed(2)||null,vs.netTotal,vs.excl,vs.vatAmt,str(d.vendor_branch),str(d.vendor_no),d.price_type??'incl'];})
     ]);
-    X.utils.book_append_sheet(wb, ws1, 'bill_header');
-    const ws2 = X.utils.aoa_to_sheet([
+    XLSX.utils.book_append_sheet(wb, ws1, 'bill_header');
+    const ws2 = XLSX.utils.aoa_to_sheet([
       ['invoice_no','no','description','qty','price_ea','amount','special_discount','total','excl_vat','vat_amt','vat','barcode'],
       ...done.flatMap(inv=>(inv.data.products||[]).map(p=>{
         const qty=p.qty!=null?+p.qty:null,pea=p.price_ea!=null?+p.price_ea:null,am=p.amount!=null?+p.amount:null,sd=p.special_discount!=null?+p.special_discount:0;
@@ -1441,8 +1371,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
         return[str(inv.data.invoice_no),p.no??null,p.description??null,qty,pea,am,sd||null,tot,exclV,vatAmtV,p.vat??null,str(p.barcode??barcodeMap[String(p.description||'').trim()]??null)];
       }))
     ]);
-    X.utils.book_append_sheet(wb, ws2, 'invoice');
-    const buf = X.write(wb, {type:'array',bookType:'xlsx'});
+    XLSX.utils.book_append_sheet(wb, ws2, 'invoice');
+    const buf = XLSX.write(wb, {type:'array',bookType:'xlsx'});
     return new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   };
 
@@ -1450,7 +1380,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
     const done = invoices.filter(i=>i.status==='done'&&i.data);
     const rows=[];
     for (const inv of done) { for (const p of (inv.data.products||[])) { const qty=p.qty!=null?+p.qty:0,pea=p.price_ea!=null?+p.price_ea:null,sd=p.special_discount!=null?+p.special_discount:0; const tot=(qty>0&&pea!=null)?+(qty*pea-sd).toFixed(2):null; const totPerQty=(tot!=null&&qty>0)?+(tot/qty).toFixed(4):0; const barcode=p.barcode??barcodeMap[String(p.description||'').trim()]??''; rows.push([barcode,qty,totPerQty,0]); } }
-    return new Blob(['﻿'+rows.map(r=>r.join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const csv=rows.map(r=>r.join(',')).join('\r\n');
+    return new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   };
 
   const buildBillHeaderCSV = () => {
@@ -1471,7 +1402,7 @@ function InvoiceScannerModule({ supabaseConfig }) {
   };
 
   const saveToSupabase = async () => {
-    if (!sbUrl || !sbKey) { setSbErr('ยังไม่ได้ตั้งค่า Supabase'); setSbSt('error'); return; }
+    if (!sbUrl || !sbKey) { setSbErr('ยังไม่ได้ตั้งค่า Supabase — ไปที่ ตั้งค่า ก่อน'); setSbSt('error'); return; }
     setSbSt('saving'); setSbErr(null);
     const fn = fileName||null;
     const h = { apikey:sbKey, Authorization:`Bearer ${sbKey}`, 'Content-Type':'application/json' };
@@ -1496,6 +1427,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
       setSbSt('done');
     } catch(e) { setSbErr(e.message); setSbSt('error'); }
   };
+
+  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setDSt(null);setDUrl(null);setDErr(null);setSbSt(null);setSbErr(null);setSelPages({}); };
 
   useEffect(() => {
     if (step===4&&!fileName&&sbUrl&&sbKey) {
@@ -1527,56 +1460,60 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const allProds = doneInvs.flatMap(inv=>inv.data.products.map(p=>({...p,invoice_no:inv.data.invoice_no,_pt:inv.data.price_type??'incl'})));
   const grandTotal = allProds.reduce((s,p)=>s+(+p.amount||0),0);
   const allVs = vatSummary(allProds);
-  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setDSt(null);setDUrl(null);setDErr(null);setSbSt(null);setSbErr(null); };
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0 }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-slate-800">สแกนใบกำกับภาษี</h2>
-        <div className="flex gap-2 items-center flex-wrap">
-          <select value={model} onChange={e=>setModel(e.target.value)} className="text-xs px-2 py-1 border border-slate-300 rounded-lg bg-white text-slate-600">
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
+        <h2 style={{ fontWeight:700, fontSize:20, color:'#1e293b', margin:0 }}>สแกนใบกำกับภาษี</h2>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:6, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
-          <button onClick={()=>setShowInvCfg(!showInvCfg)} className="text-xs px-3 py-1 border border-slate-300 rounded-lg hover:bg-slate-50">⚙ ตั้งค่า</button>
-          {step>1&&<button onClick={reset} className="text-xs px-3 py-1 border border-red-200 bg-red-50 text-red-600 rounded-lg">↺ ใหม่</button>}
+          <button onClick={()=>setShowInvCfg(!showInvCfg)} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, border:'1px solid #cbd5e1', background:'#f8fafc', cursor:'pointer' }}>⚙ ตั้งค่า</button>
+          {step>1&&<button onClick={reset} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, border:'1px solid #fca5a5', background:'#fef2f2', color:'#dc2626', cursor:'pointer' }}>↺ ใหม่</button>}
         </div>
       </div>
 
       {showInvCfg&&(
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
-          <div className="font-semibold text-slate-800">ตั้งค่า Google Drive</div>
-          <div><label className="text-xs text-slate-500 block mb-1">Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs"/></div>
-          <div><label className="text-xs text-slate-500 block mb-1">Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs"/></div>
-          <button onClick={()=>setShowInvCfg(false)} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm">บันทึก</button>
+        <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:16, marginBottom:16 }}>
+          <div style={{ fontWeight:600, marginBottom:10 }}>ตั้งค่า Google Drive</div>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:6, background:'#0f172a', color:'#fff', border:'none', cursor:'pointer' }}>บันทึก</button>
         </div>
       )}
 
       <StepBar current={step}/>
 
       {step===1&&(
-        <div className="space-y-4">
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <DropZone multiple accept="image/*,.pdf" onFiles={addFiles}>
-            <div className="text-4xl mb-2">📄</div>
-            <div className="font-semibold text-slate-700 mb-1">ลากหรือคลิกเพื่ออัปโหลดใบกำกับภาษี</div>
-            <div className="text-xs text-slate-400">รองรับ JPG, PNG, PDF (หลายไฟล์)</div>
+            <div style={{ fontSize:32, marginBottom:8 }}>📄</div>
+            <div style={{ fontWeight:600, color:'#374151', marginBottom:4 }}>ลากหรือคลิกเพื่ออัปโหลดใบกำกับภาษี</div>
+            <div style={{ fontSize:12, color:'#9ca3af' }}>รองรับ JPG, PNG, PDF (หลายไฟล์)</div>
           </DropZone>
           {invoices.length>0&&(
             <div>
               {invoices.map((inv,gi)=>(
-                <div key={gi} className="bg-white border border-slate-200 rounded-xl p-3 mb-3">
-                  <div className="flex justify-between items-center mb-2"><span className="font-semibold text-slate-700 text-sm">กลุ่ม {gi+1} • {inv.files.length} หน้า</span><button onClick={()=>removeInv(gi)} className="text-red-500 text-sm">✕ ลบ</button></div>
-                  <div className="flex gap-2 flex-wrap">
+                <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12, marginBottom:10 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                    <div style={{ fontWeight:600, fontSize:13, color:'#374151' }}>กลุ่ม {gi+1} • {inv.files.length} หน้า</div>
+                    <button onClick={()=>removeInv(gi)} style={{ color:'#ef4444', background:'none', border:'none', cursor:'pointer', fontSize:12 }}>✕ ลบ</button>
+                  </div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                     {inv.files.map((f,pi)=>(
-                      <div key={pi} className="relative">
+                      <div key={pi} style={{ position:'relative' }}>
                         <InvFileThumb file={f}/>
-                        <div className="absolute bottom-1 right-1 text-[9px] bg-black/60 text-white rounded px-1">{inv.pageStatus[pi]==='processing'?'⏳':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':'⋯'}</div>
+                        <div style={{ position:'absolute', bottom:2, right:2, fontSize:9, background:'rgba(0,0,0,0.6)', color:'#fff', borderRadius:3, padding:'1px 4px' }}>
+                          {inv.pageStatus[pi]==='processing'?'⏳':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':'⋯'}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
-              <button onClick={processAll} disabled={processing} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl flex items-center justify-center gap-2">
+              <button onClick={processAll} disabled={processing} style={{ width:'100%', padding:'12px', borderRadius:8, background:processing?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:14, border:'none', cursor:processing?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                 {processing?<><Spinner size={18}/>กำลังประมวลผล...</>:<>🤖 ประมวลผลทุกใบ ({invoices.length} กลุ่ม)</>}
               </button>
             </div>
@@ -1585,160 +1522,163 @@ function InvoiceScannerModule({ supabaseConfig }) {
       )}
 
       {step===2&&(
-        <div className="space-y-4">
-          <div className="font-semibold text-slate-700">สแกนรูปสินค้าเพื่อดึงบาร์โค้ด</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ fontWeight:600, fontSize:15, color:'#374151' }}>สแกนรูปสินค้าเพื่อดึงบาร์โค้ด</div>
           <DropZone multiple accept="image/*" onFiles={addProductFiles}>
-            <div className="text-3xl mb-2">📷</div>
-            <div className="font-semibold text-slate-700 text-sm">ลากรูปสินค้าที่มีบาร์โค้ด</div>
-            <div className="text-xs text-slate-400">Claude จะอ่านบาร์โค้ดจากรูปและจับคู่กับรายการสินค้า</div>
+            <div style={{ fontSize:28, marginBottom:6 }}>📷</div>
+            <div style={{ fontWeight:600, color:'#374151', fontSize:13 }}>ลากรูปสินค้าที่มีบาร์โค้ด</div>
+            <div style={{ fontSize:11, color:'#9ca3af' }}>Claude จะอ่านบาร์โค้ดจากรูปและจับคู่กับรายการสินค้า</div>
           </DropZone>
           {productFiles.length>0&&(
-            <div className="bg-white border border-slate-200 rounded-xl p-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-slate-700 text-sm">รูปสินค้า ({productFiles.length})</span>
-                {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg">{scanning?'สแกน...':'Re-scan ที่เลือก'}</button>}
+            <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#374151' }}>รูปสินค้า ({productFiles.length} ไฟล์)</div>
+                {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 10px', borderRadius:6, background:'#4f46e5', color:'#fff', border:'none', cursor:'pointer' }}>{scanning?'กำลังสแกน...':'Re-scan ที่เลือก'}</button>}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 {productFiles.map(it=>(
-                  <div key={it.id} className="relative cursor-pointer" onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
+                  <div key={it.id} style={{ position:'relative', cursor:'pointer' }} onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
                     <InvFileThumb file={it.file}/>
-                    <div className={`absolute top-1 right-1 text-[9px] text-white rounded px-1 ${it.status==='done'?'bg-emerald-500':it.status==='error'?'bg-red-500':it.status==='processing'?'bg-amber-500':'bg-slate-500'}`}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
-                    {selPFileIds.has(it.id)&&<div className="absolute inset-0 border-2 border-indigo-600 rounded-lg bg-indigo-600/10"/>}
+                    <div style={{ position:'absolute', top:2, right:2, fontSize:10, background:it.status==='done'?'#10b981':it.status==='error'?'#ef4444':it.status==='processing'?'#f59e0b':'#6b7280', color:'#fff', borderRadius:3, padding:'1px 4px' }}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
+                    {selPFileIds.has(it.id)&&<div style={{ position:'absolute', inset:0, border:'2px solid #4f46e5', borderRadius:6, background:'rgba(79,70,229,0.1)' }}/>}
                   </div>
                 ))}
               </div>
             </div>
           )}
           {scanResults.length>0&&(
-            <div className="bg-white border border-slate-200 rounded-xl p-3 overflow-x-auto">
-              <div className="font-semibold text-slate-700 text-sm mb-2">ผลการจับคู่บาร์โค้ด ({scanResults.length})</div>
-              <table className="w-full text-xs border-collapse">
-                <thead><tr className="bg-slate-50">{['#','บาร์โค้ด','รูป','จับคู่'].map(h=><th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500">{h}</th>)}</tr></thead>
-                <tbody>
-                  {scanResults.map((r,i)=>(
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-2 py-1 text-slate-400">{i+1}</td>
-                      <td className="px-2 py-1"><input value={r.barcode??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} className="w-32 font-mono text-xs border border-slate-200 rounded px-1 py-0.5 text-emerald-700"/></td>
-                      <td className="px-2 py-1"><input value={r.description_image??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}} className="w-44 text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
-                      <td className="px-2 py-1">
-                        <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} className="w-44 text-xs border border-slate-200 rounded px-1 py-0.5">
-                          <option value="">— เลือก —</option>
-                          {doneInvs.flatMap(inv=>inv.data.products).map((p,idx)=><option key={idx} value={p.description}>{(p.description||'').slice(0,40)}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'#374151', marginBottom:8 }}>ผลการจับคู่บาร์โค้ด ({scanResults.length} รายการ)</div>
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse' }}>
+                  <thead><tr style={{ background:'#f8fafc' }}>{['#','บาร์โค้ด','รูป (description_image)','จับคู่กับ'].map(h=><th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {scanResults.map((r,i)=>(
+                      <tr key={i} style={{ borderTop:'1px solid #f1f5f9' }}>
+                        <td style={{ padding:'5px 8px', color:'#9ca3af' }}>{i+1}</td>
+                        <td style={{ padding:'4px 8px' }}><input value={r.barcode??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:130, fontFamily:'monospace', fontSize:11, color:'#065f46', border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
+                        <td style={{ padding:'4px 8px' }}><input value={r.description_image??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}} style={{ width:180, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
+                        <td style={{ padding:'4px 8px' }}>
+                          <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:180, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}>
+                            <option value="">— เลือก —</option>
+                            {doneInvs.flatMap(inv=>inv.data.products).map((p,idx)=><option key={idx} value={p.description}>{(p.description||'').slice(0,40)}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
-          <button onClick={()=>setStep(3)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">ตรวจสอบข้อมูล →</button>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={()=>setStep(3)} style={{ flex:1, padding:'12px', borderRadius:8, background:'#4f46e5', color:'#fff', fontWeight:700, fontSize:14, border:'none', cursor:'pointer' }}>ตรวจสอบข้อมูล →</button>
+          </div>
         </div>
       )}
 
       {step===3&&(
-        <div className="space-y-4">
-          <div className="font-semibold text-slate-700">ตรวจสอบข้อมูลใบกำกับ</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ fontWeight:600, fontSize:15, color:'#374151' }}>ตรวจสอบข้อมูลใบกำกับ</div>
           {doneInvs.map((inv,gi)=>{
             const d=inv.data, vs=vatSummary(d.products||[]);
             return (
-              <div key={gi} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
-                  <span className="font-bold text-slate-700 text-sm">ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</span>
-                  <button onClick={()=>reprocessInvoice(gi)} className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded">อ่านใหม่</button>
+              <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden' }}>
+                <div style={{ background:'#f8fafc', padding:'10px 14px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:'#374151' }}>ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</div>
+                  <button onClick={()=>reprocessInvoice(gi)} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, background:'#e0e7ff', color:'#4f46e5', border:'none', cursor:'pointer' }}>อ่านใหม่</button>
                 </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                    {[['เลขที่','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภท','document_type']].map(([label,key])=>(
-                      <div key={key}><div className="text-slate-400 mb-1">{label}</div><input value={d[key]??''} onChange={e=>updateData(gi,{...d,[key]:e.target.value||null})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs"/></div>
+                <div style={{ padding:14 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, fontSize:12 }}>
+                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type']].map(([label,key])=>(
+                      <div key={key}><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>updateData(gi,{...d,[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
                     ))}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse">
-                      <thead><tr className="bg-slate-50">{['#','สินค้า','จำนวน','ราคา/หน่วย','ยอด','VAT','บาร์โค้ด'].map(h=><th key={h} className="px-2 py-1.5 text-left font-semibold text-slate-500">{h}</th>)}</tr></thead>
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse' }}>
+                      <thead><tr style={{ background:'#f8fafc' }}>{['#','สินค้า','จำนวน','ราคา/หน่วย','ยอด','VAT','บาร์โค้ด'].map(h=><th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {(d.products||[]).map((p,pi)=>{
                           const bc=p.barcode??barcodeMap[String(p.description||'').trim()]??null;
                           return (
-                            <tr key={pi} className="border-t border-slate-100">
-                              <td className="px-2 py-1 text-slate-400">{p.no??pi+1}</td>
-                              <td className="px-2 py-1 max-w-[180px]"><input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}} className="w-full text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
-                              <td className="px-2 py-1"><input type="number" value={p.qty??''} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],qty:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} className="w-14 text-center text-xs border border-slate-200 rounded px-1 py-0.5"/></td>
-                              <td className="px-2 py-1 text-emerald-700 font-medium">{p.price_ea!=null?Number(p.price_ea).toLocaleString():'-'}</td>
-                              <td className="px-2 py-1 font-semibold text-slate-700">{p.total!=null?Number(p.total).toLocaleString():'-'}</td>
-                              <td className="px-2 py-1"><select value={p.vat??'v'} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],vat:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} className="text-xs border border-slate-200 rounded px-1 py-0.5"><option value="v">7%</option><option value="0">0%</option></select></td>
-                              <td className="px-2 py-1"><input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}} className="w-32 font-mono text-xs border border-slate-200 rounded px-1 py-0.5 text-emerald-700"/></td>
+                            <tr key={pi} style={{ borderTop:'1px solid #f1f5f9' }}>
+                              <td style={{ padding:'4px 8px', color:'#9ca3af' }}>{p.no??pi+1}</td>
+                              <td style={{ padding:'4px 8px', maxWidth:200 }}><input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}} style={{ width:'100%', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
+                              <td style={{ padding:'4px 8px' }}><input type="number" value={p.qty??''} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],qty:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} style={{ width:60, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/></td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontSize:11, color:'#059669' }}>{p.price_ea!=null?Number(p.price_ea).toLocaleString():'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontSize:11, fontWeight:600, color:'#374151' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}><select value={p.vat??'v'} onChange={e=>{const prods=[...d.products];prods[pi]=recalc({...prods[pi],vat:e.target.value,_pt:d.price_type??'incl'});updateData(gi,{...d,products:prods});}} style={{ fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}><option value="v">7%</option><option value="0">0%</option></select></td>
+                              <td style={{ padding:'4px 8px' }}><input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}} style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#065f46' }}/></td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="flex justify-end gap-4 mt-2 text-xs text-slate-500">
-                    <span>ยอดสุทธิ: <strong className="text-slate-700">฿{vs.netTotal.toLocaleString()}</strong></span>
-                    <span>VAT: <strong className="text-slate-700">฿{vs.vatAmt.toLocaleString()}</strong></span>
-                    <span>ไม่รวม VAT: <strong className="text-slate-700">฿{vs.excl.toLocaleString()}</strong></span>
+                  <div style={{ display:'flex', justifyContent:'flex-end', gap:16, marginTop:8, fontSize:12, color:'#64748b' }}>
+                    <span>ยอดสุทธิ: <strong style={{ color:'#374151' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
+                    <span>VAT: <strong style={{ color:'#374151' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
+                    <span>ไม่รวม VAT: <strong style={{ color:'#374151' }}>฿{vs.excl.toLocaleString()}</strong></span>
                   </div>
                 </div>
               </div>
             );
           })}
-          <div className="flex gap-2">
-            <button onClick={()=>setStep(2)} className="px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-semibold text-slate-700 text-sm">← กลับ</button>
-            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm">สรุปและบันทึก →</button>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={()=>setStep(2)} style={{ padding:'10px 20px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:13, cursor:'pointer' }}>← กลับ</button>
+            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} style={{ flex:1, padding:'10px', borderRadius:8, background:doneInvs.length===0?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:13, border:'none', cursor:doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
           </div>
         </div>
       )}
 
       {step===4&&(
-        <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <div className="font-bold text-slate-700 mb-3">สรุปภาพรวม</div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:16 }}>
+            <div style={{ fontWeight:700, fontSize:15, color:'#374151', marginBottom:12 }}>สรุปภาพรวม</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, textAlign:'center', marginBottom:16 }}>
               {[['ใบกำกับ',`${doneInvs.length} ใบ`],['สินค้า',`${allProds.length} รายการ`],['ยอดรวม',`฿${grandTotal.toLocaleString()}`]].map(([k,v])=>(
-                <div key={k} className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-400 mb-1">{k}</div><div className="font-bold text-slate-700">{v}</div></div>
+                <div key={k} style={{ background:'#f8fafc', borderRadius:8, padding:'10px' }}><div style={{ fontSize:11, color:'#9ca3af', marginBottom:4 }}>{k}</div><div style={{ fontWeight:700, fontSize:16, color:'#374151' }}>{v}</div></div>
               ))}
             </div>
-            <div className="mb-3">
-              <label className="text-sm font-medium text-slate-700 block mb-1">ชื่อไฟล์</label>
-              <div className="flex gap-2 items-center">
-                <input value={fileName} onChange={e=>setFileName(e.target.value)} placeholder="260517xxxx" className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono ${nameStatus==='duplicate'?'border-red-400':'nameStatus'==='available'?'border-emerald-400':'border-slate-300'}`}/>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:4 }}>ชื่อไฟล์</label>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <input value={fileName} onChange={e=>setFileName(e.target.value)} placeholder="260517xxxx" style={{ flex:1, padding:'8px 12px', border:`1.5px solid ${nameStatus==='duplicate'?'#ef4444':nameStatus==='available'?'#10b981':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontFamily:'monospace' }}/>
                 {nameStatus==='checking'&&<Spinner size={16}/>}
-                {nameStatus==='duplicate'&&<span className="text-red-500 text-xs">ซ้ำ!</span>}
-                {nameStatus==='available'&&<span className="text-emerald-500 text-xs">✓</span>}
+                {nameStatus==='duplicate'&&<span style={{ color:'#ef4444', fontSize:11 }}>ซ้ำ!</span>}
+                {nameStatus==='available'&&<span style={{ color:'#10b981', fontSize:11 }}>✓</span>}
               </div>
             </div>
-            <div className="border-t border-slate-100 pt-3 space-y-3">
-              <div className="font-semibold text-slate-700 text-sm">Google Drive</div>
-              <div className="flex gap-2 flex-wrap">
-                {!gToken ? <button onClick={connectGoogle} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-semibold">🔗 Connect Google Drive</button>
-                : <><button onClick={uploadToDrive} disabled={driveStatus==='uploading'} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold flex items-center gap-2">{driveStatus==='uploading'?<><Spinner size={14}/>กำลังอัปโหลด...</>:'📤 อัปโหลด CSV'}</button><button onClick={disconnectGoogle} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs">ยกเลิก Google</button></>}
+            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
+              <div style={{ fontWeight:600, fontSize:13, color:'#374151', marginBottom:8 }}>อัปโหลดไปยัง Google Drive</div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                {!gToken ? <button onClick={connectGoogle} style={{ padding:'8px 16px', borderRadius:8, background:'#4285f4', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' }}>🔗 Connect Google Drive</button>
+                : <><button onClick={uploadToDrive} disabled={driveStatus==='uploading'} style={{ padding:'8px 16px', borderRadius:8, background:driveStatus==='uploading'?'#9ca3af':'#4285f4', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:driveStatus==='uploading'?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:8 }}>{driveStatus==='uploading'?<><Spinner size={16}/>กำลังอัปโหลด...</>:'📤 อัปโหลด CSV → Drive'}</button><button onClick={disconnectGoogle} style={{ padding:'8px 12px', borderRadius:8, background:'#fee2e2', color:'#dc2626', border:'none', fontSize:12, cursor:'pointer' }}>ยกเลิก Google</button></>}
               </div>
-              {driveStatus==='done'&&driveUrl&&<div className="text-sm text-emerald-600">✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">เปิดใน Drive →</a></div>}
-              {driveStatus==='error'&&driveErr&&<div className="text-sm text-red-600">✗ {driveErr}</div>}
+              {driveStatus==='done'&&driveUrl&&<div style={{ marginTop:8, fontSize:12, color:'#059669' }}>✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" style={{ color:'#4f46e5', textDecoration:'underline' }}>เปิดใน Drive →</a></div>}
+              {driveStatus==='error'&&driveErr&&<div style={{ marginTop:8, fontSize:12, color:'#dc2626' }}>✗ {driveErr}</div>}
             </div>
-            <div className="border-t border-slate-100 pt-3 mt-3 space-y-2">
-              <div className="font-semibold text-slate-700 text-sm">Supabase</div>
-              {!sbUrl||!sbKey ? <div className="text-xs text-amber-600">⚠ ยังไม่ได้ตั้งค่า Supabase</div> : (
-                <div className="flex gap-2 items-center flex-wrap">
-                  <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold flex items-center gap-2">{sbSt==='saving'?<><Spinner size={14}/>บันทึก...</>:'💾 บันทึก Supabase'}</button>
-                  {sbSt==='done'&&<span className="text-emerald-600 text-sm">✓ บันทึกแล้ว!</span>}
-                  {sbSt==='error'&&sbErr&&<span className="text-red-600 text-xs">✗ {sbErr}</span>}
+            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
+              <div style={{ fontWeight:600, fontSize:13, color:'#374151', marginBottom:8 }}>บันทึกลง Supabase</div>
+              {!sbUrl||!sbKey ? <div style={{ fontSize:12, color:'#f59e0b' }}>⚠ ยังไม่ได้ตั้งค่า Supabase — ไปที่ ตั้งค่า ก่อน</div> : (
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                  <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'} style={{ padding:'8px 16px', borderRadius:8, background:sbSt==='saving'||nameStatus==='duplicate'?'#9ca3af':'#0f172a', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:sbSt==='saving'||nameStatus==='duplicate'?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:8 }}>{sbSt==='saving'?<><Spinner size={16}/>กำลังบันทึก...</>:'💾 บันทึก bill_header + imp_data'}</button>
+                  {sbSt==='done'&&<span style={{ fontSize:12, color:'#059669' }}>✓ บันทึกแล้ว!</span>}
+                  {sbSt==='error'&&sbErr&&<span style={{ fontSize:12, color:'#dc2626' }}>✗ {sbErr}</span>}
                 </div>
               )}
             </div>
-            <div className="border-t border-slate-100 pt-3 mt-3">
-              <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">⬇ ดาวน์โหลด Excel</button>
+            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
+              <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}} style={{ padding:'8px 16px', borderRadius:8, background:'#059669', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' }}>⬇ ดาวน์โหลด Excel</button>
             </div>
           </div>
-          <button onClick={()=>setStep(3)} className="w-full py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-semibold text-slate-700 text-sm">← แก้ไขข้อมูล</button>
+          <button onClick={()=>setStep(3)} style={{ padding:'10px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:13, cursor:'pointer' }}>← แก้ไขข้อมูล</button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── SCANNER MODAL ────────────────────────────────────────────────────────────
 function ScannerModal({ products, onScan, onClose }) {
   const [tab, setTab] = useState('camera');
   const [manualBarcode, setManualBarcode] = useState('');
@@ -1746,52 +1686,120 @@ function ScannerModal({ products, onScan, onClose }) {
   const [scanning, setScanning] = useState(false);
   const fileInputRef = useRef(null);
   const html5QrRef = useRef(null);
+  const cameraStarted = useRef(false);
 
   useEffect(() => {
-    if (tab !== 'camera') { if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}); html5QrRef.current = null; } return; }
+    if (tab !== 'camera') {
+      if (html5QrRef.current) {
+        html5QrRef.current.stop().catch(() => {});
+        html5QrRef.current = null;
+        cameraStarted.current = false;
+      }
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
         const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
         if (cancelled) return;
-        html5QrRef.current = new Html5Qrcode('__qr_reader__', { formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
-        await html5QrRef.current.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, (text) => { if (!cancelled) onScan(text); });
-      } catch (e) { if (!cancelled) setScanError('เปิดกล้องไม่ได้: ' + (e.message || e)); }
+        const formatsToSupport = [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.ITF,
+        ];
+        html5QrRef.current = new Html5Qrcode('__qr_reader__', { formatsToSupport, verbose: false });
+        await html5QrRef.current.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          (text) => { if (!cancelled) onScan(text); }
+        );
+        cameraStarted.current = true;
+      } catch (e) {
+        if (!cancelled) setScanError('เปิดกล้องไม่ได้: ' + (e.message || e));
+      }
     })();
-    return () => { cancelled = true; if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}); html5QrRef.current = null; } };
+    return () => {
+      cancelled = true;
+      if (html5QrRef.current) {
+        html5QrRef.current.stop().catch(() => {});
+        html5QrRef.current = null;
+        cameraStarted.current = false;
+      }
+    };
   }, [tab]);
 
   const preprocessImage = (file, deg = 0) => new Promise((resolve) => {
-    const img = new Image(), url = URL.createObjectURL(file);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
     img.onload = () => {
       const sw = deg === 90 || deg === 270;
       const c = document.createElement('canvas');
-      c.width = sw ? img.height : img.width; c.height = sw ? img.width : img.height;
+      c.width  = sw ? img.height : img.width;
+      c.height = sw ? img.width  : img.height;
       const ctx = c.getContext('2d');
-      if (deg !== 0) { ctx.translate(c.width/2,c.height/2); ctx.rotate((deg*Math.PI)/180); ctx.drawImage(img,-img.width/2,-img.height/2); ctx.resetTransform(); } else { ctx.drawImage(img,0,0); }
-      const d = ctx.getImageData(0,0,c.width,c.height);
-      for (let i=0;i<d.data.length;i+=4) { const gray=Math.round(0.299*d.data[i]+0.587*d.data[i+1]+0.114*d.data[i+2]); const boosted=Math.min(255,Math.max(0,((gray-128)*1.8)+128)); d.data[i]=d.data[i+1]=d.data[i+2]=boosted; }
-      ctx.putImageData(d,0,0); URL.revokeObjectURL(url);
-      c.toBlob(blob=>resolve(new File([blob],'scan.jpg',{type:'image/jpeg'})),'image/jpeg',0.95);
+      if (deg !== 0) {
+        ctx.translate(c.width / 2, c.height / 2);
+        ctx.rotate((deg * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        ctx.resetTransform();
+      } else {
+        ctx.drawImage(img, 0, 0);
+      }
+      const d = ctx.getImageData(0, 0, c.width, c.height);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const gray = Math.round(0.299 * d.data[i] + 0.587 * d.data[i+1] + 0.114 * d.data[i+2]);
+        const boosted = Math.min(255, Math.max(0, ((gray - 128) * 1.8) + 128));
+        d.data[i] = d.data[i+1] = d.data[i+2] = boosted;
+      }
+      ctx.putImageData(d, 0, 0);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob => resolve(new File([blob], 'scan.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.95);
     };
     img.src = url;
   });
 
   const decodeWithQuagga = (dataUrl) => new Promise((resolve, reject) => {
     import('@ericblade/quagga2').then(({ default: Quagga }) => {
-      Quagga.decodeSingle({ decoder: { readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader'], multiple: false }, locate: true, src: dataUrl }, (result) => { if (result?.codeResult?.code) resolve(result.codeResult.code); else reject(new Error('not found')); });
+      Quagga.decodeSingle({
+        decoder: {
+          readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader'],
+          multiple: false,
+        },
+        locate: true,
+        src: dataUrl,
+      }, (result) => {
+        if (result?.codeResult?.code) resolve(result.codeResult.code);
+        else reject(new Error('not found'));
+      });
     }).catch(reject);
   });
 
   const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
     setScanError(''); setScanning(true);
     try {
-      for (const deg of [0,180,90,270]) {
-        try { const processed = await preprocessImage(file,deg); const dataUrl = await new Promise(res=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.readAsDataURL(processed);}); const code = await decodeWithQuagga(dataUrl); onScan(code); setScanning(false); return; } catch (_) {}
+      for (const deg of [0, 180, 90, 270]) {
+        try {
+          const processed = await preprocessImage(file, deg);
+          const dataUrl = await new Promise(res => {
+            const fr = new FileReader();
+            fr.onload = e => res(e.target.result);
+            fr.readAsDataURL(processed);
+          });
+          const code = await decodeWithQuagga(dataUrl);
+          onScan(code); setScanning(false); return;
+        } catch (_) {}
       }
-      setScanError('ไม่พบบาร์โค้ด — ลองถ่ายให้ชัด');
-    } catch (err) { setScanError('เกิดข้อผิดพลาด: ' + err.message); }
+      setScanError('ไม่พบบาร์โค้ด — ลองถ่ายให้ชัด บาร์โค้ดอยู่เต็มกรอบ หรือพิมพ์รหัสในแท็บ "พิมพ์"');
+    } catch (err) {
+      setScanError('เกิดข้อผิดพลาด: ' + err.message);
+    }
     setScanning(false);
   };
 
@@ -1799,206 +1807,95 @@ function ScannerModal({ products, onScan, onClose }) {
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white z-10">
-          <h3 className="font-semibold">สแกนบาร์โค้ด</h3><button onClick={onClose}><X size={20}/></button>
+          <h3 className="font-semibold">สแกนบาร์โค้ด</h3>
+          <button onClick={onClose}><X size={20} /></button>
         </div>
         <div className="flex border-b border-slate-200 sticky top-[57px] bg-white z-10">
-          {[{id:'camera',label:'กล้อง',icon:Camera},{id:'upload',label:'อัพโหลด',icon:ImageIcon},{id:'manual',label:'พิมพ์',icon:Edit3}].map(t=>{const Icon=t.icon;return(<button key={t.id} onClick={()=>{setScanError('');setTab(t.id);}} className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${tab===t.id?'text-emerald-600 border-b-2 border-emerald-600':'text-slate-500'}`}><Icon size={16}/>{t.label}</button>);})}
+          {[
+            { id: 'camera', label: 'กล้อง',    icon: Camera    },
+            { id: 'upload', label: 'อัพโหลด',  icon: ImageIcon },
+            { id: 'manual', label: 'พิมพ์',    icon: Edit3     },
+          ].map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setScanError(''); setTab(t.id); }}
+                className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-slate-500'}`}
+              >
+                <Icon size={16} />{t.label}
+              </button>
+            );
+          })}
         </div>
-        {tab==='camera'&&<div className="p-2"><div id="__qr_reader__" className="w-full rounded-lg overflow-hidden"/>{scanError&&<div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>}<p className="text-center text-xs text-slate-400 mt-2">จ่อบาร์โค้ดให้อยู่ในกรอบ</p></div>}
-        {tab==='upload'&&<div className="p-4 space-y-3"><button onClick={()=>fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl p-8 flex flex-col items-center gap-2"><div className="bg-emerald-100 p-3 rounded-full"><Upload className="text-emerald-600" size={24}/></div><div className="text-sm font-medium text-slate-700">{scanning?'กำลังอ่าน...':'เลือกรูปบาร์โค้ด'}</div></button>{scanError&&<div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>}<input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden"/></div>}
-        {tab==='manual'&&<div className="p-4 space-y-3"><input type="text" value={manualBarcode} onChange={e=>setManualBarcode(e.target.value)} placeholder="พิมพ์รหัสสินค้า..." className="w-full px-3 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono" autoFocus/><button onClick={()=>manualBarcode&&onScan(manualBarcode)} disabled={!manualBarcode} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium">ใช้รหัสนี้</button>{products.length>0&&<div><div className="text-xs text-slate-500 mb-2">ตัวอย่าง:</div><div className="grid grid-cols-2 gap-2">{products.slice(0,4).map(p=><button key={p.id} onClick={()=>onScan(p.id)} className="text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs"><div className="font-medium text-slate-700 truncate">{p.name}</div><div className="text-slate-500 font-mono">{p.id}</div></button>)}</div></div>}</div>}
-      </div>
-    </div>
-  );
-}
 
-// ─── INVOICE HISTORY VIEW ─────────────────────────────────────────────────────
-function InvoiceHistoryView({ supabaseConfig }) {
-  const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState(null);
-  const [details, setDetails] = useState([]);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [page, setPage] = useState(0);
-  const PAGE = 30;
-
-  const fetchHistory = async () => {
-    if (!sbUrl || !sbKey) return;
-    setLoading(true); setError('');
-    try {
-      const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
-      const qs = `select=invoice_no,invoice_date,vendor_name,vendor_tax_id,document_type,total_amount,net_total,vat_amount,file_name&order=invoice_date.desc,invoice_no.desc&limit=200`;
-      const r = await fetch(`${sbUrl}/rest/v1/bill_header?${qs}`, { headers: h });
-      if (!r.ok) throw new Error(`Supabase ${r.status}`);
-      setRows(await r.json());
-    } catch (e) { setError(e.message); }
-    setLoading(false);
-  };
-
-  const fetchDetail = async (inv) => {
-    setSelected(inv); setDetails([]); setLoadingDetail(true);
-    try {
-      const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
-      const invNo = encodeURIComponent(inv.invoice_no);
-      const r = await fetch(`${sbUrl}/rest/v1/imp_data?invoice_no=eq.${invNo}&select=no,description,qty,price_ea,amount,total,excl_vat,vat_amt,vat,barcode&order=no.asc`, { headers: h });
-      if (!r.ok) throw new Error(`Supabase ${r.status}`);
-      setDetails(await r.json());
-    } catch {}
-    setLoadingDetail(false);
-  };
-
-  useEffect(() => { fetchHistory(); }, [sbUrl, sbKey]);
-
-  const filtered = rows.filter(r =>
-    !search ||
-    (r.invoice_no||'').toLowerCase().includes(search.toLowerCase()) ||
-    (r.vendor_name||'').toLowerCase().includes(search.toLowerCase()) ||
-    (r.file_name||'').toLowerCase().includes(search.toLowerCase())
-  );
-  const paged = filtered.slice(page * PAGE, (page + 1) * PAGE);
-  const totalPages = Math.ceil(filtered.length / PAGE);
-
-  const docTypeLabel = (t) => ({ invoice:'ใบกำกับ', receipt:'ใบเสร็จ', credit_note:'ใบลดหนี้', debit_note:'ใบเพิ่มหนี้', quotation:'ใบเสนอราคา' }[t] || t || '—');
-  const docTypeColor = (t) => ({ invoice:'bg-indigo-100 text-indigo-700', receipt:'bg-green-100 text-green-700', credit_note:'bg-red-100 text-red-700', debit_note:'bg-orange-100 text-orange-700', quotation:'bg-slate-100 text-slate-600' }[t] || 'bg-slate-100 text-slate-500');
-
-  if (!sbUrl || !sbKey) return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold text-slate-800">ประวัติใบกำกับ</h2>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-sm"><AlertCircle className="inline mr-2" size={16}/>ยังไม่ได้ตั้งค่า Supabase</div>
-    </div>
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">ประวัติใบกำกับ</h2>
-          <p className="text-sm text-slate-500">{filtered.length} รายการ จาก bill_header</p>
-        </div>
-        <button onClick={fetchHistory} disabled={loading} className="flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm text-slate-600 disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>รีเฟรช
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-        <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="ค้นหาเลขที่, ชื่อผู้จำหน่าย, ชื่อไฟล์..." className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm"/>
-      </div>
-
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-800 text-sm">{error}</div>}
-
-      {loading ? (
-        <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/></div>
-      ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400">
-          <Receipt className="mx-auto mb-2" size={40}/>
-          <div>ไม่พบรายการ</div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {['เลขที่','วันที่','ผู้จำหน่าย','ประเภท','ยอดรวม','VAT','ชื่อไฟล์'].map(h =>
-                    <th key={h} className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {paged.map((r, i) => (
-                  <tr key={i} onClick={() => fetchDetail(r)} className="hover:bg-indigo-50 cursor-pointer transition-colors">
-                    <td className="px-3 py-2 font-mono font-semibold text-indigo-700">{r.invoice_no||'—'}</td>
-                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.invoice_date||'—'}</td>
-                    <td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{r.vendor_name||'—'}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${docTypeColor(r.document_type)}`}>{docTypeLabel(r.document_type)}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-700">{r.net_total!=null ? Number(r.net_total).toLocaleString() : '—'}</td>
-                    <td className="px-3 py-2 text-right text-slate-500">{r.vat_amount!=null ? Number(r.vat_amount).toLocaleString() : '—'}</td>
-                    <td className="px-3 py-2 text-slate-400 font-mono">{r.file_name||'—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {tab === 'camera' && (
+          <div className="p-2">
+            <div id="__qr_reader__" className="w-full rounded-lg overflow-hidden" />
+            {scanError && (
+              <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>
+            )}
+            <p className="text-center text-xs text-slate-400 mt-2">จ่อบาร์โค้ดให้อยู่ในกรอบ</p>
           </div>
-          {totalPages > 1 && (
-            <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
-              <span>หน้า {page+1} / {totalPages}</span>
-              <div className="flex gap-2">
-                <button disabled={page===0} onClick={()=>setPage(p=>p-1)} className="px-3 py-1.5 border border-slate-300 rounded disabled:opacity-40 hover:bg-slate-50">← ก่อน</button>
-                <button disabled={page===totalPages-1} onClick={()=>setPage(p=>p+1)} className="px-3 py-1.5 border border-slate-300 rounded disabled:opacity-40 hover:bg-slate-50">ถัดไป →</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* Detail modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white">
+        {tab === 'upload' && (
+          <div className="p-4 space-y-3">
+            <div id="__qr_file_reader__" style={{ display: 'none' }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl p-8 flex flex-col items-center gap-2"
+            >
+              <div className="bg-emerald-100 p-3 rounded-full">
+                <Upload className="text-emerald-600" size={24} />
+              </div>
+              <div className="text-sm font-medium text-slate-700">{scanning ? 'กำลังอ่าน...' : 'เลือกรูปบาร์โค้ด'}</div>
+              <div className="text-xs text-slate-400">รองรับทุกเบราว์เซอร์</div>
+            </button>
+            {scanError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+          </div>
+        )}
+
+        {tab === 'manual' && (
+          <div className="p-4 space-y-3">
+            <input
+              type="text"
+              value={manualBarcode}
+              onChange={(e) => setManualBarcode(e.target.value)}
+              placeholder="พิมพ์รหัสสินค้า..."
+              className="w-full px-3 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono"
+              autoFocus
+            />
+            <button
+              onClick={() => manualBarcode && onScan(manualBarcode)}
+              disabled={!manualBarcode}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium"
+            >
+              ใช้รหัสนี้
+            </button>
+            {products.length > 0 && (
               <div>
-                <div className="font-bold text-indigo-700 font-mono">{selected.invoice_no}</div>
-                <div className="text-xs text-slate-500">{selected.vendor_name} • {selected.invoice_date}</div>
-              </div>
-              <button onClick={()=>setSelected(null)}><X size={20}/></button>
-            </div>
-            <div className="p-4 space-y-3">
-              {/* Summary */}
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                {[
-                  ['ยอดสุทธิ', selected.net_total!=null?`฿${Number(selected.net_total).toLocaleString()}`:'—', 'text-slate-700'],
-                  ['VAT', selected.vat_amount!=null?`฿${Number(selected.vat_amount).toLocaleString()}`:'—', 'text-slate-500'],
-                  ['ประเภท', docTypeLabel(selected.document_type), 'text-indigo-600'],
-                ].map(([k,v,c]) => (
-                  <div key={k} className="bg-slate-50 rounded-lg p-2.5">
-                    <div className="text-slate-400 mb-1">{k}</div>
-                    <div className={`font-bold ${c}`}>{v}</div>
-                  </div>
-                ))}
-              </div>
-              {/* Products table */}
-              {loadingDetail ? (
-                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/></div>
-              ) : details.length > 0 ? (
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-50"><tr>
-                      {['#','สินค้า','บาร์โค้ด','จำนวน','ราคา/หน่วย','ยอด','VAT'].map(h=>
-                        <th key={h} className="px-2 py-2 text-left font-semibold text-slate-500">{h}</th>
-                      )}
-                    </tr></thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {details.map((d,i) => (
-                        <tr key={i}>
-                          <td className="px-2 py-1.5 text-slate-400">{d.no||i+1}</td>
-                          <td className="px-2 py-1.5 max-w-[160px] truncate text-slate-800">{d.description||'—'}</td>
-                          <td className="px-2 py-1.5 font-mono text-emerald-700">{d.barcode||'—'}</td>
-                          <td className="px-2 py-1.5 text-center font-semibold">{d.qty??'—'}</td>
-                          <td className="px-2 py-1.5 text-right">{d.price_ea!=null?Number(d.price_ea).toLocaleString():'—'}</td>
-                          <td className="px-2 py-1.5 text-right font-semibold text-slate-700">{d.total!=null?Number(d.total).toLocaleString():'—'}</td>
-                          <td className="px-2 py-1.5 text-center">
-                            <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${d.vat==='v'?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-500'}`}>{d.vat==='v'?'7%':'0%'}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="text-xs text-slate-500 mb-2">ตัวอย่าง:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {products.slice(0, 4).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => onScan(p.id)}
+                      className="text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs"
+                    >
+                      <div className="font-medium text-slate-700 truncate">{p.name}</div>
+                      <div className="text-slate-500 font-mono">{p.id}</div>
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <div className="text-center py-4 text-sm text-slate-400">ไม่พบรายการสินค้า</div>
-              )}
-              <button onClick={()=>setSelected(null)} className="w-full py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl text-sm font-medium text-slate-700">ปิด</button>
-            </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

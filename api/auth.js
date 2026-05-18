@@ -1,20 +1,14 @@
 export default function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
-
-  const { code, pin } = req.body || {};
-
-  // AccessGate check
-  if (code !== undefined) {
-    const ACCESS_CODE = process.env.ACCESS_CODE || '1234';
-    if (code === ACCESS_CODE) return res.json({ ok: true });
-    return res.json({ ok: false, msg: 'รหัสไม่ถูกต้อง' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Manager PIN check
+  const { pin } = req.body || {};
+
   if (pin !== undefined) {
-    const MANAGER_PIN = process.env.MANAGER_PIN || '0000';
-    if (pin === MANAGER_PIN) return res.json({ ok: true });
-    return res.json({ ok: false, msg: 'PIN ไม่ถูกต้อง' });
+    const correct = process.env.MANAGER_PIN;
+    if (!correct) return res.status(500).json({ ok: false, msg: 'MANAGER_PIN not configured' });
+    return res.json({ ok: pin === correct });
   }
 
   return res.status(400).json({ ok: false, msg: 'invalid request' });

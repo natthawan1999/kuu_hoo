@@ -290,13 +290,17 @@ function openPDFPrint(sub) {
   document.getElementById('__pdf_close_btn__')?.addEventListener('click', () => { document.getElementById(OVERLAY_ID)?.remove(); document.getElementById(STYLE_ID)?.remove(); });
 }
 
-async function generateDocNo() {
+const DRIVE_FOLDER_RECORDER     = '1ACXWxpekq69xJEEuiwOkZZa5KosPtXXa';
+const DRIVE_FOLDER_STOCK_COMPARE = '1dc62dEDZ8VWCV8nUx_uQg9h-3PoKSioi';
+
+async function generateDocNo(prefix = 'RC') {
   const today = new Date();
   const dateStr = today.getFullYear().toString() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
+  const stateKey = `docNoState_${prefix}`;
   let seq = 1;
-  try { const r = await storage.get('docNoState'); if (r?.value) { const s = JSON.parse(r.value); if (s.date === dateStr) seq = s.seq + 1; } } catch {}
-  try { await storage.set('docNoState', JSON.stringify({ date: dateStr, seq })); } catch {}
-  return `RC-${dateStr}${String(seq).padStart(4,'0')}`;
+  try { const r = await storage.get(stateKey); if (r?.value) { const s = JSON.parse(r.value); if (s.date === dateStr) seq = s.seq + 1; } } catch {}
+  try { await storage.set(stateKey, JSON.stringify({ date: dateStr, seq })); } catch {}
+  return `${prefix}-${dateStr}${String(seq).padStart(4,'0')}`;
 }
 
 function defaultViewFor(user) {
@@ -384,7 +388,8 @@ export default function CombinedApp() {
   const clearMyEntries = () => setCountEntries(prev => prev.filter(e => e.counterId !== currentUser?.id));
 
   const submitForReview = async (grouped, note) => {
-    const docNo = await generateDocNo();
+    const prefix = currentUser?.feature === 'stock_compare' ? 'ST' : 'RC';
+    const docNo = await generateDocNo(prefix);
     const now = new Date().toISOString();
     const sub = {
       id: `sub${Date.now()}_${Math.random().toString(36).slice(2,7)}`, docNo,
@@ -473,7 +478,7 @@ export default function CombinedApp() {
         {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
         {/* Manager */}
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} />}
+        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
@@ -874,7 +879,7 @@ function PDFDownloadButton({ sub }) {
   return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-rose-50 hover:bg-rose-100 rounded text-rose-700 font-medium"><Download size={12}/>PDF</button>;
 }
 
-function ManagerInboxView({ submissions, onReview, onDelete }) {
+function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
   const [selected, setSelected] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [tab, setTab] = useState('pending');
@@ -885,6 +890,7 @@ function ManagerInboxView({ submissions, onReview, onDelete }) {
   const [rejectError, setRejectError] = useState('');
   const filtered = submissions.filter(s => s.status === tab);
   const statusConfig = { pending:{label:'รอรีวิว',color:'text-amber-600'}, approved:{label:'อนุมัติแล้ว',color:'text-green-600'}, rejected:{label:'ส่งกลับ',color:'text-red-600'} };
+  const DRIVE_FOLDER = feature === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
   const handleApprove = () => { onReview(selected.id,'approved',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
   const handleReject = () => { if(!reviewNote.trim()){setRejectError('กรุณาใส่เหตุผลก่อนส่งกลับ');return;} onReview(selected.id,'rejected',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
 
@@ -905,7 +911,7 @@ function ManagerInboxView({ submissions, onReview, onDelete }) {
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Stock');
         content = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' }); isBase64 = true;
       }
-      const response = await fetch('/api/drive-upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType, content, isBase64 }) });
+      const response = await fetch('/api/drive-upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType, content, isBase64, folderId: DRIVE_FOLDER }) });
       const data = await response.json();
       if (!data.ok) throw new Error(data.error || 'Drive error');
       setDriveResult(prev => ({ ...prev, [key]: { ok: true, link: data.link, type } }));
@@ -1122,7 +1128,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     try {
       const content = buildSimpleCSV();
       const filename = getFilename('txt');
-      const response = await fetch('/api/drive-upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType:'text/csv', content, isBase64: false }) });
+      const response = await fetch('/api/drive-upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename, mimeType:'text/csv', content, isBase64: false, folderId: DRIVE_FOLDER_STOCK_COMPARE }) });
       const data = await response.json();
       if (!data.ok) throw new Error(data.error||'Drive error');
       set({ driveResult: { ok: true, link: data.link } });

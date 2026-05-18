@@ -313,7 +313,7 @@ export default function CombinedApp() {
   const [view, setView] = useState('count');
   const [loaded, setLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price' });
+  const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price', stockTableName: 'product_stock' });
   const [dataSource, setDataSource] = useState('none');
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('unknown');
@@ -333,7 +333,7 @@ export default function CombinedApp() {
       await tryLoad('countEntries', setCountEntries);
       await tryLoad('submissions', setSubmissions);
       await tryLoad('lastSyncAt', setLastSyncAt, false);
-      let cfg = { url: '', anonKey: '', tableName: 'product_price' };
+      let cfg = { url: '', anonKey: '', tableName: 'product_price', stockTableName: 'product_stock' };
       try { const r = await storage.get('supabaseConfig'); if (r?.value) { cfg = JSON.parse(r.value); setSupabaseConfig(cfg); } } catch {}
       let src = 'none';
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
@@ -997,7 +997,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   const { selectedSub, compareData, loading, loadProgress, error, driveSaving, driveResult } = compareState;
   const set = (patch) => setCompareState(prev => ({ ...prev, ...patch }));
   const approvedSubs = submissions.filter(s => s.status === 'approved');
-  const { url: sbUrl, anonKey: sbKey, tableName } = supabaseConfig;
+  const { url: sbUrl, anonKey: sbKey, stockTableName } = supabaseConfig;
 
   const fetchAndCompare = async (sub) => {
     const now = new Date().toISOString();
@@ -1016,7 +1016,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     const codes = [...new Set(groupedData.map(d => d.barcode))];
     const submittedAt = sub.submittedAt;
     const minScannedAt = groupedData.reduce((min, d) => d.scannedAt && d.scannedAt < min ? d.scannedAt : min, submittedAt);
-    const table = tableName || 'product_stock';
+    const table = stockTableName || 'product_stock';
     const batchSize = 50;
 
     try {
@@ -1202,10 +1202,11 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   const [url, setUrl] = useState(config.url||'');
   const [anonKey, setAnonKey] = useState(config.anonKey||'');
   const [tableName, setTableName] = useState(config.tableName||'product_price');
+  const [stockTableName, setStockTableName] = useState(config.stockTableName||'product_stock');
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false); const [testResult, setTestResult] = useState(null);
   const [saveMsg, setSaveMsg] = useState('');
-  const cfg = { url: url.trim(), anonKey: anonKey.trim(), tableName: tableName.trim()||'product_price' };
+  const cfg = { url: url.trim(), anonKey: anonKey.trim(), tableName: tableName.trim()||'product_price', stockTableName: stockTableName.trim()||'product_stock' };
   const handleSave = async () => { await onSave(cfg); setSaveMsg('บันทึกแล้ว'); setTimeout(()=>setSaveMsg(''), 2000); };
   const handleTest = async () => { setTesting(true); setTestResult(null); try { await handleSave(); const count = await onTestConnection(cfg); setTestResult({ok:true,msg:`เชื่อมต่อสำเร็จ! มี ${count.toLocaleString()} แถว ใน ${cfg.tableName}`}); } catch(e) { setTestResult({ok:false,msg:e.message}); } setTesting(false); };
   return (
@@ -1217,7 +1218,10 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
         <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
         <div><label className="text-sm font-medium text-slate-700 mb-1 block">Anon Key</label><div className="relative"><input type={showKey?'text':'password'} value={anonKey} onChange={e=>{setAnonKey(e.target.value);setTestResult(null);}} placeholder="eyJ..." className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/><button onClick={()=>setShowKey(!showKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1">{showKey?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></div>
-        <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อตาราง (สินค้า)</label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Product <span className="text-xs text-slate-400">(checkBarcode)</span></label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="product_price" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Stock <span className="text-xs text-slate-400">(compare)</span></label><input type="text" value={stockTableName} onChange={e=>setStockTableName(e.target.value)} placeholder="product_stock" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+        </div>
         {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-green-50 border border-green-200 text-green-800':'bg-red-50 border border-red-200 text-red-800'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
         <div className="flex gap-2">
           <button onClick={handleTest} disabled={testing||!url||!anonKey} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">{testing?<RefreshCw size={14} className="animate-spin"/>:<Zap size={14}/>}{testing?'กำลังทดสอบ...':'ทดสอบการเชื่อมต่อ'}</button>

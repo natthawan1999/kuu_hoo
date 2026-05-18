@@ -389,6 +389,7 @@ export default function CombinedApp() {
     const sub = {
       id: `sub${Date.now()}_${Math.random().toString(36).slice(2,7)}`, docNo,
       counter: currentUser?.name || 'พนักงาน', counterId: currentUser?.id || 'unknown',
+      featureType: currentUser?.feature || 'recorder',
       submittedAt: now,
       startedAt: grouped.reduce((min, g) => g.scannedAt && g.scannedAt < min ? g.scannedAt : min, now),
       note: note || '', status: 'pending', reviewedAt: null, reviewedBy: null, reviewNote: '',
@@ -424,12 +425,12 @@ export default function CombinedApp() {
   if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
 
   const isManager = currentUser.role === 'manager';
-  const feature = currentUser.feature || (isManager ? 'stock' : 'stock');
+  const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
   const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
-  const pendingCount = submissions.filter(s => s.status === 'pending').length;
+  const pendingCount = submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
 
-  const FEATURE_LABEL = { stock: 'นับสต็อก', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };
+  const FEATURE_LABEL = { recorder: 'Recorder', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };
   const headerAccent = isManager ? 'bg-indigo-600' : feature === 'invoice' ? 'bg-violet-600' : feature === 'stock_compare' ? 'bg-teal-600' : 'bg-emerald-600';
   const activeColor = isManager ? 'text-indigo-600 bg-indigo-50' : feature === 'invoice' ? 'text-violet-600 bg-violet-50' : feature === 'stock_compare' ? 'text-teal-600 bg-teal-50' : 'text-emerald-600 bg-emerald-50';
 
@@ -466,14 +467,14 @@ export default function CombinedApp() {
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
         {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
-        {!isManager && feature !== 'invoice' && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
-        {!isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id)} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {!isManager && feature !== 'invoice' && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
+        {!isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
         {/* Manager */}
-        {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
-        {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && view === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
+        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} />}
+        {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
@@ -505,13 +506,13 @@ function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
 
   const COUNTER_FEATURES = [
-    { id: 'stock',         label: 'นับสต็อก',         desc: 'สแกนและนับสินค้า ส่งผู้จัดการ',              icon: ScanLine,      accent: 'emerald' },
-    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ', desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'teal'    },
-    { id: 'invoice',       label: 'สแกนบิล AI',        desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'violet'  },
+    { id: 'recorder',      label: 'Recorder',            desc: 'บันทึกและส่งข้อมูลให้ผู้จัดการ',              icon: ScanLine,      accent: 'emerald' },
+    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'teal'    },
+    { id: 'invoice',       label: 'สแกนบิล AI',          desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'violet'  },
   ];
   const MANAGER_FEATURES = [
-    { id: 'stock',         label: 'นับสต็อก',         desc: 'รีวิว อนุมัติ และจัดการผลการนับ',           icon: ScanLine,      accent: 'indigo'  },
-    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ', desc: 'รีวิว อนุมัติ และเปรียบเทียบสต็อก',        icon: ArrowLeftRight, accent: 'indigo'  },
+    { id: 'recorder',      label: 'Recorder',            desc: 'รีวิว อนุมัติ และจัดการผลการบันทึก',        icon: ScanLine,      accent: 'indigo'  },
+    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'รีวิว อนุมัติ และเปรียบเทียบสต็อก',        icon: ArrowLeftRight, accent: 'indigo'  },
   ];
 
   const accentClass = (a, type) => {

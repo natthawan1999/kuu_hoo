@@ -17,6 +17,12 @@ const MODELS = [
   { id: "claude-sonnet-4-6",  label: "Sonnet 4.6 ✦" },
   { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
 ];
+const FEATURES = [
+  { id: 'stock_only',    label: 'นับสต็อก',                desc: 'นับสินค้าและส่งให้ผู้จัดการอนุมัติ',             icon: '📦' },
+  { id: 'stock_compare', label: 'นับสต็อก + Compare Stock', desc: 'นับสินค้าพร้อมเปรียบเทียบกับยอด Supabase',    icon: '📊' },
+  { id: 'invoice',       label: 'Invoice Scanner (AI)',      desc: 'สแกนใบกำกับภาษีด้วย AI แล้วบันทึกลง Supabase', icon: '🧾' },
+];
+
 const INVOICE_PROMPT = `ตอบด้วย JSON เท่านั้น ห้ามพิมพ์ข้อความอื่นใดก่อนหรือหลัง JSON ห้าม backtick ห้าม markdown
 สกัดข้อมูลจากใบกำกับภาษี/ใบส่งของที่อัปโหลดมา และตอบเป็น JSON ตามโครงสร้างนี้:
 {
@@ -346,7 +352,7 @@ export default function CombinedApp() {
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
       if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
       setDataSource(src);
-      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); } } catch {}
+      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); const defaultView = user.role === 'manager' ? (user.feature === 'invoice' ? 'invoice' : 'dashboard') : (user.feature === 'invoice' ? 'invoice' : 'count'); setView(defaultView); } } catch {}
       setLoaded(true);
     })();
   }, []);
@@ -354,7 +360,14 @@ export default function CombinedApp() {
   useDebouncedStorage('countEntries', countEntries, loaded);
   useDebouncedStorage('submissions', submissions, loaded);
 
-  const handleLogin = (user) => { setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  const handleLogin = (user) => {
+    const defaultView = user.role === 'manager'
+      ? (user.feature === 'invoice' ? 'invoice' : 'dashboard')
+      : (user.feature === 'invoice' ? 'invoice' : 'count');
+    setCurrentUser(user);
+    setView(defaultView);
+    storage.set('currentUser', JSON.stringify(user)).catch(() => {});
+  };
   const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
 
   const checkBarcode = async (barcode) => {
@@ -432,22 +445,34 @@ export default function CombinedApp() {
   if (!currentUser) return <AccessGate><LoginScreen onLogin={handleLogin} /></AccessGate>;
 
   const isManager = currentUser.role === 'manager';
+  const feat = currentUser.feature || 'stock_only';
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
   const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
   const pendingCount = submissions.filter(s => s.status === 'pending').length;
 
-  const counterNavItems = [
+  // ── Nav items based on feature ──────────────────────────────────────────────
+  const counterNavItems = feat === 'invoice' ? [
+    { id: 'invoice', label: 'สแกนบิล', icon: Receipt },
+  ] : [
     { id: 'count',          label: 'นับสต็อก', icon: ScanLine },
     { id: 'review',         label: 'ตรวจสอบ',  icon: ClipboardCheck, badge: myEntries.length },
     { id: 'my_submissions', label: 'ที่ส่งแล้ว', icon: Send },
   ];
-  const managerNavItems = [
-    { id: 'dashboard', label: 'แดชบอร์ด',    icon: Home },
-    { id: 'inbox',     label: 'รีวิว',         icon: Inbox, badge: pendingCount },
-    { id: 'compare',   label: 'เปรียบเทียบ',  icon: ArrowLeftRight },
-    { id: 'invoice',   label: 'สแกนบิล',      icon: Receipt },
-    { id: 'settings',  label: 'ตั้งค่า',        icon: SettingsIcon },
+
+  const managerNavItems = feat === 'invoice' ? [
+    { id: 'invoice',  label: 'สแกนบิล', icon: Receipt },
+    { id: 'settings', label: 'ตั้งค่า',   icon: SettingsIcon },
+  ] : feat === 'stock_compare' ? [
+    { id: 'dashboard', label: 'แดชบอร์ด',   icon: Home },
+    { id: 'inbox',     label: 'รีวิว',        icon: Inbox, badge: pendingCount },
+    { id: 'compare',   label: 'เปรียบเทียบ', icon: ArrowLeftRight },
+    { id: 'settings',  label: 'ตั้งค่า',       icon: SettingsIcon },
+  ] : [
+    { id: 'dashboard', label: 'แดชบอร์ด', icon: Home },
+    { id: 'inbox',     label: 'รีวิว',      icon: Inbox, badge: pendingCount },
+    { id: 'settings',  label: 'ตั้งค่า',     icon: SettingsIcon },
   ];
+
   const navItems = isManager ? managerNavItems : counterNavItems;
 
   return (
@@ -469,6 +494,7 @@ export default function CombinedApp() {
         {!isManager && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
         {!isManager && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
         {!isManager && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
+        {!isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
         {isManager && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
@@ -525,35 +551,114 @@ function AccessGate({ children }) {
 }
 
 function LoginScreen({ onLogin }) {
-  const [name, setName] = useState(''); const [role, setRole] = useState(null); const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState(null);
+  const [feature, setFeature] = useState(null);
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // step 1=role, 2=feature, 3=name+pin
+  const step = !role ? 1 : !feature ? 2 : 3;
+
   const handleLogin = async () => {
     if (!name.trim()) return setError('กรุณาใส่ชื่อ');
     if (role === 'manager') {
       setLoading(true);
-      try { const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) }); const d = await r.json(); if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; } } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
+      try {
+        const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+        const d = await r.json();
+        if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; }
+      } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
       setLoading(false);
     }
     const stableId = `${role}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: name.trim(), role, loginAt: new Date().toISOString() });
+    onLogin({ id: stableId, name: name.trim(), role, feature, loginAt: new Date().toISOString() });
   };
+
+  const accent = role === 'manager' ? 'indigo' : 'emerald';
+  const accentBtn = role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div><h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p></div>
-        {!role ? (
+        <div className="text-center">
+          <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
+          <h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1>
+          <p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p>
+        </div>
+
+        {/* Step indicator */}
+        <div className="flex items-center gap-1">
+          {[1,2,3].map(s => (
+            <React.Fragment key={s}>
+              <div className={`w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center ${step >= s ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'}`}>{s}</div>
+              {s < 3 && <div className={`flex-1 h-0.5 ${step > s ? 'bg-indigo-600' : 'bg-slate-200'}`}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Step 1: Role */}
+        {step === 1 && (
           <div className="space-y-3">
             <div className="text-sm font-medium text-slate-700">เลือกบทบาท</div>
-            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div><div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการอนุมัติ</div></div></button>
-            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div><div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div></button>
+            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div>
+              <div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการ</div></div>
+            </button>
+            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div>
+              <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิว อนุมัติ และจัดการข้อมูล</div></div>
+            </button>
           </div>
-        ) : (
+        )}
+
+        {/* Step 2: Feature */}
+        {step === 2 && (
           <div className="space-y-3">
-            <button onClick={() => { setRole(null); setPin(''); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
-            <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-2">{role === 'manager' ? <Shield className="text-indigo-600" size={20}/> : <User className="text-emerald-600" size={20}/>}<span className="text-sm font-medium text-slate-700">{role === 'manager' ? 'ผู้จัดการ' : 'พนักงานนับสต็อก'}</span></div>
-            <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label><input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/></div>
-            {role === 'manager' && <div><label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label><input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/></div>}
+            <button onClick={() => { setRole(null); setFeature(null); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
+            <div className="text-sm font-medium text-slate-700">เลือกฟีเจอร์</div>
+            {FEATURES.map(f => (
+              <button key={f.id} onClick={() => setFeature(f.id)}
+                className="w-full p-4 border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
+                <div className="text-2xl w-10 text-center">{f.icon}</div>
+                <div>
+                  <div className="font-semibold text-slate-800">{f.label}</div>
+                  <div className="text-xs text-slate-500">{f.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Step 3: Name + PIN */}
+        {step === 3 && (
+          <div className="space-y-3">
+            <button onClick={() => { setFeature(null); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนฟีเจอร์</button>
+            <div className="flex gap-2">
+              <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs text-slate-600">
+                {role === 'manager' ? <Shield size={12} className="text-indigo-600"/> : <User size={12} className="text-emerald-600"/>}
+                {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs text-slate-600">
+                <span>{FEATURES.find(f=>f.id===feature)?.icon}</span>
+                <span>{FEATURES.find(f=>f.id===feature)?.label}</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleLogin()} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/>
+            </div>
+            {role === 'manager' && (
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label>
+                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleLogin()} placeholder="••••" maxLength={6} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/>
+              </div>
+            )}
             {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-2">{error}</div>}
-            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}</button>
+            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${accentBtn}`}>
+              {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+            </button>
           </div>
         )}
       </div>

@@ -427,7 +427,7 @@ export default function CombinedApp() {
   const useSeedData = async () => { setProducts(SEED_PRODUCTS); setDataSource('seed'); setLastSyncAt(null); await storage.set('dataSource', 'seed'); await storage.delete('lastSyncAt'); };
 
   if (!loaded) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
-  if (!currentUser) return <AccessGate><LoginScreen onLogin={handleLogin} /></AccessGate>;
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
 
   const isManager = currentUser.role === 'manager';
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
@@ -489,34 +489,6 @@ export default function CombinedApp() {
           })}
         </div>
       </nav>
-    </div>
-  );
-}
-
-function AccessGate({ children }) {
-  const [authed, setAuthed] = React.useState(() => { try { return sessionStorage.getItem('__auth__') === '1'; } catch { return false; } });
-  const [code, setCode] = React.useState('');
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState('');
-  const handleSubmit = async () => {
-    setLoading(true); setError('');
-    try {
-      const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
-      const data = await r.json();
-      if (data.ok) { try { sessionStorage.setItem('__auth__', '1'); } catch {} setAuthed(true); }
-      else setError(data.msg || 'รหัสไม่ถูกต้อง');
-    } catch { setError('เกิดข้อผิดพลาด'); }
-    setLoading(false);
-  };
-  if (authed) return children;
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Lock size={28}/></div><h1 className="text-xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500 mt-1">ใส่รหัสเพื่อเข้าใช้งาน</p></div>
-        <input type="password" value={code} onChange={e => { setCode(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="รหัสเข้าใช้งาน" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-center text-lg tracking-widest" autoFocus />
-        {error && <div className="text-sm text-red-600 text-center">{error}</div>}
-        <button onClick={handleSubmit} disabled={!code || loading} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-lg font-semibold">{loading ? 'กำลังตรวจสอบ...' : 'เข้าใช้งาน'}</button>
-      </div>
     </div>
   );
 }

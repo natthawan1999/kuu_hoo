@@ -1289,8 +1289,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const [selectedPages, setSelPages] = useState({});
   const [gReady, setGReady] = useState(false);
   const [gToken, setGToken] = useState(null);
-  const [gClientId, setGClientId] = useState(() => safeGet('g_client',''));
-  const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', DRIVE_FOLDER_DEFAULT));
+  const [gClientId, setGClientId] = useState(() => safeGet('g_client', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));
+  const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_DRIVE_FOLDER_ID || DRIVE_FOLDER_DEFAULT) : DRIVE_FOLDER_DEFAULT));
   const [showInvCfg, setShowInvCfg] = useState(false);
   const [nameStatus, setNameStatus] = useState(null);
 

@@ -311,6 +311,13 @@ async function generateDocNo() {
   return `RC-${dateStr}${String(seq).padStart(4,'0')}`;
 }
 
+function defaultViewFor(user) {
+  if (!user) return 'count';
+  if (user.role === 'manager') return 'dashboard';
+  if (user.feature === 'invoice') return 'invoice';
+  return 'count';
+}
+
 export default function CombinedApp() {
   const [products, setProducts] = useState([]);
   const [countEntries, setCountEntries] = useState([]);
@@ -344,7 +351,7 @@ export default function CombinedApp() {
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
       if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
       setDataSource(src);
-      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); } } catch {}
+      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(defaultViewFor(user)); } } catch {}
       setLoaded(true);
     })();
   }, []);
@@ -352,7 +359,7 @@ export default function CombinedApp() {
   useDebouncedStorage('countEntries', countEntries, loaded);
   useDebouncedStorage('submissions', submissions, loaded);
 
-  const handleLogin = (user) => { setCurrentUser(user); setView(user.role === 'counter' ? 'count' : 'dashboard'); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
 
   const checkBarcode = async (barcode) => {
@@ -430,31 +437,36 @@ export default function CombinedApp() {
   if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
 
   const isManager = currentUser.role === 'manager';
+  const feature = currentUser.feature || (isManager ? 'stock' : 'stock');
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
   const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
   const pendingCount = submissions.filter(s => s.status === 'pending').length;
 
-  const counterNavItems = [
-    { id: 'count',          label: 'นับสต็อก', icon: ScanLine },
-    { id: 'review',         label: 'ตรวจสอบ',  icon: ClipboardCheck, badge: myEntries.length },
-    { id: 'my_submissions', label: 'ที่ส่งแล้ว', icon: Send },
-  ];
-  const managerNavItems = [
-    { id: 'dashboard', label: 'แดชบอร์ด',    icon: Home },
-    { id: 'inbox',     label: 'รีวิว',         icon: Inbox, badge: pendingCount },
-    { id: 'compare',   label: 'เปรียบเทียบ',  icon: ArrowLeftRight },
-    { id: 'invoice',   label: 'สแกนบิล',      icon: Receipt },
-    { id: 'settings',  label: 'ตั้งค่า',        icon: SettingsIcon },
-  ];
-  const navItems = isManager ? managerNavItems : counterNavItems;
+  const FEATURE_LABEL = { stock: 'นับสต็อก', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };
+  const headerAccent = isManager ? 'bg-indigo-600' : feature === 'invoice' ? 'bg-violet-600' : feature === 'stock_compare' ? 'bg-teal-600' : 'bg-emerald-600';
+  const activeColor = isManager ? 'text-indigo-600 bg-indigo-50' : feature === 'invoice' ? 'text-violet-600 bg-violet-50' : feature === 'stock_compare' ? 'text-teal-600 bg-teal-50' : 'text-emerald-600 bg-emerald-50';
+
+  // Nav per role+feature
+  const navItems = isManager
+    ? feature === 'stock_compare'
+      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+    : feature === 'invoice'
+      ? [{ id:'invoice',label:'สแกนบิล',icon:Receipt }]
+      : feature === 'stock_compare'
+        ? [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
+        : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`${isManager ? 'bg-indigo-600' : 'bg-emerald-600'} text-white p-2 rounded-lg`}><Package size={20} /></div>
-            <div><h1 className="font-bold text-slate-800">KUUHOO</h1><p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงานนับ'} • {currentUser.name}</p></div>
+            <div className={`${headerAccent} text-white p-2 rounded-lg`}><Package size={20} /></div>
+            <div>
+              <h1 className="font-bold text-slate-800">KUUHOO</h1>
+              <p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'} • {currentUser.name} • {FEATURE_LABEL[feature] || feature}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-emerald-50 text-emerald-700' : connectionStatus === 'error' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}><Cloud size={10} />Supabase</div>}
@@ -464,13 +476,17 @@ export default function CombinedApp() {
       </header>
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 pb-24">
-        {!isManager && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
-        {!isManager && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
-        {!isManager && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
+        {/* Counter - stock / stock_compare */}
+        {!isManager && feature !== 'invoice' && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
+        {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
+        {!isManager && feature !== 'invoice' && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id)} setView={setView} />}
+        {!isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id)} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {/* Counter - invoice */}
+        {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {/* Manager */}
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
-        {isManager && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
-        {isManager && view === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onUseSeed={useSeedData} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
@@ -480,7 +496,7 @@ export default function CombinedApp() {
             const Icon = item.icon; const active = view === item.id;
             return (
               <button key={item.id} onClick={() => setView(item.id)} style={{ flex: 1 }}
-                className={`relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px] ${active ? (isManager ? 'text-indigo-600 bg-indigo-50' : 'text-emerald-600 bg-emerald-50') : 'text-slate-500 hover:bg-slate-50'}`}>
+                className={`relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px] ${active ? activeColor : 'text-slate-500 hover:bg-slate-50'}`}>
                 <Icon size={18} />
                 <span className="font-medium">{item.label}</span>
                 {item.badge > 0 && <span className="absolute top-1.5 right-1/2 translate-x-4 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] text-center">{item.badge}</span>}
@@ -494,35 +510,131 @@ export default function CombinedApp() {
 }
 
 function LoginScreen({ onLogin }) {
-  const [name, setName] = useState(''); const [role, setRole] = useState(null); const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState(null);
+  const [feature, setFeature] = useState(null);
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const COUNTER_FEATURES = [
+    { id: 'stock',         label: 'นับสต็อก',         desc: 'สแกนและนับสินค้า ส่งผู้จัดการ',              icon: ScanLine,      accent: 'emerald' },
+    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ', desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'teal'    },
+    { id: 'invoice',       label: 'สแกนบิล AI',        desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'violet'  },
+  ];
+  const MANAGER_FEATURES = [
+    { id: 'stock',         label: 'นับสต็อก',         desc: 'รีวิว อนุมัติ และจัดการผลการนับ',           icon: ScanLine,      accent: 'indigo'  },
+    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ', desc: 'รีวิว อนุมัติ และเปรียบเทียบสต็อก',        icon: ArrowLeftRight, accent: 'indigo'  },
+  ];
+
+  const accentClass = (a, type) => {
+    const map = {
+      emerald: { border: 'hover:border-emerald-500 hover:bg-emerald-50', icon: 'bg-emerald-100 text-emerald-700', btn: 'bg-emerald-600 hover:bg-emerald-700' },
+      teal:    { border: 'hover:border-teal-500 hover:bg-teal-50',       icon: 'bg-teal-100 text-teal-700',       btn: 'bg-teal-600 hover:bg-teal-700'       },
+      violet:  { border: 'hover:border-violet-500 hover:bg-violet-50',   icon: 'bg-violet-100 text-violet-700',   btn: 'bg-violet-600 hover:bg-violet-700'   },
+      indigo:  { border: 'hover:border-indigo-500 hover:bg-indigo-50',   icon: 'bg-indigo-100 text-indigo-700',   btn: 'bg-indigo-600 hover:bg-indigo-700'   },
+    };
+    return map[a]?.[type] || map.indigo[type];
+  };
+
   const handleLogin = async () => {
     if (!name.trim()) return setError('กรุณาใส่ชื่อ');
     if (role === 'manager') {
       setLoading(true);
-      try { const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) }); const d = await r.json(); if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; } } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
+      try {
+        const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+        const d = await r.json();
+        if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; }
+      } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
       setLoading(false);
     }
-    const stableId = `${role}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: name.trim(), role, loginAt: new Date().toISOString() });
+    const stableId = `${role}_${feature}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
+    onLogin({ id: stableId, name: name.trim(), role, feature, loginAt: new Date().toISOString() });
   };
+
+  const features = role === 'manager' ? MANAGER_FEATURES : COUNTER_FEATURES;
+  const selectedFeature = features.find(f => f.id === feature);
+  const btnColor = role === 'manager' ? accentClass('indigo','btn') : selectedFeature ? accentClass(selectedFeature.accent,'btn') : 'bg-slate-600 hover:bg-slate-700';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-        <div className="text-center"><div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div><h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1><p className="text-sm text-slate-500">เข้าสู่ระบบนับสต็อก</p></div>
-        {!role ? (
+        <div className="text-center">
+          <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
+          <h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1>
+          <p className="text-sm text-slate-500">เข้าสู่ระบบ</p>
+        </div>
+
+        {/* Step 1: Role */}
+        {!role && (
           <div className="space-y-3">
-            <div className="text-sm font-medium text-slate-700">เลือกบทบาท</div>
-            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div><div><div className="font-semibold text-slate-800">พนักงานนับสต็อก</div><div className="text-xs text-slate-500">นับสินค้าและส่งให้ผู้จัดการอนุมัติ</div></div></button>
-            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3"><div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div><div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div></button>
+            <div className="text-sm font-semibold text-slate-700">เลือกบทบาท</div>
+            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div>
+              <div><div className="font-semibold text-slate-800">พนักงาน</div><div className="text-xs text-slate-500">นับสต็อก / สแกนบิล</div></div>
+            </button>
+            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div>
+              <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div>
+            </button>
           </div>
-        ) : (
+        )}
+
+        {/* Step 2: Feature */}
+        {role && !feature && (
           <div className="space-y-3">
-            <button onClick={() => { setRole(null); setPin(''); setError(''); }} className="text-sm text-slate-500 hover:text-slate-700">← เปลี่ยนบทบาท</button>
-            <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-2">{role === 'manager' ? <Shield className="text-indigo-600" size={20}/> : <User className="text-emerald-600" size={20}/>}<span className="text-sm font-medium text-slate-700">{role === 'manager' ? 'ผู้จัดการ' : 'พนักงานนับสต็อก'}</span></div>
-            <div><label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label><input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/></div>
-            {role === 'manager' && <div><label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label><input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/></div>}
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setRole(null); setError(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <div className="text-sm font-semibold text-slate-700">เลือก Feature</div>
+            </div>
+            <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-medium ${role === 'manager' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {role === 'manager' ? <Shield size={13}/> : <User size={13}/>}
+              {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
+            </div>
+            {features.map(f => {
+              const Icon = f.icon;
+              return (
+                <button key={f.id} onClick={() => setFeature(f.id)}
+                  className={`w-full p-4 border-2 border-slate-200 ${accentClass(f.accent,'border')} rounded-xl transition-colors text-left flex items-center gap-3`}>
+                  <div className={`${accentClass(f.accent,'icon')} p-3 rounded-lg`}><Icon size={22}/></div>
+                  <div><div className="font-semibold text-slate-800">{f.label}</div><div className="text-xs text-slate-500">{f.desc}</div></div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Step 3: Name + PIN */}
+        {role && feature && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setFeature(null); setError(''); setPin(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <div className="text-sm font-semibold text-slate-700">ข้อมูลผู้ใช้</div>
+            </div>
+            <div className="flex gap-2">
+              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${role === 'manager' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                {role === 'manager' ? <Shield size={12}/> : <User size={12}/>}
+                {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
+              </div>
+              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${accentClass(selectedFeature?.accent || 'indigo','icon').replace('bg-','').includes('emerald') ? 'bg-emerald-50 text-emerald-700' : selectedFeature?.accent === 'teal' ? 'bg-teal-50 text-teal-700' : selectedFeature?.accent === 'violet' ? 'bg-violet-50 text-violet-700' : 'bg-indigo-50 text-indigo-700'}`}>
+                {selectedFeature && <selectedFeature.icon size={12}/>}
+                {selectedFeature?.label}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/>
+            </div>
+            {role === 'manager' && (
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label>
+                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/>
+              </div>
+            )}
             {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-2">{error}</div>}
-            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${role === 'manager' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}</button>
+            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${btnColor}`}>
+              {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+            </button>
           </div>
         )}
       </div>
@@ -1266,6 +1378,16 @@ function InvoiceScannerModule({ supabaseConfig }) {
   const addFiles = fs => { const arr=Array.from(fs); setInvoices(prev=>[...prev,makeGroup(arr)]); };
 
   const removeInv = i => { setInvoices(prev=>prev.filter((_,j)=>j!==i)); setSelPages(prev=>{const n={...prev};delete n[i];return n;}); };
+  const removePage = (gi, pi) => {
+    setInvoices(prev => {
+      const n = [...prev];
+      const inv = {...n[gi]};
+      const files = inv.files.filter((_,i)=>i!==pi);
+      if (files.length === 0) return n.filter((_,i)=>i!==gi);
+      n[gi] = { ...inv, files, pagesData: inv.pagesData.filter((_,i)=>i!==pi), pageStatus: inv.pageStatus.filter((_,i)=>i!==pi) };
+      return n;
+    });
+  };
   const updateData = (i, data) => setInvoices(prev => { const n=[...prev]; n[i]={...n[i],data}; return n; });
   const reprocessInvoice = async (gi) => { await readPages(gi, invoices[gi].files, invoices[gi].files.map((_,i)=>i)); };
 
@@ -1480,6 +1602,7 @@ function InvoiceScannerModule({ supabaseConfig }) {
                         <div style={{ position:'absolute', bottom:2, right:2, fontSize:9, background:'rgba(0,0,0,0.6)', color:'#fff', borderRadius:3, padding:'1px 4px' }}>
                           {inv.pageStatus[pi]==='processing'?'⏳':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':'⋯'}
                         </div>
+                        <button onClick={()=>removePage(gi,pi)} style={{ position:'absolute', top:-6, left:-6, width:18, height:18, borderRadius:'50%', background:'#ef4444', color:'#fff', border:'none', cursor:'pointer', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10 }}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -1509,10 +1632,13 @@ function InvoiceScannerModule({ supabaseConfig }) {
               </div>
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 {productFiles.map(it=>(
-                  <div key={it.id} style={{ position:'relative', cursor:'pointer' }} onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
-                    <InvFileThumb file={it.file}/>
-                    <div style={{ position:'absolute', top:2, right:2, fontSize:10, background:it.status==='done'?'#10b981':it.status==='error'?'#ef4444':it.status==='processing'?'#f59e0b':'#6b7280', color:'#fff', borderRadius:3, padding:'1px 4px' }}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
-                    {selPFileIds.has(it.id)&&<div style={{ position:'absolute', inset:0, border:'2px solid #4f46e5', borderRadius:6, background:'rgba(79,70,229,0.1)' }}/>}
+                  <div key={it.id} style={{ position:'relative' }}>
+                    <div style={{ cursor:'pointer' }} onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
+                      <InvFileThumb file={it.file}/>
+                      <div style={{ position:'absolute', top:2, right:2, fontSize:10, background:it.status==='done'?'#10b981':it.status==='error'?'#ef4444':it.status==='processing'?'#f59e0b':'#6b7280', color:'#fff', borderRadius:3, padding:'1px 4px' }}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
+                      {selPFileIds.has(it.id)&&<div style={{ position:'absolute', inset:0, border:'2px solid #4f46e5', borderRadius:6, background:'rgba(79,70,229,0.1)' }}/>}
+                    </div>
+                    <button onClick={e=>{e.stopPropagation();deleteProductFile(it.id);}} style={{ position:'absolute', top:-6, left:-6, width:18, height:18, borderRadius:'50%', background:'#ef4444', color:'#fff', border:'none', cursor:'pointer', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10 }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -1544,6 +1670,7 @@ function InvoiceScannerModule({ supabaseConfig }) {
             </div>
           )}
           <div style={{ display:'flex', gap:8 }}>
+            <button onClick={()=>setStep(1)} style={{ padding:'12px 20px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:14, cursor:'pointer' }}>← กลับ</button>
             <button onClick={()=>setStep(3)} style={{ flex:1, padding:'12px', borderRadius:8, background:'#4f46e5', color:'#fff', fontWeight:700, fontSize:14, border:'none', cursor:'pointer' }}>ตรวจสอบข้อมูล →</button>
           </div>
         </div>

@@ -9,7 +9,7 @@ import {
   ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin,
 } from 'lucide-react';
 
-const INVOICE_API = "https://flat-snowflake-d374invoice-api.dogut-dn.workers.dev";
+const INVOICE_API = "/api/claude";
 const DRIVE_FOLDER_DEFAULT = "1Egu5XH0UInn4ol6V2FlI06-TMUdnXO4D";
 const MODELS = [
   { id: "claude-opus-4-6",    label: "Opus 4.6" },
@@ -55,18 +55,6 @@ ${list}`;
 
 const STEPS = ["อัปโหลด", "สแกนสินค้า", "ตรวจสอบ", "สรุป"];
 
-const SEED_PRODUCTS = [
-  { id: 'p001', barcode: '8851234567001', name: 'น้ำดื่มสิงห์ 600ml', category: 'เครื่องดื่ม', unit: 'ขวด', price: 10, cost: 7, stock: 245 },
-  { id: 'p002', barcode: '8851234567002', name: 'น้ำดื่มคริสตัล 600ml', category: 'เครื่องดื่ม', unit: 'ขวด', price: 9, cost: 6, stock: 180 },
-  { id: 'p003', barcode: '8851234567003', name: 'โค้ก 325ml', category: 'เครื่องดื่ม', unit: 'กระป๋อง', price: 17, cost: 12, stock: 120 },
-  { id: 'p004', barcode: '8851234567004', name: 'เป๊ปซี่ 325ml', category: 'เครื่องดื่ม', unit: 'กระป๋อง', price: 17, cost: 12, stock: 95 },
-  { id: 'p005', barcode: '8851234567005', name: 'มาม่าหมูสับ', category: 'บะหมี่', unit: 'ซอง', price: 6, cost: 4, stock: 320 },
-  { id: 'p006', barcode: '8851234567006', name: 'มาม่าต้มยำกุ้ง', category: 'บะหมี่', unit: 'ซอง', price: 6, cost: 4, stock: 280 },
-  { id: 'p007', barcode: '8851234567007', name: 'เลย์รสต้นตำรับ 50g', category: 'ขนม', unit: 'ซอง', price: 20, cost: 14, stock: 88 },
-  { id: 'p008', barcode: '8851234567008', name: 'แชมพูแพนทีน 340ml', category: 'ของใช้', unit: 'ขวด', price: 159, cost: 110, stock: 45 },
-  { id: 'p009', barcode: '8851234567009', name: 'สบู่โปรเทคส์ 65g', category: 'ของใช้', unit: 'ก้อน', price: 15, cost: 10, stock: 156 },
-  { id: 'p010', barcode: '8851234567010', name: 'นมเมจิ 225ml', category: 'นม', unit: 'กล่อง', price: 17, cost: 12, stock: 200 },
-];
 
 const storage = {
   get:    async (key)        => { try { const v = localStorage.getItem(key); return v != null ? { value: v } : null; } catch { return null; } },
@@ -372,7 +360,7 @@ export default function CombinedApp() {
         setConnectionStatus('ok'); return null;
       } catch (e) { setConnectionStatus('error'); const cached = products.find(p => p.id === trimmed || p.barcode === trimmed); if (cached) return { ...cached, source: 'cached' }; throw new Error(`ค้นหาไม่ได้: ${e.message}`); }
     }
-    if (dataSource === 'seed') { const local = products.find(p => p.id === trimmed || p.barcode === trimmed); return local ? { ...local, source: 'local' } : null; }
+    if (dataSource === 'seed') { return null; }
     throw new Error('ยังไม่ได้ตั้งค่า Supabase');
   };
 
@@ -431,7 +419,6 @@ export default function CombinedApp() {
     return match ? parseInt(match[1]) : 0;
   };
 
-  const useSeedData = async () => { setProducts(SEED_PRODUCTS); setDataSource('seed'); setLastSyncAt(null); await storage.set('dataSource', 'seed'); await storage.delete('lastSyncAt'); };
 
   if (!loaded) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
@@ -487,7 +474,7 @@ export default function CombinedApp() {
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} />}
         {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
-        {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onUseSeed={useSeedData} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
+        {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
@@ -1209,7 +1196,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   );
 }
 
-function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource, lastSyncAt, productCount }) {
+function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt, productCount }) {
   const [url, setUrl] = useState(config.url||'');
   const [anonKey, setAnonKey] = useState(config.anonKey||'');
   const [tableName, setTableName] = useState(config.tableName||'product_price');
@@ -1223,7 +1210,7 @@ function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource,
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2></div>
       <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-emerald-50 border-emerald-200':'bg-slate-50 border-slate-200'}`}>
-        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (ข้อมูลจริง)':dataSource==='seed'?'ข้อมูลตัวอย่าง':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
+        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (เชื่อมต่อแล้ว)':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
         <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
@@ -1236,7 +1223,6 @@ function SettingsView({ config, onSave, onUseSeed, onTestConnection, dataSource,
         </div>
         {saveMsg&&<div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-2 text-center">{saveMsg}</div>}
       </div>
-      <div className="pt-2 border-t border-slate-200"><button onClick={async()=>{if(confirm('สลับไปใช้ข้อมูลตัวอย่าง?'))await onUseSeed();}} className="w-full py-2 border border-slate-300 hover:bg-slate-50 rounded-lg text-sm font-medium text-slate-600">ใช้ข้อมูลตัวอย่าง (Demo)</button></div>
     </div>
   );
 }

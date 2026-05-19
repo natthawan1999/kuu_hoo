@@ -1057,6 +1057,9 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       // Diagnostic: try 3 different queries to isolate the issue
       try {
         const firstCode = codes[0];
+        saleDebug.searchedBarcode = JSON.stringify(firstCode);
+        saleDebug.searchedBarcodeLength = firstCode?.length;
+        saleDebug.allCodes = codes.slice(0,5);
         const colSinc = qc('สินค้า');
         const colDate = qc('วันที่');
         // Query A: barcode only, no date filter, limit 5
@@ -1075,6 +1078,18 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const qsC = `${colSinc}=eq.${encodeURIComponent(firstCode)}&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=*&limit=5`;
         const rowsC = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsC);
         saleDebug.diagQueries.push({ name: 'C: barcode + date', count: rowsC.length, sample: rowsC[0] || null });
+
+        // Query D: get ANY row from the table to confirm table is accessible and see real barcode format
+        const qsD = `select=*&limit=3`;
+        const rowsD = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsD);
+        saleDebug.diagQueries.push({ name: 'D: any 3 rows from table', count: rowsD.length, sample: rowsD[0] || null, allSamples: rowsD.map(r => ({ สินค้า: JSON.stringify(r['สินค้า']), วันที่: r['วันที่'] })) });
+
+        // Query E: search with LIKE to handle any whitespace/format issues
+        const qsE = `${colSinc}=like.*${encodeURIComponent(firstCode)}*&select=*&limit=5`;
+        try {
+          const rowsE = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsE);
+          saleDebug.diagQueries.push({ name: 'E: LIKE *barcode*', count: rowsE.length, sample: rowsE[0] || null });
+        } catch (e) { saleDebug.diagQueries.push({ name: 'E: LIKE *barcode*', error: e.message }); }
       } catch (e) {
         saleDebug.diagQueries.push({ name: 'diagnostic error', error: e.message });
       }
@@ -1220,6 +1235,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
             <details className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs" open>
               <summary className="font-semibold text-yellow-900 cursor-pointer">🔍 Debug: Sale Query</summary>
               <div className="mt-2 space-y-1 font-mono text-yellow-900">
+                <div>Searched barcode: <strong>{compareState.debugInfo.searchedBarcode}</strong> (length={compareState.debugInfo.searchedBarcodeLength})</div>
+                <div>All codes in submission: <strong>{JSON.stringify(compareState.debugInfo.allCodes)}</strong></div>
                 <div>Query date range: <strong>{compareState.debugInfo.startDate}</strong> → <strong>{compareState.debugInfo.endDate}</strong></div>
                 <div>minScannedAt: <strong>{compareState.debugInfo.minScannedAt}</strong></div>
                 <div>submittedAt: <strong>{compareState.debugInfo.submittedAt}</strong></div>
@@ -1227,7 +1244,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
                 {(compareState.debugInfo.diagQueries||[]).map((q,i)=>(
                   <div key={i} className="border-l-2 border-orange-400 pl-2 my-1">
                     <div><strong>{q.name}</strong> → {q.error ? <span className="text-red-700">ERROR: {q.error}</span> : <>rows={q.count}</>}</div>
-                    {q.sample && <div className="text-[10px] mt-0.5">sample: {JSON.stringify(q.sample).slice(0,200)}</div>}
+                    {q.sample && <div className="text-[10px] mt-0.5 break-all">sample: {JSON.stringify(q.sample).slice(0,300)}</div>}
+                    {q.allSamples && <div className="text-[10px] mt-0.5">codes in table: {JSON.stringify(q.allSamples)}</div>}
                   </div>
                 ))}
                 <div className="mt-2 font-semibold border-t border-yellow-300 pt-2">Main Query Result:</div>

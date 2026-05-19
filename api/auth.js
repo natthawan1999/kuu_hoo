@@ -1,4 +1,4 @@
-export default function handler(req, res) {
+module.exports = function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -12,4 +12,4 @@ export default function handler(req, res) {
   }
 
   return res.status(400).json({ ok: false, msg: 'invalid request' });
-}
+};

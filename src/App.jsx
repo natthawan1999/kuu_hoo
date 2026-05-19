@@ -370,8 +370,10 @@ export default function CombinedApp() {
 
   const addCountEntry = (entry) => {
     const now = new Date();
-    const dateStr = entry.countDate || now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 8);
+    const todayStr = now.toISOString().slice(0, 10);
+    const dateStr = entry.countDate || todayStr;
+    // If countDate is overridden to a past date (test mode), use 00:00 so all day's movements fall in window
+    const timeStr = (entry.countDate && entry.countDate !== todayStr) ? '00:00:00' : now.toTimeString().slice(0, 8);
     const timestamp = new Date(`${dateStr}T${timeStr}`).toISOString();
     setCountEntries(prev => [{
       id: `e${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
@@ -943,11 +945,8 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
               <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-emerald-700 font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
               {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-slate-50 rounded p-1.5">"{s.note}"</div>}
               {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-green-50 text-green-800':'bg-red-50 text-red-800'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
-              {['excel','csv'].map(type => { const r = driveResult[`${s.id}_${type}`]; if(!r)return null; return r.ok?<div key={type} className="mt-1 bg-green-50 border border-green-200 rounded-lg px-2 py-1 text-xs text-green-800 flex items-center gap-2"><CheckCircle2 size={11}/><span className="uppercase font-bold">{type}</span> อัพโหลดแล้ว{r.link&&<a href={r.link} target="_blank" rel="noopener noreferrer" className="underline">เปิด →</a>}</div>:<div key={type} className="mt-1 bg-red-50 border border-red-200 rounded-lg px-2 py-1 text-xs text-red-800"><span className="uppercase font-bold">{type}</span> error: {r.err}</div>; })}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-slate-100">
                 <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
-                <button onClick={()=>uploadToDrive(s,'excel')} disabled={driveSaving===`${s.id}_excel`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-violet-50 hover:bg-violet-100 disabled:opacity-60 rounded text-violet-700 font-medium">{driveSaving===`${s.id}_excel`?<RefreshCw size={12} className="animate-spin"/>:<FileSpreadsheet size={12}/>}{driveSaving===`${s.id}_excel`?'...':'Excel'}</button>
-                <button onClick={()=>uploadToDrive(s,'csv')} disabled={driveSaving===`${s.id}_csv`} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 rounded text-indigo-700 font-medium">{driveSaving===`${s.id}_csv`?<RefreshCw size={12} className="animate-spin"/>:<Download size={12}/>}{driveSaving===`${s.id}_csv`?'...':'CSV'}</button>
                 <PDFDownloadButton sub={s}/>
                 {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold">รีวิว →</button>}
                 {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-red-600 font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-red-600 text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded" title="ลบ"><Trash2 size={14}/></button>}
@@ -1052,48 +1051,6 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       const saleMap = {};
       const startDate = minScannedAt.slice(0, 10);
       const endDate = submittedAt.slice(0, 10);
-      let saleDebug = { totalRows: 0, inWindow: 0, samples: [], startDate, endDate, minScannedAt, submittedAt, diagQueries: [] };
-
-      // Diagnostic: try 3 different queries to isolate the issue
-      try {
-        const firstCode = codes[0];
-        saleDebug.searchedBarcode = JSON.stringify(firstCode);
-        saleDebug.searchedBarcodeLength = firstCode?.length;
-        saleDebug.allCodes = codes.slice(0,5);
-        const colSinc = qc('สินค้า');
-        const colDate = qc('วันที่');
-        // Query A: barcode only, no date filter, limit 5
-        const qsA = `${colSinc}=eq.${encodeURIComponent(firstCode)}&select=*&limit=5`;
-        const rowsA = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsA);
-        saleDebug.diagQueries.push({ name: 'A: barcode only', count: rowsA.length, sample: rowsA[0] || null });
-
-        // Query B: no quotes on filter, see if quoted name is the problem
-        const qsB = `${encodeURIComponent('สินค้า')}=eq.${encodeURIComponent(firstCode)}&select=*&limit=5`;
-        try {
-          const rowsB = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsB);
-          saleDebug.diagQueries.push({ name: 'B: unquoted filter', count: rowsB.length, sample: rowsB[0] || null });
-        } catch (e) { saleDebug.diagQueries.push({ name: 'B: unquoted filter', error: e.message }); }
-
-        // Query C: with date filter
-        const qsC = `${colSinc}=eq.${encodeURIComponent(firstCode)}&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=*&limit=5`;
-        const rowsC = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsC);
-        saleDebug.diagQueries.push({ name: 'C: barcode + date', count: rowsC.length, sample: rowsC[0] || null });
-
-        // Query D: get ANY row from the table to confirm table is accessible and see real barcode format
-        const qsD = `select=*&limit=3`;
-        const rowsD = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsD);
-        saleDebug.diagQueries.push({ name: 'D: any 3 rows from table', count: rowsD.length, sample: rowsD[0] || null, allSamples: rowsD.map(r => ({ สินค้า: JSON.stringify(r['สินค้า']), วันที่: r['วันที่'] })) });
-
-        // Query E: search with LIKE to handle any whitespace/format issues
-        const qsE = `${colSinc}=like.*${encodeURIComponent(firstCode)}*&select=*&limit=5`;
-        try {
-          const rowsE = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsE);
-          saleDebug.diagQueries.push({ name: 'E: LIKE *barcode*', count: rowsE.length, sample: rowsE[0] || null });
-        } catch (e) { saleDebug.diagQueries.push({ name: 'E: LIKE *barcode*', error: e.message }); }
-      } catch (e) {
-        saleDebug.diagQueries.push({ name: 'diagnostic error', error: e.message });
-      }
-
       for (let i = 0; i < codes.length; i += batchSize) {
         set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
@@ -1104,7 +1061,6 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const colQty  = qc('จำนวน');
         const qs = `${colSinc}=in.(${inList})&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=${colSinc},${colDate},${colTime},${colQty}`;
         const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
-        saleDebug.totalRows += rows.length;
         rows.forEach((r) => {
           const code = String(r['สินค้า']||'');
           const rawTime = r['เวลา'] ? String(r['เวลา']) : '00:00:00';
@@ -1112,17 +1068,11 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           const saleTime = new Date(`${rawDate}T${rawTime.slice(0,8)}`);
           const item = groupedData.find(d => d.barcode === code);
           const scannedAt = new Date(item?.scannedAt || minScannedAt);
-          const inWindow = saleTime >= scannedAt && saleTime <= new Date(submittedAt);
-          if (saleDebug.samples.length < 5) {
-            saleDebug.samples.push({ code, rawDate, rawTime, qty: r['จำนวน'], saleTimeISO: saleTime.toISOString(), scannedAtISO: scannedAt.toISOString(), inWindow });
-          }
-          if (inWindow) {
-            saleDebug.inWindow++;
+          if (saleTime >= scannedAt && saleTime <= new Date(submittedAt)) {
             saleMap[code] = (saleMap[code]||0) + (parseFloat(r['จำนวน'])||0);
           }
         });
       }
-      set({ debugInfo: saleDebug });
 
       const receiveMap = {};
       for (let i = 0; i < codes.length; i += batchSize) {
@@ -1231,35 +1181,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
               <div className="text-blue-700 mt-1 text-[10px]">ดึง sale/purchase ของช่วงนี้มาคำนวณ adjusted_count</div>
             </div>
           )}
-          {compareState.debugInfo && (
-            <details className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs" open>
-              <summary className="font-semibold text-yellow-900 cursor-pointer">🔍 Debug: Sale Query</summary>
-              <div className="mt-2 space-y-1 font-mono text-yellow-900">
-                <div>Searched barcode: <strong>{compareState.debugInfo.searchedBarcode}</strong> (length={compareState.debugInfo.searchedBarcodeLength})</div>
-                <div>All codes in submission: <strong>{JSON.stringify(compareState.debugInfo.allCodes)}</strong></div>
-                <div>Query date range: <strong>{compareState.debugInfo.startDate}</strong> → <strong>{compareState.debugInfo.endDate}</strong></div>
-                <div>minScannedAt: <strong>{compareState.debugInfo.minScannedAt}</strong></div>
-                <div>submittedAt: <strong>{compareState.debugInfo.submittedAt}</strong></div>
-                <div className="mt-2 font-semibold border-t border-yellow-300 pt-2">Diagnostic Queries:</div>
-                {(compareState.debugInfo.diagQueries||[]).map((q,i)=>(
-                  <div key={i} className="border-l-2 border-orange-400 pl-2 my-1">
-                    <div><strong>{q.name}</strong> → {q.error ? <span className="text-red-700">ERROR: {q.error}</span> : <>rows={q.count}</>}</div>
-                    {q.sample && <div className="text-[10px] mt-0.5 break-all">sample: {JSON.stringify(q.sample).slice(0,300)}</div>}
-                    {q.allSamples && <div className="text-[10px] mt-0.5">codes in table: {JSON.stringify(q.allSamples)}</div>}
-                  </div>
-                ))}
-                <div className="mt-2 font-semibold border-t border-yellow-300 pt-2">Main Query Result:</div>
-                <div>Total rows: <strong>{compareState.debugInfo.totalRows}</strong> | In window: <strong>{compareState.debugInfo.inWindow}</strong></div>
-                {compareState.debugInfo.samples.length > 0 && compareState.debugInfo.samples.map((s,i)=>(
-                  <div key={i} className="border-l-2 border-yellow-400 pl-2">
-                    <div>code={s.code} date={s.rawDate} time={s.rawTime} qty={s.qty}</div>
-                    <div>saleTime={s.saleTimeISO} | scannedAt={s.scannedAtISO}</div>
-                    <div>inWindow=<strong className={s.inWindow?'text-green-700':'text-red-700'}>{String(s.inWindow)}</strong></div>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
+          {compareState.debugInfo && null}
           <div className="flex flex-wrap gap-2">
             <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
             <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>

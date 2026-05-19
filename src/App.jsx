@@ -1034,6 +1034,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     const minScannedAt = groupedData.reduce((min, d) => d.scannedAt && d.scannedAt < min ? d.scannedAt : min, submittedAt);
     const table = stockTableName || 'product_stock';
     const batchSize = 50;
+    const qc = col => encodeURIComponent(`"${col}"`);
 
     try {
       let stockRows = [];
@@ -1041,7 +1042,6 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         set({ loadProgress: `[1/3] ยอดปัจจุบัน ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
-        const qc = col => encodeURIComponent(`"${col}"`);
         const colCode = qc('รหัสสินค้า');
         const colSel = ['รหัสสินค้า','ชื่อสินค้า','หน่วย','รวม'].map(qc).join(',');
         const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}`);

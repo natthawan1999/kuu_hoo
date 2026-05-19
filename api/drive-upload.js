@@ -4,11 +4,10 @@ export default async function handler(req, res) {
   const scriptUrl = process.env.APPS_SCRIPT_URL;
   if (!scriptUrl) return res.status(500).json({ ok: false, error: 'APPS_SCRIPT_URL not set' });
 
-  const { filename, mimeType, content, isBase64, folderId } = req.body || {};
+  const { filename, mimeType, content, isBase64, folderId, _debug } = req.body || {};
   if (!filename || content == null) return res.status(400).json({ ok: false, error: 'filename and content required' });
 
   try {
-    // Step 1: POST to Apps Script (don't follow redirect)
     const r1 = await fetch(scriptUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,12 +19,19 @@ export default async function handler(req, res) {
       redirect: 'manual',
     });
 
-    // Step 2: Follow redirect manually as GET (Apps Script always redirects)
-    let text;
+    const diag = {
+      step1_status: r1.status,
+      step1_location: r1.headers.get('location'),
+      step1_contentType: r1.headers.get('content-type'),
+      scriptUrl_preview: scriptUrl.slice(0, 60) + '...',
+    };
+
+    let text, step2 = null;
     const location = r1.headers.get('location');
     if ((r1.status === 301 || r1.status === 302 || r1.status === 303) && location) {
       const r2 = await fetch(location, { method: 'GET' });
       text = await r2.text();
+      step2 = { status: r2.status, contentType: r2.headers.get('content-type') };
     } else {
       text = await r1.text();
     }
@@ -34,7 +40,12 @@ export default async function handler(req, res) {
       const d = JSON.parse(text);
       return res.status(d.ok ? 200 : 500).json(d);
     } catch {
-      return res.status(500).json({ ok: false, error: 'Non-JSON: ' + text.slice(0, 200) });
+      return res.status(500).json({
+        ok: false,
+        error: 'Non-JSON response',
+        diag: { ...diag, step2 },
+        bodyPreview: text.slice(0, 500),
+      });
     }
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });

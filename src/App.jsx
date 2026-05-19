@@ -1052,6 +1052,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       const saleMap = {};
       const startDate = minScannedAt.slice(0, 10);
       const endDate = submittedAt.slice(0, 10);
+      let saleDebug = { totalRows: 0, inWindow: 0, samples: [], startDate, endDate, minScannedAt, submittedAt };
       for (let i = 0; i < codes.length; i += batchSize) {
         set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
@@ -1062,18 +1063,25 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const colQty  = qc('จำนวน');
         const qs = `${colSinc}=in.(${inList})&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=${colSinc},${colDate},${colTime},${colQty}`;
         const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
-        rows.forEach(r => {
+        saleDebug.totalRows += rows.length;
+        rows.forEach((r, idx) => {
           const code = String(r['สินค้า']||'');
           const rawTime = r['เวลา'] ? String(r['เวลา']) : '00:00:00';
           const rawDate = r['วันที่'] ? String(r['วันที่']).slice(0,10) : startDate;
           const saleTime = new Date(`${rawDate}T${rawTime.slice(0,8)}`);
           const item = groupedData.find(d => d.barcode === code);
           const scannedAt = new Date(item?.scannedAt || minScannedAt);
-          if (saleTime >= scannedAt && saleTime <= new Date(submittedAt)) {
+          const inWindow = saleTime >= scannedAt && saleTime <= new Date(submittedAt);
+          if (saleDebug.samples.length < 5) {
+            saleDebug.samples.push({ code, rawDate, rawTime, qty: r['จำนวน'], saleTimeISO: saleTime.toISOString(), scannedAtISO: scannedAt.toISOString(), inWindow });
+          }
+          if (inWindow) {
+            saleDebug.inWindow++;
             saleMap[code] = (saleMap[code]||0) + (parseFloat(r['จำนวน'])||0);
           }
         });
       }
+      set({ debugInfo: saleDebug });
 
       const receiveMap = {};
       for (let i = 0; i < codes.length; i += batchSize) {
@@ -1181,6 +1189,27 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
               </div>
               <div className="text-blue-700 mt-1 text-[10px]">ดึง sale/purchase ของช่วงนี้มาคำนวณ adjusted_count</div>
             </div>
+          )}
+          {compareState.debugInfo && (
+            <details className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs">
+              <summary className="font-semibold text-yellow-900 cursor-pointer">🔍 Debug: Sale Query (คลิกเพื่อดู)</summary>
+              <div className="mt-2 space-y-1 font-mono text-yellow-900">
+                <div>Query date range: <strong>{compareState.debugInfo.startDate}</strong> → <strong>{compareState.debugInfo.endDate}</strong></div>
+                <div>Total rows returned: <strong>{compareState.debugInfo.totalRows}</strong></div>
+                <div>Rows in window: <strong>{compareState.debugInfo.inWindow}</strong></div>
+                <div>minScannedAt: <strong>{compareState.debugInfo.minScannedAt}</strong></div>
+                <div>submittedAt: <strong>{compareState.debugInfo.submittedAt}</strong></div>
+                <div className="mt-2 font-semibold">Sample rows:</div>
+                {compareState.debugInfo.samples.length === 0 ? <div className="text-red-700">⚠️ Query returned 0 rows — column ชื่อ "วันที่" อาจไม่มีในตาราง</div> : compareState.debugInfo.samples.map((s,i)=>(
+                  <div key={i} className="border-l-2 border-yellow-400 pl-2">
+                    <div>code={s.code} date={s.rawDate} time={s.rawTime} qty={s.qty}</div>
+                    <div>saleTime={s.saleTimeISO}</div>
+                    <div>scannedAt={s.scannedAtISO}</div>
+                    <div>inWindow=<strong className={s.inWindow?'text-green-700':'text-red-700'}>{String(s.inWindow)}</strong></div>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
           <div className="flex flex-wrap gap-2">
             <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>

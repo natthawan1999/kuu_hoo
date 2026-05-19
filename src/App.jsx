@@ -533,12 +533,22 @@ function LoginScreen({ onLogin }) {
   const handleLogin = async () => {
     if (!name.trim()) return setError('กรุณาใส่ชื่อ');
     if (role === 'manager') {
-      setLoading(true);
+      if (!pin) return setError('กรุณาใส่ PIN');
+      setLoading(true); setError('');
       try {
-        const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
-        const d = await r.json();
+        const r = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin }),
+        });
+        const text = await r.text();
+        let d;
+        try { d = JSON.parse(text); } catch {
+          setError('Server error — ตรวจสอบ Vercel logs: ' + text.slice(0, 100));
+          setLoading(false); return;
+        }
         if (!d.ok) { setError(d.msg || 'PIN ไม่ถูกต้อง'); setLoading(false); return; }
-      } catch { setError('เกิดข้อผิดพลาด'); setLoading(false); return; }
+      } catch (e) { setError('เชื่อมต่อ server ไม่ได้: ' + e.message); setLoading(false); return; }
       setLoading(false);
     }
     const stableId = `${role}_${feature}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;

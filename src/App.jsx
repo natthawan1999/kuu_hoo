@@ -689,7 +689,6 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
   const handleAdd = () => {
     if (!checkResult || !qty || parseInt(qty) <= 0) return;
-    if (!location.trim()) { alert('กรุณาระบุ Location ก่อน'); return; }
     addEntry({ barcode: checkResult.barcode, productName: checkResult.name, productId: checkResult.id, unit: checkResult.unit, price: checkResult.price || 0, cost: checkResult.cost || 0, qty: parseInt(qty), countDate, location: location.trim() });
     updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
@@ -697,7 +696,6 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
   const handleAddManually = () => {
     if (!barcode.trim() || !qty || parseInt(qty) <= 0) return;
-    if (!location.trim()) { alert('กรุณาระบุ Location ก่อน'); return; }
     addEntry({ barcode: barcode.trim(), productName: '(ไม่พบในระบบ)', productId: '', unit: '', qty: parseInt(qty), countDate, notFound: true, location: location.trim() });
     updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
@@ -727,9 +725,8 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
         <button onClick={() => setScanMode(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-3 flex items-center justify-center gap-2 font-semibold"><Camera size={18}/>สแกนบาร์โค้ด</button>
         <div>
-          <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1"><MapPin size={12}/>Location <span className="text-red-500">*</span></label>
-          <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="เช่น A1, ชั้น 2, โซน B..." className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${!location.trim() ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}/>
-          {!location.trim() && <div className="text-xs text-red-500 mt-0.5">กรุณาระบุ location ก่อนเพิ่มสินค้า</div>}
+          <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1"><MapPin size={12}/>Location <span className="text-xs text-slate-400">(ไม่บังคับ)</span></label>
+          <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="เช่น A1, ชั้น 2, โซน B..." className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm"/>
         </div>
         <div>
           <label className="text-sm font-medium text-slate-700 mb-1 block">รหัสสินค้า / บาร์โค้ด</label>
@@ -756,7 +753,6 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
               <input ref={qtyInputRef} type="number" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} onKeyDown={e => e.key === 'Enter' && (checkResult ? handleAdd() : handleAddManually())} placeholder="0" className="flex-1 h-12 text-center text-2xl font-bold border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"/>
               <button onClick={() => setQty(String((parseInt(qty)||0)+1))} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center justify-center"><Plus size={18}/></button>
             </div>
-            <div className="grid grid-cols-5 gap-1.5 mt-2">{[1,5,10,20,50].map(n => <button key={n} onClick={() => setQty(String(n))} className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">{n}</button>)}</div>
           </div>
           {checkResult && <button onClick={handleAdd} disabled={!qty || parseInt(qty) <= 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"><Plus size={18}/>เพิ่มในรายการ</button>}
         </>}
@@ -941,8 +937,8 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
             <div key={s.id} className="bg-white rounded-xl border border-slate-200 p-3">
               <div className="flex items-center gap-2"><span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
               <div className="grid grid-cols-2 gap-x-3 mt-1">
-                <div><div className="text-[10px] text-slate-400">เริ่มนับ</div><div className="text-xs font-mono text-blue-700 font-semibold">{s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>
-                <div><div className="text-[10px] text-slate-400">ส่งงาน</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>
+                <div><div className="text-[10px] text-slate-400">เริ่มนับ (window start)</div><div className="text-xs font-mono text-blue-700 font-semibold">{s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>
+                <div><div className="text-[10px] text-slate-400">ส่งงาน (window end)</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
               </div>
               <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-emerald-700 font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
               {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-slate-50 rounded p-1.5">"{s.note}"</div>}
@@ -1161,7 +1157,12 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           {approvedSubs.map(s => (
             <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-indigo-400 bg-indigo-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'} disabled:opacity-50`}>
               <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
-              <div className="text-xs text-slate-500 mt-0.5">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})} • {s.itemCount} รายการ • {s.totalQty.toLocaleString()} ชิ้น</div>
+              <div className="text-xs text-slate-500 mt-0.5">{s.itemCount} รายการ • {s.totalQty.toLocaleString()} ชิ้น</div>
+              <div className="text-[10px] text-slate-500 mt-1 font-mono">
+                <span className="text-blue-600">เริ่มนับ: {s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'}</span>
+                {' → '}
+                <span className="text-slate-600">ส่งงาน: {new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+              </div>
             </button>
           ))}
         </div>
@@ -1170,6 +1171,17 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 text-sm"><strong>ข้อผิดพลาด:</strong> {error}</div>}
       {compareData.length > 0 && (
         <div className="space-y-3">
+          {selectedSub && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
+              <div className="font-semibold text-blue-900 mb-1">📅 Reconcile Window</div>
+              <div className="font-mono text-blue-800">
+                {selectedSub.startedAt ? new Date(selectedSub.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'}
+                {' → '}
+                {new Date(selectedSub.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}
+              </div>
+              <div className="text-blue-700 mt-1 text-[10px]">ดึง sale/purchase ของช่วงนี้มาคำนวณ adjusted_count</div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
             <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>

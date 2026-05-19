@@ -1052,7 +1052,33 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       const saleMap = {};
       const startDate = minScannedAt.slice(0, 10);
       const endDate = submittedAt.slice(0, 10);
-      let saleDebug = { totalRows: 0, inWindow: 0, samples: [], startDate, endDate, minScannedAt, submittedAt };
+      let saleDebug = { totalRows: 0, inWindow: 0, samples: [], startDate, endDate, minScannedAt, submittedAt, diagQueries: [] };
+
+      // Diagnostic: try 3 different queries to isolate the issue
+      try {
+        const firstCode = codes[0];
+        const colSinc = qc('สินค้า');
+        const colDate = qc('วันที่');
+        // Query A: barcode only, no date filter, limit 5
+        const qsA = `${colSinc}=eq.${encodeURIComponent(firstCode)}&select=*&limit=5`;
+        const rowsA = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsA);
+        saleDebug.diagQueries.push({ name: 'A: barcode only', count: rowsA.length, sample: rowsA[0] || null });
+
+        // Query B: no quotes on filter, see if quoted name is the problem
+        const qsB = `${encodeURIComponent('สินค้า')}=eq.${encodeURIComponent(firstCode)}&select=*&limit=5`;
+        try {
+          const rowsB = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsB);
+          saleDebug.diagQueries.push({ name: 'B: unquoted filter', count: rowsB.length, sample: rowsB[0] || null });
+        } catch (e) { saleDebug.diagQueries.push({ name: 'B: unquoted filter', error: e.message }); }
+
+        // Query C: with date filter
+        const qsC = `${colSinc}=eq.${encodeURIComponent(firstCode)}&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=*&limit=5`;
+        const rowsC = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qsC);
+        saleDebug.diagQueries.push({ name: 'C: barcode + date', count: rowsC.length, sample: rowsC[0] || null });
+      } catch (e) {
+        saleDebug.diagQueries.push({ name: 'diagnostic error', error: e.message });
+      }
+
       for (let i = 0; i < codes.length; i += batchSize) {
         set({ loadProgress: `[2/3] ยอดขายระหว่างนับ ${Math.min(i+batchSize,codes.length)}/${codes.length}...` });
         const batch = codes.slice(i, i+batchSize);
@@ -1064,7 +1090,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const qs = `${colSinc}=in.(${inList})&${colDate}=gte.${startDate}&${colDate}=lte.${endDate}&select=${colSinc},${colDate},${colTime},${colQty}`;
         const rows = await sbFetch(sbUrl, sbKey, 'sale_item_with_time', qs);
         saleDebug.totalRows += rows.length;
-        rows.forEach((r, idx) => {
+        rows.forEach((r) => {
           const code = String(r['สินค้า']||'');
           const rawTime = r['เวลา'] ? String(r['เวลา']) : '00:00:00';
           const rawDate = r['วันที่'] ? String(r['วันที่']).slice(0,10) : startDate;
@@ -1191,20 +1217,25 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
             </div>
           )}
           {compareState.debugInfo && (
-            <details className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs">
-              <summary className="font-semibold text-yellow-900 cursor-pointer">🔍 Debug: Sale Query (คลิกเพื่อดู)</summary>
+            <details className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs" open>
+              <summary className="font-semibold text-yellow-900 cursor-pointer">🔍 Debug: Sale Query</summary>
               <div className="mt-2 space-y-1 font-mono text-yellow-900">
                 <div>Query date range: <strong>{compareState.debugInfo.startDate}</strong> → <strong>{compareState.debugInfo.endDate}</strong></div>
-                <div>Total rows returned: <strong>{compareState.debugInfo.totalRows}</strong></div>
-                <div>Rows in window: <strong>{compareState.debugInfo.inWindow}</strong></div>
                 <div>minScannedAt: <strong>{compareState.debugInfo.minScannedAt}</strong></div>
                 <div>submittedAt: <strong>{compareState.debugInfo.submittedAt}</strong></div>
-                <div className="mt-2 font-semibold">Sample rows:</div>
-                {compareState.debugInfo.samples.length === 0 ? <div className="text-red-700">⚠️ Query returned 0 rows — column ชื่อ "วันที่" อาจไม่มีในตาราง</div> : compareState.debugInfo.samples.map((s,i)=>(
+                <div className="mt-2 font-semibold border-t border-yellow-300 pt-2">Diagnostic Queries:</div>
+                {(compareState.debugInfo.diagQueries||[]).map((q,i)=>(
+                  <div key={i} className="border-l-2 border-orange-400 pl-2 my-1">
+                    <div><strong>{q.name}</strong> → {q.error ? <span className="text-red-700">ERROR: {q.error}</span> : <>rows={q.count}</>}</div>
+                    {q.sample && <div className="text-[10px] mt-0.5">sample: {JSON.stringify(q.sample).slice(0,200)}</div>}
+                  </div>
+                ))}
+                <div className="mt-2 font-semibold border-t border-yellow-300 pt-2">Main Query Result:</div>
+                <div>Total rows: <strong>{compareState.debugInfo.totalRows}</strong> | In window: <strong>{compareState.debugInfo.inWindow}</strong></div>
+                {compareState.debugInfo.samples.length > 0 && compareState.debugInfo.samples.map((s,i)=>(
                   <div key={i} className="border-l-2 border-yellow-400 pl-2">
                     <div>code={s.code} date={s.rawDate} time={s.rawTime} qty={s.qty}</div>
-                    <div>saleTime={s.saleTimeISO}</div>
-                    <div>scannedAt={s.scannedAtISO}</div>
+                    <div>saleTime={s.saleTimeISO} | scannedAt={s.scannedAtISO}</div>
                     <div>inWindow=<strong className={s.inWindow?'text-green-700':'text-red-700'}>{String(s.inWindow)}</strong></div>
                   </div>
                 ))}

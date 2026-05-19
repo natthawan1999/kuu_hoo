@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
 
   const scriptUrl = process.env.APPS_SCRIPT_URL;
@@ -20,9 +20,14 @@ export default async function handler(req, res) {
       }),
       redirect: 'follow',
     });
-    const d = await r.json();
-    return res.status(r.ok ? 200 : 500).json(d);
+    const text = await r.text();
+    try {
+      const d = JSON.parse(text);
+      return res.status(d.ok ? 200 : 500).json(d);
+    } catch {
+      return res.status(500).json({ ok: false, error: 'Apps Script returned non-JSON: ' + text.slice(0, 200) });
+    }
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
   }
-}
+};

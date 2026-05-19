@@ -40,11 +40,10 @@ export default async function handler(req, res) {
       const d = JSON.parse(text);
       return res.status(d.ok ? 200 : 500).json(d);
     } catch {
+      const diagStr = `status=${diag.step1_status} loc=${diag.step1_location || 'none'} ct=${diag.step1_contentType || 'none'}${step2 ? ` | step2: status=${step2.status} ct=${step2.contentType}` : ''}`;
       return res.status(500).json({
         ok: false,
-        error: 'Non-JSON response',
-        diag: { ...diag, step2 },
-        bodyPreview: text.slice(0, 500),
+        error: `Non-JSON [${diagStr}] body: ${text.slice(0, 300)}`,
       });
     }
   } catch (err) {

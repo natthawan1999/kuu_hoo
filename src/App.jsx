@@ -280,14 +280,15 @@ function recalc(p) {
 }
 
 function vatSummary(products = []) {
-  let sdTot = 0, netTotal = 0, excl = 0, vatAmt = 0;
+  let sdTot = 0, excl = 0, vatAmt = 0;
   for (const p of products) {
     const sd = p.special_discount != null ? +p.special_discount : 0;
     const net = p.total != null ? +p.total : 0, pt = p._pt ?? 'incl';
-    sdTot += sd; netTotal += net;
+    sdTot += sd;
     excl += p.excl_vat != null ? +p.excl_vat : (p.vat === 'v' ? (pt === 'incl' ? +(net/1.07) : net) : net);
     vatAmt += p.vat_amt != null ? +p.vat_amt : 0;
   }
+  const netTotal = excl + vatAmt;
   return { sdTot: +sdTot.toFixed(2), netTotal: +netTotal.toFixed(2), excl: +excl.toFixed(2), vatAmt: +vatAmt.toFixed(2) };
 }
 
@@ -1530,7 +1531,8 @@ function InvoiceScannerModule({ supabaseConfig }) {
     setSRes(combined); applyBarcodeMap(buildMap(combined)); setScanning(false);
   };
 
-  const addProductFiles = async (newFiles) => { const items=Array.from(newFiles).map(f=>({file:f,id:mkPFileId(),status:'pending'})); setPFiles(prev=>[...prev,...items]); await scanProductItems(items); };
+  const addProductFiles = (newFiles) => { const items=Array.from(newFiles).map(f=>({file:f,id:mkPFileId(),status:'pending'})); setPFiles(prev=>[...prev,...items]); };
+  const scanPendingPFiles = async () => { const items=productFiles.filter(it=>it.status==='pending'); if(items.length===0)return; await scanProductItems(items); };
   const deleteProductFile = (id) => { setPFiles(prev=>prev.filter(it=>it.id!==id)); setSelPFIds(prev=>{const s=new Set(prev);s.delete(id);return s;}); const remaining=scanResults.filter(r=>r._fileId!==id); setSRes(remaining); applyBarcodeMap(buildMap(remaining)); };
   const rescanSelectedPFiles = async () => { const items=productFiles.filter(it=>selPFileIds.has(it.id)); setSelPFIds(new Set()); await scanProductItems(items); };
 
@@ -1539,23 +1541,48 @@ function InvoiceScannerModule({ supabaseConfig }) {
     const wb = XLSX.utils.book_new();
     const done = invoices.filter(i=>i.status==='done'&&i.data);
     const str = v => v!=null?{t:'s',v:String(v).trim()}:null;
+
+    // Sheet 1: bill_header (14 cols per spec)
     const ws1 = XLSX.utils.aoa_to_sheet([
-      ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','total_amount','net_total','excl_vat','vat_amount','vendor_branch','vendor_no','price_type'],
-      ...done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[str(d.invoice_no),d.invoice_date??null,d.vendor_name??null,str(d.vendor_tax_id),d.document_type??null,d.vendor_address??null,+rawAmt.toFixed(2)||null,vs.netTotal,vs.excl,vs.vatAmt,str(d.vendor_branch),str(d.vendor_no),d.price_type??'incl'];})
+      ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','total_amount','total_discount','net_total','excl_vat','vat_amount','vendor_branch','vendor_no','price_type'],
+      ...done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[str(d.invoice_no),d.invoice_date??null,d.vendor_name??null,str(d.vendor_tax_id),d.document_type??null,d.vendor_address??null,+rawAmt.toFixed(2)||null,vs.sdTot,vs.netTotal,vs.excl,vs.vatAmt,str(d.vendor_branch),str(d.vendor_no),d.price_type??'incl'];})
     ]);
     XLSX.utils.book_append_sheet(wb, ws1, 'bill_header');
+
+    // Sheet 2: invoice (17 cols per spec)
     const ws2 = XLSX.utils.aoa_to_sheet([
-      ['invoice_no','no','description','qty','price_ea','amount','special_discount','total','excl_vat','vat_amt','vat','barcode'],
+      ['invoice_no','no','description','carton_size','carton','ea','qty','price_ea','amount','special_discount','amount_sd','total','diff','excl_vat','vat_amt','vat','barcode'],
       ...done.flatMap(inv=>(inv.data.products||[]).map(p=>{
-        const qty=p.qty!=null?+p.qty:null,pea=p.price_ea!=null?+p.price_ea:null,am=p.amount!=null?+p.amount:null,sd=p.special_discount!=null?+p.special_discount:0;
-        const tot=(qty!=null&&pea!=null)?+(qty*pea-sd).toFixed(2):null;
-        const vatV=p.vat==='v',pt=inv.data.price_type??'incl';
-        const exclV=tot!=null?(vatV?(pt==='incl'?+(tot/1.07).toFixed(2):tot):tot):null;
-        const vatAmtV=tot!=null?(vatV?(pt==='incl'?+(tot-tot/1.07).toFixed(2):+(tot*0.07).toFixed(2)):0):null;
-        return[str(inv.data.invoice_no),p.no??null,p.description??null,qty,pea,am,sd||null,tot,exclV,vatAmtV,p.vat??null,str(p.barcode??barcodeMap[String(p.description||'').trim()]??null)];
+        return[
+          str(inv.data.invoice_no), p.no??null, p.description??null,
+          p.carton_size!=null?+p.carton_size:null,
+          p.carton!=null?+p.carton:null,
+          p.ea!=null?+p.ea:null,
+          p.qty!=null?+p.qty:null,
+          p.price_ea!=null?+p.price_ea:null,
+          p.amount!=null?+p.amount:null,
+          p.special_discount!=null?+p.special_discount:null,
+          p.amount_sd!=null?+p.amount_sd:null,
+          p.total!=null?+p.total:null,
+          p.diff!=null?+p.diff:null,
+          p.excl_vat!=null?+p.excl_vat:null,
+          p.vat_amt!=null?+p.vat_amt:null,
+          p.vat??null,
+          str(p.barcode??barcodeMap[String(p.description||'').trim()]??null)
+        ];
       }))
     ]);
     XLSX.utils.book_append_sheet(wb, ws2, 'invoice');
+
+    // Sheet 3: product (only if scan results exist)
+    if (scanResults.length > 0) {
+      const ws3 = XLSX.utils.aoa_to_sheet([
+        ['no','barcode','match','description_image'],
+        ...scanResults.map((r,i)=>[i+1, str(r.barcode), str(r.match), str(r.description_image)])
+      ]);
+      XLSX.utils.book_append_sheet(wb, ws3, 'product');
+    }
+
     const buf = XLSX.write(wb, {type:'array',bookType:'xlsx'});
     return new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   };
@@ -1716,9 +1743,16 @@ function InvoiceScannerModule({ supabaseConfig }) {
           </DropZone>
           {productFiles.length>0&&(
             <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, gap:8, flexWrap:'wrap' }}>
                 <div style={{ fontSize:13, fontWeight:600, color:'#374151' }}>รูปสินค้า ({productFiles.length} ไฟล์)</div>
-                {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 10px', borderRadius:6, background:'#4f46e5', color:'#fff', border:'none', cursor:'pointer' }}>{scanning?'กำลังสแกน...':'Re-scan ที่เลือก'}</button>}
+                <div style={{ display:'flex', gap:6 }}>
+                  {productFiles.some(it=>it.status==='pending')&&(
+                    <button onClick={scanPendingPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 12px', borderRadius:6, background:'#059669', color:'#fff', border:'none', cursor:scanning?'wait':'pointer', fontWeight:600 }}>
+                      {scanning?'กำลังสแกน...':`▶ เริ่ม scan (${productFiles.filter(it=>it.status==='pending').length})`}
+                    </button>
+                  )}
+                  {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 10px', borderRadius:6, background:'#4f46e5', color:'#fff', border:'none', cursor:'pointer' }}>{scanning?'กำลังสแกน...':'Re-scan ที่เลือก'}</button>}
+                </div>
               </div>
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 {productFiles.map(it=>(
@@ -1897,6 +1931,34 @@ function InvoiceScannerModule({ supabaseConfig }) {
                 <div key={k} style={{ background:'#f8fafc', borderRadius:8, padding:'10px' }}><div style={{ fontSize:11, color:'#9ca3af', marginBottom:4 }}>{k}</div><div style={{ fontWeight:700, fontSize:16, color:'#374151' }}>{v}</div></div>
               ))}
             </div>
+            {(() => {
+              const issues = [];
+              for (const inv of doneInvs) {
+                for (const p of (inv.data.products||[])) {
+                  const miss = [];
+                  const bc = p.barcode ?? barcodeMap[String(p.description||'').trim()] ?? '';
+                  if (!bc) miss.push('barcode');
+                  const qty = p.qty != null ? +p.qty : 0;
+                  if (qty <= 0) miss.push('qty');
+                  if (p.price_ea == null && qty > 0) miss.push('total/qty');
+                  if (miss.length > 0) issues.push({ invoice_no: inv.data.invoice_no, no: p.no, description: p.description, missing: miss });
+                }
+              }
+              if (issues.length === 0) return null;
+              return (
+                <div style={{ background:'#fef2f2', border:'1.5px solid #fecaca', borderRadius:8, padding:10, marginBottom:12 }}>
+                  <div style={{ fontWeight:700, fontSize:12, color:'#991b1b', marginBottom:6 }}>⚠ พบ {issues.length} รายการ ที่ข้อมูลไม่ครบ (จะส่งออกไปเป็นค่าว่าง / 0)</div>
+                  <div style={{ maxHeight:120, overflowY:'auto', fontSize:11, color:'#7f1d1d' }}>
+                    {issues.slice(0, 30).map((iss, idx) => (
+                      <div key={idx} style={{ marginBottom:2 }}>
+                        • {iss.invoice_no} #{iss.no} <span style={{ color:'#9ca3af' }}>{(iss.description||'').slice(0,30)}</span> — ขาด: <strong>{iss.missing.join(', ')}</strong>
+                      </div>
+                    ))}
+                    {issues.length > 30 && <div style={{ color:'#9ca3af' }}>... และอีก {issues.length - 30} รายการ</div>}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ marginBottom:12 }}>
               <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:4 }}>ชื่อไฟล์</label>
               <div style={{ display:'flex', gap:8, alignItems:'center' }}>

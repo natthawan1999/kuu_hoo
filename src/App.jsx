@@ -1790,7 +1790,6 @@ function InvoiceScannerModule({ supabaseConfig }) {
                       </select>
                     </div>
                   </div>
-                  </div>
                   <div style={{ marginBottom:10, fontSize:12 }}>
                     <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ที่อยู่</div>
                     <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, resize:'vertical', boxSizing:'border-box' }}/>

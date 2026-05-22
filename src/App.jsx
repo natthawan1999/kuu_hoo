@@ -135,8 +135,8 @@ async function sbFetch(url, key, table, rawQS) {
 async function lookupVendorREST(sbUrl, sbKey, vendorName) {
   if (!sbUrl || !sbKey || !vendorName) return null;
   const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
-  const col = encodeURIComponent('ชื่อ-นามสกุล');
-  const sel = encodeURIComponent('รหัส');
+  const col = encodeURIComponent('"ชื่อ-นามสกุล"');
+  const sel = encodeURIComponent('"รหัส"');
   const get = async (op, kw) => {
     const val = op === 'ilike' ? `*${encodeURIComponent(kw)}*` : encodeURIComponent(kw);
     const r = await fetch(`${sbUrl}/rest/v1/vendor_info?select=${sel}&${col}=${op}.${val}&limit=1`, { headers: h });

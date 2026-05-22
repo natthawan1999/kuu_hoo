@@ -49,6 +49,15 @@ const INVOICE_PROMPT = `ตอบด้วย JSON เท่านั้น ห�
 - price_type="incl" ถ้าราคารวม VAT แล้ว, "excl" ถ้าแยก VAT
 - vat="v" ถ้ามี VAT 7%, "n" ถ้าไม่มี VAT
 
+⚠️ กฎเรื่อง carton_size / carton / ea — สำคัญมาก:
+- carton_size = จำนวนชิ้นต่อ 1 ลัง/กล่อง (pack size)
+- carton = จำนวนลัง (number of cases)
+- ea = จำนวนชิ้นเศษ (loose pieces)
+- ระบบจะคำนวณ qty อัตโนมัติ: qty = carton_size × carton + ea
+- ถ้าใบกำกับแสดงแค่จำนวนชิ้นรวม (ไม่แยกลัง) → ใส่ใน ea ทั้งหมด, carton_size = null, carton = null
+  ตัวอย่าง: บิลแสดง "5 ขวด" → ea = 5, carton_size = null, carton = null
+- ห้ามกรอก qty โดยตรง — ระบบจะคำนวณจาก cs/ca/ea เอง
+
 ⚠️ กฎเรื่อง price_ea (ราคาต่อชิ้น) — สำคัญมาก:
 - price_ea ต้องเป็น "ราคาต่อ 1 ชิ้น" เสมอ (per piece / per smallest unit)
 - ถ้าใบกำกับแสดง "ราคา/หน่วย" เป็น ราคาต่อลัง/กล่อง/หีบ → ให้หารด้วย carton_size ก่อน
@@ -237,7 +246,7 @@ function recalc(p) {
   else if (ca != null)               qty = +(ca + ea).toFixed(4);
   else if (cs != null && ea > 0)     qty = +(cs * ea).toFixed(4);
   else if (ea > 0)                   qty = +ea.toFixed(4);
-  else                               qty = p.qty != null && p.qty !== '' ? +p.qty : null;
+  else                               qty = null;
 
   // price_ea locked once user-entered
   const price_ea = p.price_ea != null && p.price_ea !== '' ? +p.price_ea
@@ -1478,7 +1487,9 @@ function InvoiceScannerModule({ supabaseConfig }) {
     setScanning(true);
     const allP = invoices.filter(i=>i.status==='done'&&i.data?.products).flatMap(i=>i.data.products).filter((p,i,a)=>a.findIndex(x=>x.description===p.description)===i);
     const list = allP.map(p=>p.description).filter(Boolean).join('\n');
-    const kept = scanResults.filter(r=>!scanIds.has(r._fileId));
+    const scanIds = new Set(items.map(it=>it.id));
+    // Keep rows from non-scanning files, AND user-override rows from scanning files
+    const kept = scanResults.filter(r=>!scanIds.has(r._fileId) || r._userOverride);
     const newResults = await Promise.all(items.map(async it => {
       try {
         const { base64, mediaType } = await imgToBase64(it.file);
@@ -1712,19 +1723,26 @@ function InvoiceScannerModule({ supabaseConfig }) {
                 <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse' }}>
                   <thead><tr style={{ background:'#f8fafc' }}>{['#','บาร์โค้ด','รูป (description_image)','จับคู่กับ'].map(h=><th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {scanResults.map((r,i)=>(
-                      <tr key={i} style={{ borderTop:'1px solid #f1f5f9' }}>
+                    {scanResults.map((r,i)=>{
+                      const usedByOthers = new Set(scanResults.filter((_,j)=>j!==i).map(x=>x.match).filter(Boolean));
+                      const allDescs = [...new Set(doneInvs.flatMap(inv=>(inv.data.products||[]).map(p=>p.description)).filter(Boolean))];
+                      return (
+                      <tr key={i} style={{ borderTop:'1px solid #f1f5f9', background: r._userOverride ? '#fefce8' : 'transparent' }}>
                         <td style={{ padding:'5px 8px', color:'#9ca3af' }}>{i+1}</td>
                         <td style={{ padding:'4px 8px' }}><input value={r.barcode??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:130, fontFamily:'monospace', fontSize:11, color:'#065f46', border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
                         <td style={{ padding:'4px 8px' }}><input value={r.description_image??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}} style={{ width:180, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
                         <td style={{ padding:'4px 8px' }}>
-                          <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:180, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}>
+                          <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:200, fontSize:11, border: r._userOverride?'2px solid #eab308':'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', background: r._userOverride?'#fefce8':'#fff' }}>
                             <option value="">— เลือก —</option>
-                            {doneInvs.flatMap(inv=>inv.data.products).map((p,idx)=><option key={idx} value={p.description}>{(p.description||'').slice(0,40)}</option>)}
+                            {allDescs.map((desc,idx) => {
+                              const isUsed = usedByOthers.has(desc);
+                              return <option key={idx} value={desc} disabled={isUsed}>{(desc||'').slice(0,40)}{isUsed?' (ใช้แล้ว)':''}</option>;
+                            })}
                           </select>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1756,15 +1774,23 @@ function InvoiceScannerModule({ supabaseConfig }) {
                     <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ชื่อร้าน / บริษัท</div><input value={d.vendor_name??''} onChange={e=>upd({vendor_name:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:10, fontSize:12 }}>
-                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type'],['สาขา','vendor_branch'],['รหัสผู้ขาย (vendor_no)','vendor_no']].map(([label,key])=>(
+                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type'],['สาขา','vendor_branch']].map(([label,key])=>(
                       <div key={key}><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>upd({[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
                     ))}
+                    <div>
+                      <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2, display:'flex', alignItems:'center', gap:4 }}>
+                        รหัสผู้ขาย (vendor_no)
+                        {d._vendorFromDB && d.vendor_no && <span style={{ background:'#d1fae5', color:'#065f46', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>● DB</span>}
+                      </div>
+                      <input value={d.vendor_no??''} onChange={e=>upd({vendor_no:e.target.value||null, _vendorFromDB:false})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/>
+                    </div>
                     <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ราคา</div>
                       <select value={d.price_type??'incl'} onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12 }}>
                         <option value="incl">รวม VAT แล้ว (incl)</option>
                         <option value="excl">ยังไม่รวม VAT (excl)</option>
                       </select>
                     </div>
+                  </div>
                   </div>
                   <div style={{ marginBottom:10, fontSize:12 }}>
                     <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ที่อยู่</div>

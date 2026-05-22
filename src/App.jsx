@@ -1487,7 +1487,6 @@ function InvoiceScannerModule({ supabaseConfig }) {
     setScanning(true);
     const allP = invoices.filter(i=>i.status==='done'&&i.data?.products).flatMap(i=>i.data.products).filter((p,i,a)=>a.findIndex(x=>x.description===p.description)===i);
     const list = allP.map(p=>p.description).filter(Boolean).join('\n');
-    const scanIds = new Set(items.map(it=>it.id));
     // Keep rows from non-scanning files, AND user-override rows from scanning files
     const kept = scanResults.filter(r=>!scanIds.has(r._fileId) || r._userOverride);
     const newResults = await Promise.all(items.map(async it => {

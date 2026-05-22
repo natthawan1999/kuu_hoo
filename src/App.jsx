@@ -33,18 +33,24 @@ const INVOICE_PROMPT = `ตอบด้วย JSON เท่านั้น ห�
       "description": string|null,
       "carton_size": number|null,
       "carton": number|null,
+      "carton_unit": string|null,
       "ea": number|null,
+      "ea_unit": string|null,
       "qty": number|null,
       "price_ea": number|null,
       "amount": number|null,
       "special_discount": number|null,
-      "vat": "v"|"0"|null
+      "vat": "v"|"n"|null
     }
   ]
 }
-กฎ: price_type="incl" ถ้าราคารวม VAT แล้ว, "excl" ถ้าแยก VAT
-สกัดทุกรายการสินค้า ไม่ละเว้น
-invoice_date ให้เป็น DD/MM/YYYY หรือ YYYY-MM-DD`;
+กฎ:
+- price_type="incl" ถ้าราคารวม VAT แล้ว, "excl" ถ้าแยก VAT
+- vat="v" ถ้ามี VAT 7%, "n" ถ้าไม่มี VAT (สินค้า exempt เช่น ผัก ผลไม้สด นม)
+- carton_unit = หน่วยลัง เช่น "ลัง", "กล่อง", "หีบ"
+- ea_unit = หน่วยชิ้น/เศษ เช่น "ชิ้น", "ขวด", "ซอง", "กก", "ก."
+- สกัดทุกรายการสินค้า ไม่ละเว้น
+- invoice_date ให้เป็น DD/MM/YYYY หรือ YYYY-MM-DD`;
 
 const BARCODE_PROMPT = list => `คุณได้รับรูปภาพสินค้าและรายการชื่อสินค้าจากใบกำกับ
 จงหาบาร์โค้ดจากรูป (EAN-13 หรือรหัสสินค้า) และจับคู่กับชื่อในรายการ
@@ -203,17 +209,36 @@ function extractJSON(text) {
 }
 
 function recalc(p) {
-  const cs = p.carton_size != null ? +p.carton_size : null, ca = p.carton != null ? +p.carton : null;
-  const ea = p.ea != null ? +p.ea : 0, am = p.amount != null ? +p.amount : null;
-  const sd = p.special_discount != null ? +p.special_discount : 0;
-  const qty = cs != null && ca != null ? +(cs * ca + ea).toFixed(4) : (p.qty != null ? +p.qty : null);
-  const price_ea = p.price_ea != null ? +p.price_ea : (qty != null && qty !== 0 && am != null ? +(am / qty).toFixed(4) : null);
-  const total = (qty != null && price_ea != null) ? +(qty * price_ea - sd).toFixed(2) : null;
+  const cs = p.carton_size != null && p.carton_size !== '' ? +p.carton_size : null;
+  const ca = p.carton != null && p.carton !== '' ? +p.carton : null;
+  const ea = p.ea != null && p.ea !== '' ? +p.ea : 0;
+  const am = p.amount != null && p.amount !== '' ? +p.amount : null;
+  const sd = p.special_discount != null && p.special_discount !== '' ? +p.special_discount : 0;
+
+  // qty: 4 branches per spec
+  let qty;
+  if (cs != null && ca != null)      qty = +(cs * ca + ea).toFixed(4);
+  else if (ca != null)               qty = +(ca + ea).toFixed(4);
+  else if (cs != null && ea > 0)     qty = +(cs * ea).toFixed(4);
+  else if (ea > 0)                   qty = +ea.toFixed(4);
+  else                               qty = p.qty != null && p.qty !== '' ? +p.qty : null;
+
+  // price_ea locked once user-entered
+  const price_ea = p.price_ea != null && p.price_ea !== '' ? +p.price_ea
+                 : (qty != null && qty !== 0 && am != null ? +(am / qty).toFixed(4) : null);
+
+  const total     = (qty != null && price_ea != null) ? +(qty * price_ea - sd).toFixed(2) : null;
   const amount_sd = am != null ? +(am - sd).toFixed(2) : null;
-  const diff = (amount_sd != null && total != null) ? +(amount_sd - total).toFixed(2) : null;
+  const diff      = (amount_sd != null && total != null) ? +(amount_sd - total).toFixed(2) : null;
+
   const vatCode = p.vat ?? 'v', pt = p._pt ?? 'incl';
-  const excl_vat = total != null ? (vatCode === 'v' ? (pt === 'incl' ? +(total/1.07).toFixed(2) : total) : total) : null;
-  const vat_amt = total != null ? (vatCode === 'v' ? (pt === 'incl' ? +(total - total/1.07).toFixed(2) : +(total*0.07).toFixed(2)) : 0) : null;
+  const excl_vat = total != null
+    ? (vatCode === 'v' ? (pt === 'incl' ? +(total/1.07).toFixed(2) : total) : total)
+    : null;
+  const vat_amt = total != null
+    ? (vatCode === 'v' ? (pt === 'incl' ? +(total - total/1.07).toFixed(2) : +(total*0.07).toFixed(2)) : 0)
+    : null;
+
   return { ...p, qty, price_ea, total, amount_sd, diff, excl_vat, vat_amt };
 }
 
@@ -1731,10 +1756,10 @@ function InvoiceScannerModule({ supabaseConfig }) {
                   </div>
                   {/* Product table */}
                   <div style={{ overflowX:'auto' }}>
-                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse', minWidth:900 }}>
+                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse', minWidth:1100 }}>
                       <thead>
                         <tr style={{ background:'#f8fafc' }}>
-                          {['#','สินค้า','ขนาดลัง','ลัง','ชิ้น','รวม','ราคา/หน่วย','ยอดตามใบ','ส่วนลด','ยอดสุทธิ','VAT','บาร์โค้ด'].map(h=>(
+                          {['#','สินค้า','ขนาดลัง','ลัง','หน่วยลัง','ชิ้น','หน่วย','รวม','ราคา/หน่วย','ยอดตามใบ','ส่วนลด','ยอดสุทธิ','diff','VAT','บาร์โค้ด'].map(h=>(
                             <th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -1746,6 +1771,13 @@ function InvoiceScannerModule({ supabaseConfig }) {
                             <input type={type} value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value===''?null:e.target.value})}
                               style={{ width:w, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/>
                           );
+                          const inpText = (field, w=55) => (
+                            <input type="text" value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value||null})}
+                              style={{ width:w, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/>
+                          );
+                          const diffColor = p.diff == null ? '#9ca3af'
+                            : Math.abs(p.diff) < 0.01 ? '#059669'
+                            : p.diff > 0 ? '#d97706' : '#dc2626';
                           return (
                             <tr key={pi} style={{ borderTop:'1px solid #f1f5f9' }}>
                               <td style={{ padding:'4px 8px', color:'#9ca3af' }}>{p.no??pi+1}</td>
@@ -1755,16 +1787,19 @@ function InvoiceScannerModule({ supabaseConfig }) {
                               </td>
                               <td style={{ padding:'4px 8px' }}>{inp('carton_size',50)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('carton',45)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inpText('carton_unit',55)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('ea',45)}</td>
+                              <td style={{ padding:'4px 8px' }}>{inpText('ea_unit',55)}</td>
                               <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#374151' }}>{p.qty??'-'}</span></td>
                               <td style={{ padding:'4px 8px' }}>{inp('price_ea',70)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('amount',70)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('special_discount',60)}</td>
                               <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#059669' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:diffColor }}>{p.diff!=null?Number(p.diff).toLocaleString():'-'}</span></td>
                               <td style={{ padding:'4px 8px' }}>
                                 <select value={p.vat??'v'} onChange={e=>updP(pi,{vat:e.target.value})}
                                   style={{ fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}>
-                                  <option value="v">7%</option><option value="0">0%</option>
+                                  <option value="v">7%</option><option value="n">0%</option>
                                 </select>
                               </td>
                               <td style={{ padding:'4px 8px' }}>
@@ -1777,10 +1812,11 @@ function InvoiceScannerModule({ supabaseConfig }) {
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ display:'flex', justifyContent:'flex-end', gap:16, marginTop:8, fontSize:12, color:'#64748b' }}>
-                    <span>ยอดสุทธิ: <strong style={{ color:'#374151' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
-                    <span>VAT: <strong style={{ color:'#374151' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
+                  <div style={{ display:'flex', justifyContent:'flex-end', gap:16, marginTop:8, fontSize:12, color:'#64748b', flexWrap:'wrap' }}>
+                    <span>ส่วนลดรวม: <strong style={{ color:'#dc2626' }}>-฿{vs.sdTot.toLocaleString()}</strong></span>
                     <span>ไม่รวม VAT: <strong style={{ color:'#374151' }}>฿{vs.excl.toLocaleString()}</strong></span>
+                    <span>VAT 7%: <strong style={{ color:'#374151' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
+                    <span>ยอดสุทธิ: <strong style={{ color:'#059669' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
                   </div>
                 </div>
               </div>

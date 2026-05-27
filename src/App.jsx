@@ -134,16 +134,30 @@ function useWinWidth() {
 }
 
 async function supabaseFindProduct(cfg, code) {
-  const { url, anonKey, tableName } = cfg;
+  const { url, anonKey, tableName, stockTableName } = cfg;
   if (!url || !anonKey) return null;
-  const table = tableName || 'product_price';
-  const res = await fetch(
-    `${url.replace(/\/$/, '')}/rest/v1/${table}?StkCode=eq.${encodeURIComponent(code)}&limit=1`,
-    { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } }
-  );
-  if (!res.ok) throw new Error(`Supabase ${res.status}`);
-  const rows = await res.json();
-  return rows.length > 0 ? rows[0] : null;
+  const base = url.replace(/\/$/, '');
+  const h = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+  const col = encodeURIComponent('"รหัสสินค้า"');
+  const priceTable = tableName || 'product_price';
+  const stockTable = stockTableName || 'product_stock';
+
+  // Query both tables in parallel
+  const [priceRes, stockRes] = await Promise.all([
+    fetch(`${base}/rest/v1/${priceTable}?${col}=eq.${encodeURIComponent(code)}&limit=1`, { headers: h }),
+    fetch(`${base}/rest/v1/${stockTable}?${col}=eq.${encodeURIComponent(code)}&limit=1`, { headers: h }),
+  ]);
+
+  let priceRow = null, stockRow = null;
+  if (priceRes.ok) { const arr = await priceRes.json(); if (arr.length) priceRow = arr[0]; }
+  if (stockRes.ok) { const arr = await stockRes.json(); if (arr.length) stockRow = arr[0]; }
+
+  if (!priceRow && !stockRow) {
+    if (!priceRes.ok && !stockRes.ok) throw new Error(`Supabase ${priceRes.status}/${stockRes.status}`);
+    return null;
+  }
+  // Merge: prefer price row fields, fill missing from stock row
+  return { ...(stockRow||{}), ...(priceRow||{}) };
 }
 
 function mapSupabaseRow(row, fallbackCode) {

@@ -1025,6 +1025,21 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-slate-100">
                 <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
                 <PDFDownloadButton sub={s}/>
+                {s.status==='approved'&&(() => {
+                  const key = `${s.id}_csv`;
+                  const res = driveResult[key];
+                  const saving = driveSaving === key;
+                  return (
+                    <>
+                      <button onClick={()=>uploadToDrive(s,'csv')} disabled={saving} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 rounded text-blue-700 font-medium disabled:opacity-60">
+                        {saving?<RefreshCw size={12} className="animate-spin"/>:<Upload size={12}/>}
+                        {saving?'กำลังอัปโหลด...':(res?.ok?'✓ Drive':'☁️ Upload Drive')}
+                      </button>
+                      {res?.ok&&res.link&&<a href={res.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 underline self-center">เปิด</a>}
+                      {res&&!res.ok&&<span className="text-[10px] text-red-600 self-center">✗ {res.err}</span>}
+                    </>
+                  );
+                })()}
                 {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold">รีวิว →</button>}
                 {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-red-600 font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-red-600 text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded" title="ลบ"><Trash2 size={14}/></button>}
               </div>

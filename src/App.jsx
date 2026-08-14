@@ -400,6 +400,7 @@ export default function CombinedApp() {
   const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
+  const [pickedAt, setPickedAt] = useState(null);   // เลือกชื่อไว้กี่โมง — โชว์ในหน้ายืนยันก่อนส่ง
   const [compareState, setCompareState] = useState({
     selectedSub: null, compareData: [], loading: false, loadProgress: '',
     error: '', compareAt: null, driveSaving: false, driveResult: null,
@@ -420,7 +421,8 @@ export default function CombinedApp() {
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
       if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
       setDataSource(src);
-      try { const u = await storage.get('currentUser'); if (u?.value) { const user = JSON.parse(u.value); setCurrentUser(user); setView(defaultViewFor(user)); } } catch {}
+      // เครื่องรวม — ไม่จำคนล่าสุด ต้องเลือกชื่อทุกครั้งที่เปิด (หลักการข้อ 1)
+      // ร่างยังอยู่ เพราะผูกกับ counterId ของคน ไม่ใช่เครื่อง
       setLoaded(true);
     })();
   }, []);
@@ -428,8 +430,9 @@ export default function CombinedApp() {
   useDebouncedStorage('countEntries', countEntries, loaded);
   useDebouncedStorage('submissions', submissions, loaded);
 
-  const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
+
 
   const checkBarcode = async (barcode) => {
     const trimmed = barcode.trim();
@@ -542,15 +545,30 @@ export default function CombinedApp() {
           </div>
           <div className="flex items-center gap-2">
             {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-emerald-50 text-emerald-700' : connectionStatus === 'error' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}><Cloud size={10} />Supabase</div>}
-            <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded"><LogOut size={14} />ออก</button>
+            {!isManager
+              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
+              : <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded"><LogOut size={14} />ออก</button>}
           </div>
         </div>
       </header>
 
+      {!isManager && (
+        <div className={`px-4 py-2 border-b ${feature === 'invoice' ? 'bg-violet-50 border-violet-200' : feature === 'stock_compare' ? 'bg-teal-50 border-teal-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          <div className="max-w-6xl mx-auto flex items-center gap-2 text-xs">
+            <span className={`font-bold ${feature === 'invoice' ? 'text-violet-700' : feature === 'stock_compare' ? 'text-teal-700' : 'text-emerald-700'}`}>
+              กำลังทำงานในชื่อ
+            </span>
+            <span className="font-bold text-slate-800">{currentUser.name}</span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-500">ถ้าไม่ใช่คุณ กด “ไม่ใช่ฉัน” มุมขวาบน</span>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 pb-24">
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
-        {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} />}
+        {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {!isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
@@ -877,7 +895,7 @@ function GroupedRow({ g, highlight, onEditQty }) {
   );
 }
 
-function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser }) {
+function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser, pickedAt }) {
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -918,9 +936,44 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
       {!confirming ? (
         <button onClick={handleSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg"><Send size={20}/>ส่งให้ผู้จัดการรีวิว</button>
       ) : (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 space-y-3">
-          <div className="text-center"><AlertCircle className="mx-auto text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยืนยันส่ง?</div><div className="text-xs text-amber-800 mt-1">{totalItems} บาร์โค้ด • {totalQty.toLocaleString()} ชิ้น</div></div>
-          <div className="flex gap-2"><button onClick={()=>setConfirming(false)} className="flex-1 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg font-medium text-sm">ยกเลิก</button><button onClick={handleSubmit} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2"><Send size={14}/>ยืนยันส่ง</button></div>
+        <div className="space-y-3">
+          <div className="text-[11px] font-bold tracking-wide text-amber-700">ยืนยันก่อนส่ง</div>
+          <div className="text-xl font-bold text-slate-800 leading-snug">
+            ใบนี้จะออกในชื่อ {currentUser?.name || 'พนักงาน'} — ใช่ไหม
+          </div>
+          <div className="bg-white border-2 border-amber-300 rounded-2xl p-4">
+            <div className="flex items-center gap-3">
+              <span className="w-11 h-11 shrink-0 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center text-lg font-bold">
+                {(currentUser?.name || '?').trim().charAt(0)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-bold text-slate-800 truncate">{currentUser?.name || 'พนักงาน'}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  {pickedAt ? `เลือกชื่อไว้ ${new Date(pickedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : 'เลือกชื่อไว้เมื่อเปิดเครื่อง'}
+                </div>
+              </div>
+            </div>
+            <div className="h-px bg-slate-100 my-3" />
+            <div className="flex gap-2">
+              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+                <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums">{totalItems}</div>
+              </div>
+              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+                <div className="text-[10px] text-slate-500">รวมหน่วย</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums">{totalQty.toLocaleString('th-TH')}</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11.5px] text-amber-800 leading-relaxed">
+            เครื่องรวมไม่มี PIN — ถ้าคนก่อนหน้าลืมกด “ไม่ใช่ฉัน” ของที่คุณนับจะเข้าใบเขา จุดนี้คือด่านสุดท้ายที่จับได้
+          </div>
+          <button onClick={handleSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+            <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
+          </button>
+          <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-medium text-sm text-slate-600">
+            ‹ กลับไปแก้
+          </button>
         </div>
       )}
     </div>

@@ -400,6 +400,7 @@ export default function CombinedApp() {
   const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
+  const [showReport, setShowReport] = useState(false);   // รายงานเปิดได้ก่อนเลือกชื่อ
   const [pickedAt, setPickedAt] = useState(null);   // เลือกชื่อไว้กี่โมง — โชว์ในหน้ายืนยันก่อนส่ง
   const [compareState, setCompareState] = useState({
     selectedSub: null, compareData: [], loading: false, loadProgress: '',
@@ -509,7 +510,28 @@ export default function CombinedApp() {
 
 
   if (!loaded) return <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
+    // รายงานเปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
+  if (showReport) return (
+    <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
+      <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="text-white p-2 rounded-lg" style={{ background: '#0F172A' }}><FileSpreadsheet size={20} /></div>
+            <div>
+              <h1 className="font-bold text-slate-800">รายงาน</h1>
+              <p className="text-xs text-slate-500">ดึงข้อมูลและส่งออกไฟล์ — ไม่ต้องเข้าสู่ระบบ</p>
+            </div>
+          </div>
+          <button onClick={() => setShowReport(false)} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] px-3 py-2 rounded-lg">
+            <ArrowRight size={14} className="rotate-180" />กลับหน้าแรก
+          </button>
+        </div>
+      </header>
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4"><ReportView /></main>
+    </div>
+  );
+
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenReport={() => setShowReport(true)} />;
 
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
@@ -608,7 +630,7 @@ export default function CombinedApp() {
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onOpenReport }) {
   const [role, setRole] = useState(null);
   const [feature, setFeature] = useState(null);
   const [name, setName] = useState('');
@@ -686,6 +708,14 @@ function LoginScreen({ onLogin }) {
               <div className="bg-[#F6F7F8] text-[#0F172A] p-3 rounded-lg"><Shield size={24}/></div>
               <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div>
             </button>
+          <button onClick={onOpenReport} className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] text-left">
+            <div className="p-2 rounded-lg bg-[#F6F7F8] text-[#0F172A]"><FileSpreadsheet size={18} /></div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-slate-800">ดูรายงาน</div>
+              <div className="text-[11.5px] text-slate-500">ไม่ต้องเลือกชื่อ — เข้าดูและส่งออกไฟล์ได้เลย</div>
+            </div>
+            <ArrowRight size={16} className="text-slate-400 shrink-0" />
+          </button>
           </div>
         )}
 

@@ -508,7 +508,7 @@ export default function CombinedApp() {
   };
 
 
-  if (!loaded) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
+  if (!loaded) return <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
 
   const isManager = currentUser.role === 'manager';
@@ -553,7 +553,7 @@ export default function CombinedApp() {
           <div className="flex items-center gap-2">
             {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-[#EAF1F0] text-[#2A5A55]' : connectionStatus === 'error' ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#F6F7F8] text-slate-500'}`}><Cloud size={10} />Supabase</div>}
             {!isManager
-              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-slate-50 px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
+              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
               : <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>}
           </div>
         </div>
@@ -1028,7 +1028,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
     <div className="space-y-4">
       <div className="bg-[#EAF1F0] border-2 border-[#B6D0CC] rounded-2xl p-6 text-center"><div className="bg-[#35706A] text-white p-3 rounded-full inline-block mb-3"><Send size={32}/></div><h2 className="text-xl font-bold text-[#2A5A55]">ส่งเรียบร้อยแล้ว!</h2><p className="text-sm text-[#2A5A55] mt-1">รายการถูกส่งให้ผู้จัดการรีวิวแล้ว</p>{submitted.docNo&&<div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5 inline-block"><span className="text-xs text-[#35706A]">เลขที่เอกสาร </span><span className="font-bold font-mono text-[#2A5A55]">{submitted.docNo}</span></div>}<div className="bg-white rounded-lg p-3 mt-4 grid grid-cols-2 gap-2"><div><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="font-bold text-slate-800">{submitted.itemCount}</div></div><div><div className="text-xs text-slate-500">จำนวนรวม</div><div className="font-bold text-slate-800">{submitted.totalQty.toLocaleString()}</div></div></div></div>
       <button onClick={() => setView('count')} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><ScanLine size={18}/>เริ่มนับรอบใหม่</button>
-      <button onClick={() => setView('my_submissions')} className="w-full border border-[#E4E6EA] hover:bg-slate-50 py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
+      <button onClick={() => setView('my_submissions')} className="w-full border border-[#E4E6EA] hover:bg-[#F6F7F8] py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
     </div>
   );
   if (entries.length === 0) return (
@@ -1043,7 +1043,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-2xl font-bold text-slate-800">{totalItems}</div></div>
         <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-2xl font-bold text-[#35706A]">{totalQty.toLocaleString()}</div></div>
       </div>
-      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden"><div className="px-4 py-3 border-b border-[#E4E6EA] bg-slate-50 flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-[#35706A]"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-[#35706A] hover:underline">← แก้ไข</button></div><div className="divide-y divide-[#F6F7F8] max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
+      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden"><div className="px-4 py-3 border-b border-[#E4E6EA] bg-[#F6F7F8] flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-[#35706A]"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-[#35706A] hover:underline">← แก้ไข</button></div><div className="divide-y divide-[#F6F7F8] max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
       {grouped.filter(g=>g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#FDE68A] overflow-hidden"><div className="px-4 py-3 border-b border-[#FDE68A] bg-[#FFFBEB] flex items-center gap-2"><AlertCircle size={14} className="text-[#B45309]"/><h3 className="font-semibold text-[#B45309] text-sm">ไม่พบในระบบ ({grouped.filter(g=>g.notFound).length} รายการ)</h3></div><div className="divide-y divide-[#FFFBEB] max-h-56 overflow-y-auto">{grouped.filter(g=>g.notFound).map(g=><GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty}/>)}</div></div>}
       <div className="bg-white rounded-xl border border-[#E4E6EA] p-4"><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว..." rows={2} className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] text-sm resize-none"/></div>
       {!confirming ? (
@@ -1068,11 +1068,11 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
             </div>
             <div className="h-px bg-[#F6F7F8] my-3" />
             <div className="flex gap-2">
-              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="flex-1 bg-[#F6F7F8] rounded-lg p-2.5 text-center">
                 <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums">{totalItems}</div>
               </div>
-              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="flex-1 bg-[#F6F7F8] rounded-lg p-2.5 text-center">
                 <div className="text-[10px] text-slate-500">รวมหน่วย</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums">{totalQty.toLocaleString('th-TH')}</div>
               </div>
@@ -1084,7 +1084,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
           <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
           </button>
-          <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-slate-50 rounded-xl font-medium text-sm text-slate-600">
+          <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] rounded-xl font-medium text-sm text-slate-600">
             ‹ กลับไปแก้
           </button>
         </div>
@@ -1112,11 +1112,11 @@ function MySubmissionsView({ submissions, setView }) {
                       <div className="flex items-center gap-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.label}</span><span className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span></div>
                       <div className="flex gap-4 mt-1 text-xs text-slate-600"><span><strong>{s.itemCount}</strong> บาร์โค้ด</span><span><strong>{s.totalQty.toLocaleString()}</strong> ชิ้น</span></div>
                       {s.note&&<div className="text-xs text-slate-500 mt-1 italic">"{s.note}"</div>}
-                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-green-800':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
+                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
                     </div>
                   </div>
                   <button onClick={()=>setExpanded(expanded===s.id?null:s.id)} className="w-full mt-2 pt-2 border-t border-[#F6F7F8] text-xs text-slate-500 hover:text-slate-700">{expanded===s.id?'▲ ซ่อนรายการ':'▼ ดูรายการ'}</button>
-                  {expanded===s.id&&<div className="mt-2 bg-slate-50 rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
+                  {expanded===s.id&&<div className="mt-2 bg-[#F6F7F8] rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
                 </div>
               </div>
             );
@@ -1187,10 +1187,10 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
                 <div><div className="text-[10px] text-slate-400">ส่งงาน (window end)</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
               </div>
               <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-[#2A5A55] font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
-              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-slate-50 rounded p-1.5">"{s.note}"</div>}
-              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-green-800':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
+              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-[#F6F7F8] rounded p-1.5">"{s.note}"</div>}
+              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
               <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-[#F6F7F8]">
-                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-[#F6F7F8] rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
+                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#F6F7F8] hover:bg-[#F6F7F8] rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
                 <PDFDownloadButton sub={s}/>
                 {s.status==='approved'&&(() => {
                   const key = `${s.id}_csv`;
@@ -1212,7 +1212,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
               </div>
               {expandedId===s.id&&(
                 <div className="mt-2 pt-2 border-t border-[#F6F7F8]">
-                  <div className="bg-slate-50 rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-[#F6F7F8]">
+                  <div className="bg-[#F6F7F8] rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-[#F6F7F8]">
                     {s.data.map((d,i)=><div key={i} className="py-1.5 px-1 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-700">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400">{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] ml-3 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}
                   </div>
                 </div>
@@ -1226,9 +1226,9 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-[#E4E6EA] flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิว Recorder</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2"><div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-[#EAF1F0] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-[#35706A]">{selected.totalQty.toLocaleString()}</div></div></div>
+              <div className="grid grid-cols-2 gap-2"><div className="bg-[#F6F7F8] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-[#EAF1F0] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-[#35706A]">{selected.totalQty.toLocaleString()}</div></div></div>
               {selected.note&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800"><strong>หมายเหตุ:</strong> {selected.note}</div>}
-              <div className="bg-white border border-[#E4E6EA] rounded-xl overflow-hidden"><div className="px-3 py-2 bg-slate-50 border-b border-[#E4E6EA] text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-[#F6F7F8]">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
+              <div className="bg-white border border-[#E4E6EA] rounded-xl overflow-hidden"><div className="px-3 py-2 bg-[#F6F7F8] border-b border-[#E4E6EA] text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-[#F6F7F8]">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
               <div><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุ / เหตุผล <span className="text-[#B91C1C] text-xs">(บังคับถ้าส่งกลับ)</span></label><textarea value={reviewNote} onChange={e=>{setReviewNote(e.target.value);setRejectError('');}} placeholder="เพิ่มหมายเหตุ..." rows={2} className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-[#0F172A] text-sm resize-none ${rejectError?'border-red-400 bg-[#FEF2F2]':'border-[#E4E6EA]'}`}/>{rejectError&&<div className="text-xs text-[#B91C1C] mt-1 flex items-center gap-1"><XCircle size={12}/>{rejectError}</div>}</div>
               <div className="flex gap-2"><button onClick={handleReject} className="flex-1 py-3 bg-[#B91C1C] hover:bg-[#B91C1C] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsDown size={16}/>ส่งกลับแก้ไข</button><button onClick={handleApprove} className="flex-1 py-3 bg-[#15803D] hover:bg-[#15803D] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsUp size={16}/>อนุมัติ</button></div>
             </div>
@@ -1250,13 +1250,13 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
       {pendingCount>0&&<button onClick={()=>setView('inbox')} className="w-full bg-[#FFFBEB] border-2 border-[#FDE68A] rounded-xl p-4 flex items-center gap-3 text-left hover:bg-[#FFFBEB] transition-colors"><div className="bg-[#B45309] text-white p-2 rounded-lg"><Inbox size={20}/></div><div className="flex-1"><div className="font-semibold text-[#B45309]">มี {pendingCount} รายการรอรีวิว</div><div className="text-xs text-[#B45309]">คลิกเพื่อตรวจสอบ</div></div><ArrowRight size={18} className="text-[#B45309]"/></button>}
       <div className="grid grid-cols-2 gap-3">
         {[{label:'รอรีวิว',value:pending.length,color:'amber'},{label:'อนุมัติแล้ว',value:approved.length,color:'green'},{label:'ส่งวันนี้',value:todaySubmissions.length,color:'indigo'},{label:'สินค้า cache',value:products.length.toLocaleString(),color:'slate'}].map(c=>(
-          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-[#FFFBEB] text-[#B45309] border-[#FFFBEB]':c.color==='green'?'bg-[#F0FDF4] text-[#15803D] border-[#F0FDF4]':c.color==='indigo'?'bg-[#F6F7F8] text-[#0F172A] border-[#F6F7F8]':'bg-slate-50 text-slate-700 border-[#E4E6EA]'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
+          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-[#FFFBEB] text-[#B45309] border-[#FFFBEB]':c.color==='green'?'bg-[#F0FDF4] text-[#15803D] border-[#F0FDF4]':c.color==='indigo'?'bg-[#F6F7F8] text-[#0F172A] border-[#F6F7F8]':'bg-[#F6F7F8] text-slate-700 border-[#E4E6EA]'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
         ))}
       </div>
       <div className="bg-white rounded-xl p-4 border border-[#E4E6EA]">
         <div className="flex justify-between items-center mb-3"><h3 className="font-semibold text-slate-800">ส่งล่าสุด</h3>{submissions.length>0&&<button onClick={()=>setView('inbox')} className="text-xs text-[#0F172A] hover:underline">ดูทั้งหมด</button>}</div>
         {submissions.length===0?<div className="text-center py-6 text-slate-400 text-sm">ยังไม่มีรายการ</div>:(
-          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-[#F6F7F8] last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-amber-400':s.status==='approved'?'bg-[#F0FDF4]0':'bg-red-400'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-[#B45309]':s.status==='approved'?'text-[#15803D]':'text-[#B91C1C]'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
+          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-[#F6F7F8] last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-[#B45309]':s.status==='approved'?'bg-[#15803D]':'bg-[#B91C1C]'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-[#B45309]':s.status==='approved'?'text-[#15803D]':'text-[#B91C1C]'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
         )}
       </div>
     </div>
@@ -1413,7 +1413,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-2">
           <div className="text-sm font-semibold text-slate-700 mb-2">เลือก submission ที่จะเปรียบเทียบ:</div>
           {approvedSubs.map(s => (
-            <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#E4E6EA] hover:bg-slate-50'} disabled:opacity-50`}>
+            <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#E4E6EA] hover:bg-[#F6F7F8]'} disabled:opacity-50`}>
               <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-[#0F172A] bg-[#F6F7F8] px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
               <div className="text-xs text-slate-500 mt-0.5">{s.itemCount} รายการ • {s.totalQty.toLocaleString()} ชิ้น</div>
               <div className="text-[10px] text-slate-500 mt-1 font-mono">
@@ -1456,7 +1456,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           <div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-[#E4E6EA]">
+                <thead className="bg-[#F6F7F8] border-b border-[#E4E6EA]">
                   <tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-[#F6F7F8]">
@@ -1620,7 +1620,7 @@ function ReportView() {
               className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 topic === t.id
                   ? 'bg-slate-800 border-slate-800 text-white'
-                  : 'bg-white border-[#E4E6EA] text-slate-600 hover:bg-slate-50'}`}>
+                  : 'bg-white border-[#E4E6EA] text-slate-600 hover:bg-[#F6F7F8]'}`}>
               {t.label}
             </button>
           ))}
@@ -1687,7 +1687,7 @@ function ReportView() {
       {/* ผลลัพธ์ */}
       {rows && (
         <div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E4E6EA] bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+          <div className="px-4 py-3 border-b border-[#E4E6EA] bg-[#F6F7F8] flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-slate-800">
               {conf.label} · {shown.length.toLocaleString('th-TH')} แถว
               {shown.length !== rows.length && (
@@ -1740,7 +1740,7 @@ function ReportView() {
                 </thead>
                 <tbody>
                   {shown.map((r, i) => (
-                    <tr key={i} className={i % 2 ? 'bg-slate-50/60' : ''}>
+                    <tr key={i} className={i % 2 ? 'bg-[#F6F7F8]/60' : ''}>
                       {cols.map(k => (
                         <td key={k} className={`px-3 py-1.5 whitespace-nowrap ${
                           isNumCol(k) ? 'text-right tabular-nums font-medium text-slate-800' : 'text-slate-600'}`}>
@@ -1785,7 +1785,7 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2></div>
-      <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-[#EAF1F0] border-[#B6D0CC]':'bg-slate-50 border-[#E4E6EA]'}`}>
+      <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-[#EAF1F0] border-[#B6D0CC]':'bg-[#F6F7F8] border-[#E4E6EA]'}`}>
         <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-[#35706A]':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (เชื่อมต่อแล้ว)':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
       </div>
       <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-3">
@@ -1795,7 +1795,7 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
           <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Product <span className="text-xs text-slate-400">(checkBarcode)</span></label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="product_price" className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/></div>
           <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Stock <span className="text-xs text-slate-400">(compare)</span></label><input type="text" value={stockTableName} onChange={e=>setStockTableName(e.target.value)} placeholder="product_stock" className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/></div>
         </div>
-        {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-[#F0FDF4] border border-[#BBF7D0] text-green-800':'bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C]'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
+        {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D]':'bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C]'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
         <div className="flex gap-2">
           <button onClick={handleTest} disabled={testing||!url||!anonKey} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-800 disabled:bg-[#E4E6EA] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">{testing?<RefreshCw size={14} className="animate-spin"/>:<Zap size={14}/>}{testing?'กำลังทดสอบ...':'ทดสอบการเชื่อมต่อ'}</button>
           <button onClick={handleSave} disabled={!url||!anonKey} className="flex-1 py-2.5 bg-[#35706A] hover:bg-[#2A5A55] disabled:bg-[#E4E6EA] text-white rounded-lg text-sm font-medium"><Save size={14} className="inline mr-1"/>บันทึก</button>
@@ -1832,7 +1832,7 @@ function DropZone({ onFiles, multiple, accept, children }) {
     <div ref={ref} onClick={() => ref.current.querySelector('input')?.click()}
       onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
       onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files);}}
-      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#94A3B8] hover:bg-slate-50'}`}>
+      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#94A3B8] hover:bg-[#F6F7F8]'}`}>
       <input type="file" multiple={multiple} accept={accept} className="hidden" onChange={e=>handle(e.target.files)}/>
       {children}
     </div>
@@ -2685,7 +2685,7 @@ function ScannerModal({ products, onScan, onClose }) {
                     <button
                       key={p.id}
                       onClick={() => onScan(p.id)}
-                      className="text-left p-2 bg-slate-50 hover:bg-[#F6F7F8] rounded-lg text-xs"
+                      className="text-left p-2 bg-[#F6F7F8] hover:bg-[#F6F7F8] rounded-lg text-xs"
                     >
                       <div className="font-medium text-slate-700 truncate">{p.name}</div>
                       <div className="text-slate-500 font-mono">{p.id}</div>

@@ -553,9 +553,9 @@ export default function CombinedApp() {
       </header>
 
       {!isManager && (
-        <div className={`px-4 py-2 border-b ${feature === 'invoice' ? 'bg-violet-50 border-violet-200' : feature === 'stock_compare' ? 'bg-teal-50 border-teal-200' : 'bg-emerald-50 border-emerald-200'}`}>
+        <div className={`px-4 py-2 border-b ${feature === 'invoice' ? 'bg-violet-50 border-violet-200' : feature === 'stock_compare' ? 'bg-teal-50 border-teal-200' : 'bg-[#eaf1f0] border-[#b6d0cc]'}`}>
           <div className="max-w-6xl mx-auto flex items-center gap-2 text-xs">
-            <span className={`font-bold ${feature === 'invoice' ? 'text-violet-700' : feature === 'stock_compare' ? 'text-teal-700' : 'text-emerald-700'}`}>
+            <span className={`font-bold ${feature === 'invoice' ? 'text-violet-700' : feature === 'stock_compare' ? 'text-teal-700' : 'text-[#2a5a55]'}`}>
               กำลังทำงานในชื่อ
             </span>
             <span className="font-bold text-slate-800">{currentUser.name}</span>
@@ -801,66 +801,171 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
   const totalQty = entries.reduce((s, e) => s + e.qty, 0);
   const uniqueBarcodes = new Set(entries.map(e => e.barcode)).size;
+  const recent = [...entries].reverse();
 
   return (
-    <div className="space-y-4">
-      <div className={`rounded-lg p-3 text-xs flex items-start gap-2 border ${!isSupabaseReady ? 'bg-red-50 border-red-200 text-red-800' : connectionStatus === 'error' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
-        {!isSupabaseReady ? <WifiOff size={14} className="flex-shrink-0 mt-0.5"/> : <Zap size={14} className="flex-shrink-0 mt-0.5"/>}
-        <div>{!isSupabaseReady ? <><strong>ยังไม่ได้ตั้งค่า Supabase</strong> — แจ้งผู้จัดการก่อน</> : connectionStatus === 'error' ? <><strong>เชื่อม Supabase ไม่ได้</strong></> : <><strong>Supabase พร้อม</strong><span className="opacity-75"> • ค้นสดทีละบาร์โค้ด</span></>}</div>
-      </div>
-      <div className="bg-emerald-600 text-white rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-1"><ScanLine size={16}/><span className="text-xs uppercase tracking-wide opacity-90">นับสต็อกสด</span></div>
-        <h2 className="text-xl font-bold">สแกน/พิมพ์รหัสสินค้า</h2>
-        <div className="mt-3 pt-3 border-t border-white/20">
-          <div className="text-xs opacity-90 mb-1">วันที่นับ</div>
-          <input type="date" value={countDate} onChange={e => setCountDate(e.target.value)} className="w-full px-3 py-2 rounded-lg text-slate-800 font-semibold text-sm bg-white outline-none focus:ring-2 focus:ring-emerald-300"/>
-        </div>
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/20">
-          <div><div className="text-xs opacity-90">รายการที่นับ</div><div className="text-2xl font-bold">{entries.length}</div></div>
-          <div><div className="text-xs opacity-90">จำนวนรวม</div><div className="text-2xl font-bold">{totalQty.toLocaleString()}</div></div>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-        <button onClick={() => setScanMode(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-3 flex items-center justify-center gap-2 font-semibold"><Camera size={18}/>สแกนบาร์โค้ด</button>
-        <div>
-          <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1"><MapPin size={12}/>Location <span className="text-xs text-slate-400">(ไม่บังคับ)</span></label>
-          <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="เช่น A1, ชั้น 2, โซน B..." className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm"/>
-        </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700 mb-1 block">รหัสสินค้า / บาร์โค้ด</label>
-          <div className="flex gap-2">
-            <input ref={barcodeInputRef} type="text" value={barcode} onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleCheck()} placeholder="พิมพ์หรือสแกนรหัสสินค้า..." className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono"/>
-            <button onClick={() => handleCheck()} disabled={!barcode.trim() || checking} className="px-4 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center gap-1">{checking ? <RefreshCw size={14} className="animate-spin"/> : <Search size={14}/>}ตรวจ</button>
+    <div className="space-y-3">
+      {/* รอบนับ + สถานะเซิร์ฟเวอร์ */}
+      <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#e4e6ea' }}>
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor: '#eef0f3' }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold tracking-wide" style={{ color: '#35706a' }}>รอบนับ</div>
+            <input type="date" value={countDate} onChange={e => setCountDate(e.target.value)}
+              className="mt-0.5 text-sm font-bold text-slate-800 bg-transparent outline-none" style={{ fontFamily: "'IBM Plex Mono', monospace" }} />
+          </div>
+          <div className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md ${!isSupabaseReady ? 'bg-red-50 text-red-600' : connectionStatus === 'error' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+            {!isSupabaseReady ? 'ยังไม่ตั้งค่าเซิร์ฟเวอร์' : connectionStatus === 'error' ? 'ต่อเซิร์ฟเวอร์ไม่ได้' : 'เซิร์ฟเวอร์พร้อม'}
           </div>
         </div>
-        {checkResult && <div className="bg-green-50 border border-green-200 rounded-lg p-3"><div className="flex items-start gap-2"><CheckCircle2 size={18} className="text-green-600 flex-shrink-0 mt-0.5"/><div className="flex-1 min-w-0"><div className="text-xs text-green-700">พบสินค้า</div><div className="font-semibold text-slate-800 truncate">{checkResult.name}</div><div className="text-xs text-slate-600 font-mono">รหัส: {checkResult.productCode}</div><div className="text-xs text-slate-600">{checkResult.unit}</div></div></div></div>}
-        {error && (
-          <div className="space-y-2">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3"><div className="flex items-start gap-2"><XCircle size={18} className="text-red-600 flex-shrink-0 mt-0.5"/><div className="text-sm text-red-800">{error}</div></div></div>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-amber-800"><AlertCircle size={14} className="flex-shrink-0"/>ยังไม่มีสินค้านี้ในระบบ — สามารถนับไว้ก่อนได้</div>
-              {qty && parseInt(qty) > 0 && <button onClick={handleAddManually} className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2"><Plus size={15}/>นับไว้ก่อน (ยังไม่มีในระบบ)</button>}
+        <div className="grid grid-cols-2 divide-x" style={{ borderColor: '#eef0f3' }}>
+          <div className="px-3 py-2.5">
+            <div className="text-[10.5px] text-slate-500">บาร์โค้ด</div>
+            <div className="text-xl font-bold text-slate-800" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{uniqueBarcodes}</div>
+          </div>
+          <div className="px-3 py-2.5">
+            <div className="text-[10.5px] text-slate-500">รวมจำนวน</div>
+            <div className="text-xl font-bold text-slate-800" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{totalQty.toLocaleString('th-TH')}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ปุ่มสแกน */}
+      <button onClick={() => setScanMode(true)}
+        className="w-full text-white font-bold text-base flex items-center justify-center gap-2 rounded-xl"
+        style={{ minHeight: 54, background: '#35706a', boxShadow: '0 2px 0 #2a5a55' }}>
+        <Camera size={19} />{entries.length ? 'สแกนชิ้นต่อไป' : 'สแกนบาร์โค้ด'}
+      </button>
+
+      {/* พิมพ์เอง */}
+      <div className="bg-white border rounded-xl p-3 space-y-2.5" style={{ borderColor: '#e2e8f0' }}>
+        <div className="text-[11.5px] text-slate-500">หรือพิมพ์รหัสสินค้า / บาร์โค้ด</div>
+        <div className="flex gap-2">
+          <input ref={barcodeInputRef} type="text" value={barcode}
+            onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }}
+            onKeyDown={e => e.key === 'Enter' && handleCheck()}
+            placeholder="8850999320014"
+            className="flex-1 px-3 py-2.5 border rounded-lg outline-none focus:border-teal-600 text-[15px]"
+            style={{ borderColor: '#e2e8f0', fontFamily: "'IBM Plex Mono', monospace" }} />
+          <button onClick={() => handleCheck()} disabled={!barcode.trim() || checking}
+            className="px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 flex items-center gap-1"
+            style={{ background: '#0f172a' }}>
+            {checking ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}ตรวจ
+          </button>
+        </div>
+        <div>
+          <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1"><MapPin size={11} />ตำแหน่ง (ไม่บังคับ)</div>
+          <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="A-1"
+            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-teal-600 text-[13px]"
+            style={{ borderColor: '#e2e8f0' }} />
+        </div>
+      </div>
+
+      {/* การ์ดสินค้าที่พบ */}
+      {checkResult && (
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1.5px solid #b6d0cc' }}>
+          <div className="px-3 py-2.5 border-b" style={{ background: '#eaf1f0', borderColor: '#d5e5e2' }}>
+            <div className="text-[10.5px] font-semibold" style={{ color: '#2a5a55' }}>พบสินค้าในฐานข้อมูล</div>
+            <div className="text-[15px] font-bold text-slate-800 mt-0.5">{checkResult.name}</div>
+            <div className="flex gap-2.5 mt-1 text-[11px] text-slate-500">
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{checkResult.productCode}</span>
+              {checkResult.unit && <span>หน่วย: {checkResult.unit}</span>}
+              {checkResult.price ? <span>฿{checkResult.price}</span> : null}
             </div>
           </div>
-        )}
-        {(checkResult || error) && <>
-          <div>
-            <label className="text-sm font-medium text-slate-700 mb-1 block">จำนวนที่นับได้</label>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setQty(String(Math.max(0,(parseInt(qty)||0)-1)))} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center justify-center"><Minus size={18}/></button>
-              <input ref={qtyInputRef} type="number" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} onKeyDown={e => e.key === 'Enter' && (checkResult ? handleAdd() : handleAddManually())} placeholder="0" className="flex-1 h-12 text-center text-2xl font-bold border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"/>
-              <button onClick={() => setQty(String((parseInt(qty)||0)+1))} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center justify-center"><Plus size={18}/></button>
+          <div className="p-3 space-y-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-600 mb-1.5">จำนวนที่นับได้</div>
+              <div className="flex items-center gap-2.5">
+                <button onClick={() => setQty(String(Math.max(0, (parseInt(qty) || 0) - 1)))}
+                  className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-slate-700"
+                  style={{ width: 52, height: 52, borderColor: '#e2e8f0', background: '#f8fafc' }}>−</button>
+                <input ref={qtyInputRef} type="number" inputMode="numeric" value={qty}
+                  onChange={e => setQty(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()} placeholder="0"
+                  className="flex-1 text-center font-bold text-slate-800 border-0 outline-none"
+                  style={{ fontSize: 30, fontFamily: "'IBM Plex Mono', monospace" }} />
+                <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
+                  className="shrink-0 rounded-xl border flex items-center justify-center text-2xl"
+                  style={{ width: 52, height: 52, borderColor: '#b6d0cc', background: '#eaf1f0', color: '#2a5a55' }}>+</button>
+              </div>
             </div>
+            <button onClick={handleAdd} disabled={!qty || parseInt(qty) <= 0}
+              className="w-full text-white font-bold text-[15px] rounded-xl disabled:opacity-40"
+              style={{ minHeight: 48, background: '#0f172a' }}>เพิ่มเข้ารายการ</button>
           </div>
-          {checkResult && <button onClick={handleAdd} disabled={!qty || parseInt(qty) <= 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"><Plus size={18}/>เพิ่มในรายการ</button>}
-        </>}
+        </div>
+      )}
+
+      {/* ไม่พบในระบบ — นับไว้ก่อน */}
+      {error && (
+        <div className="bg-white border rounded-xl p-3 space-y-2.5" style={{ borderColor: '#fde68a' }}>
+          <div className="flex items-start gap-2 text-[12px] text-amber-800">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <div>{error} — ยังไม่มีในระบบ นับไว้ก่อนได้</div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button onClick={() => setQty(String(Math.max(0, (parseInt(qty) || 0) - 1)))}
+              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-slate-700"
+              style={{ width: 48, height: 48, borderColor: '#e2e8f0', background: '#f8fafc' }}>−</button>
+            <input type="number" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddManually()} placeholder="0"
+              className="flex-1 text-center font-bold text-slate-800 border-0 outline-none"
+              style={{ fontSize: 26, fontFamily: "'IBM Plex Mono', monospace" }} />
+            <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
+              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-amber-700"
+              style={{ width: 48, height: 48, borderColor: '#fde68a', background: '#fffbeb' }}>+</button>
+          </div>
+          <button onClick={handleAddManually} disabled={!qty || parseInt(qty) <= 0}
+            className="w-full text-white font-bold text-sm rounded-xl disabled:opacity-40"
+            style={{ minHeight: 44, background: '#b45309' }}>นับไว้ก่อน (ยังไม่มีในระบบ)</button>
+        </div>
+      )}
+
+      {/* ร่างของฉัน */}
+      <div className="flex items-baseline justify-between px-0.5 pt-1">
+        <div className="text-[13px] font-bold text-slate-700">ร่างของคุณ ({entries.length} ครั้ง)</div>
+        <div className="text-[11.5px] text-slate-500">{uniqueBarcodes} บาร์โค้ด</div>
       </div>
-      {entries.length > 0 && <>
-        <button onClick={() => setView('review')} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><Layers size={18}/>รวมยอด & ส่งผู้จัดการ ({uniqueBarcodes} บาร์โค้ด)<ArrowRight size={18}/></button>
-        {entries.filter(e => !e.notFound).length > 0 && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden"><div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-600"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({entries.filter(e=>!e.notFound).length} รายการ)</h3></div><div className="max-h-48 overflow-y-auto">{entries.filter(e=>!e.notFound).slice(0,20).map(e=><EntryRow key={e.id} e={e} deleteEntry={deleteEntry}/>)}</div></div>}
-        {entries.filter(e => e.notFound).length > 0 && <div className="bg-white rounded-xl border border-amber-200 overflow-hidden"><div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2"><AlertCircle size={14} className="text-amber-600"/><h3 className="font-semibold text-amber-800 text-sm">ไม่พบในระบบ ({entries.filter(e=>e.notFound).length} รายการ)</h3></div><div className="max-h-48 overflow-y-auto">{entries.filter(e=>e.notFound).map(e=><EntryRow key={e.id} e={e} deleteEntry={deleteEntry} highlight/>)}</div></div>}
-      </>}
-      {scanMode && <ScannerModal products={products} onScan={(code) => { setScanMode(false); setBarcode(code); handleCheck(code); }} onClose={() => setScanMode(false)}/>}
+
+      {entries.length === 0 ? (
+        <div className="bg-white rounded-xl px-4 py-7 text-center text-[12.5px] text-slate-400"
+          style={{ border: '1px dashed #cbd5e1' }}>ยังไม่ได้นับ — เริ่มจากสแกนบาร์โค้ด</div>
+      ) : (
+        <div className="space-y-2">
+          {recent.slice(0, 30).map(e => (
+            <div key={e.id} className="bg-white border rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+              style={{ borderColor: e.notFound ? '#fde68a' : '#e2e8f0' }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13.5px] font-semibold text-slate-800 truncate">{e.productName}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5 truncate" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {e.barcode}{e.location ? ' · ' + e.location : ''}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-base font-bold text-slate-800" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{e.qty}</div>
+                <div className="text-[10.5px] text-slate-400">{e.unit || ''}</div>
+              </div>
+              <button onClick={() => deleteEntry(e.id)}
+                className="shrink-0 rounded-lg flex items-center justify-center text-red-600"
+                style={{ width: 32, height: 32, background: '#fef2f2' }}><X size={14} /></button>
+            </div>
+          ))}
+          {recent.length > 30 && <div className="text-center text-[11px] text-slate-400 py-1">แสดง 30 รายการล่าสุด จาก {recent.length}</div>}
+        </div>
+      )}
+
+      {entries.length > 0 && (
+        <button onClick={() => setView('review')}
+          className="w-full text-white font-bold text-[15.5px] rounded-xl"
+          style={{ minHeight: 52, background: '#0f172a' }}>ตรวจสอบ &amp; ส่ง →</button>
+      )}
+
+      <div className="bg-white border rounded-xl px-3 py-2.5 flex items-center gap-2" style={{ borderColor: '#e2e8f0' }}>
+        <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#35706a' }}></span>
+        <div className="text-[11px] text-slate-500 leading-relaxed">เซฟทันทีที่กด — ปิดแอปหรือเน็ตหลุดก็กลับมานับต่อได้</div>
+      </div>
+
+      {scanMode && <ScannerModal products={products} onScan={(code) => { setScanMode(false); setBarcode(code); handleCheck(code); }} onClose={() => setScanMode(false)} />}
     </div>
   );
 }

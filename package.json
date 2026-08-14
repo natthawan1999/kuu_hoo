@@ -17,7 +17,8 @@
     "lucide-react": "^0.383.0",
     "xlsx": "^0.18.5",
     "html5-qrcode": "^2.3.8",
-    "@ericblade/quagga2": "^1.8.4"
+    "@ericblade/quagga2": "^1.8.4",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

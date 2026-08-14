@@ -10,8 +10,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
     <style>
-      /* ตัวหนังสือทั้งแอป Sarabun · ตัวเลขในตาราง/การ์ด IBM Plex Mono (ระบุเป็น inline style ตรงจุด) */
-      body { font-family: 'Sarabun', system-ui, sans-serif; }
+      /* ตัวหนังสือทั้งแอป Sarabun · ตัวเลข IBM Plex Mono (class font-mono และ tabular-nums) */
+      body { font-family: 'Sarabun', system-ui, sans-serif; color: #0F172A; }
+      .font-mono, .tabular-nums { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+      input, textarea, select, button { font-family: inherit; }
+      /* ปุ่มบนมือถือกดง่าย — พื้นที่กดขั้นต่ำ 44px ตามที่ออกแบบไว้ */
+      button { touch-action: manipulation; }
     </style>
   </head>
   <body>

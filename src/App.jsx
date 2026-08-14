@@ -400,6 +400,7 @@ export default function CombinedApp() {
   const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
+  const [showReport, setShowReport] = useState(false);   // รายงานเปิดได้ก่อนเลือกชื่อ
   const [pickedAt, setPickedAt] = useState(null);   // เลือกชื่อไว้กี่โมง — โชว์ในหน้ายืนยันก่อนส่ง
   const [compareState, setCompareState] = useState({
     selectedSub: null, compareData: [], loading: false, loadProgress: '',
@@ -508,8 +509,29 @@ export default function CombinedApp() {
   };
 
 
-  if (!loaded) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>;
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} />;
+  if (!loaded) return <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
+    // รายงานเปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
+  if (showReport) return (
+    <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
+      <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="text-white p-2 rounded-lg" style={{ background: '#0F172A' }}><FileSpreadsheet size={20} /></div>
+            <div>
+              <h1 className="font-bold text-slate-800">รายงาน</h1>
+              <p className="text-xs text-slate-500">ดึงข้อมูลและส่งออกไฟล์ — ไม่ต้องเข้าสู่ระบบ</p>
+            </div>
+          </div>
+          <button onClick={() => setShowReport(false)} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] px-3 py-2 rounded-lg">
+            <ArrowRight size={14} className="rotate-180" />กลับหน้าแรก
+          </button>
+        </div>
+      </header>
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4"><ReportView /></main>
+    </div>
+  );
+
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenReport={() => setShowReport(true)} />;
 
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
@@ -518,8 +540,15 @@ export default function CombinedApp() {
   const pendingCount = submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
 
   const FEATURE_LABEL = { recorder: 'Recorder', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };
-  const headerAccent = isManager ? 'bg-indigo-600' : feature === 'invoice' ? 'bg-violet-600' : feature === 'stock_compare' ? 'bg-teal-600' : 'bg-emerald-600';
-  const activeColor = isManager ? 'text-indigo-600 bg-indigo-50' : feature === 'invoice' ? 'text-violet-600 bg-violet-50' : feature === 'stock_compare' ? 'text-teal-600 bg-teal-50' : 'text-emerald-600 bg-emerald-50';
+  // ระบบสีตาม Color System.dc.html — Recorder เขียว · นับ+เปรียบเทียบ ม่วง · สแกนบิล ฟ้า
+  // ผู้จัดการใช้สีของฟีเจอร์ที่กำลังดูอยู่ (ตามกติกา "หนึ่งหน้าจอเห็นสีฟีเจอร์ได้สีเดียว")
+  const FEAT = {
+    recorder:      { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' },
+    stock_compare: { main: '#7658C9', deep: '#5F45A8', soft: '#F2EFFA', line: '#D5CAEE' },
+    invoice:       { main: '#2F6E90', deep: '#255771', soft: '#EAF0F4', line: '#B9CFDC' },
+  };
+  const C = FEAT[feature] || FEAT.recorder;
+  
 
   // Nav per role+feature
   const navItems = isManager
@@ -533,29 +562,29 @@ export default function CombinedApp() {
         : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
+    <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
+      <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`${headerAccent} text-white p-2 rounded-lg`}><Package size={20} /></div>
+            <div className="text-white p-2 rounded-lg" style={{ background: C.main }}><Package size={20} /></div>
             <div>
               <h1 className="font-bold text-slate-800">KUUHOO</h1>
               <p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'} • {currentUser.name} • {FEATURE_LABEL[feature] || feature}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-emerald-50 text-emerald-700' : connectionStatus === 'error' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}><Cloud size={10} />Supabase</div>}
+            {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-[#EAF1F0] text-[#2A5A55]' : connectionStatus === 'error' ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#F6F7F8] text-slate-500'}`}><Cloud size={10} />Supabase</div>}
             {!isManager
-              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
-              : <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded"><LogOut size={14} />ออก</button>}
+              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
+              : <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>}
           </div>
         </div>
       </header>
 
       {!isManager && (
-        <div className={`px-4 py-2 border-b ${feature === 'invoice' ? 'bg-violet-50 border-violet-200' : feature === 'stock_compare' ? 'bg-teal-50 border-teal-200' : 'bg-[#eaf1f0] border-[#b6d0cc]'}`}>
+        <div className="px-4 py-2 border-b" style={{ background: C.soft, borderColor: C.line }}>
           <div className="max-w-6xl mx-auto flex items-center gap-2 text-xs">
-            <span className={`font-bold ${feature === 'invoice' ? 'text-violet-700' : feature === 'stock_compare' ? 'text-teal-700' : 'text-[#2a5a55]'}`}>
+            <span className="font-bold" style={{ color: C.deep }}>
               กำลังทำงานในชื่อ
             </span>
             <span className="font-bold text-slate-800">{currentUser.name}</span>
@@ -581,16 +610,17 @@ export default function CombinedApp() {
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] shadow-lg">
         <div className="max-w-6xl mx-auto flex">
           {navItems.map(item => {
             const Icon = item.icon; const active = view === item.id;
             return (
               <button key={item.id} onClick={() => setView(item.id)} style={{ flex: 1 }}
-                className={`relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px] ${active ? activeColor : 'text-slate-500 hover:bg-slate-50'}`}>
+                className="relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px]"
+                style={active ? { color: C.main, background: C.soft } : { color: '#64748B' }}>
                 <Icon size={18} />
                 <span className="font-medium">{item.label}</span>
-                {item.badge > 0 && <span className="absolute top-1.5 right-1/2 translate-x-4 bg-red-500 text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] text-center">{item.badge}</span>}
+                {item.badge > 0 && <span className="absolute top-1.5 right-1/2 translate-x-4 bg-[#B91C1C] text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] text-center">{item.badge}</span>}
               </button>
             );
           })}
@@ -600,7 +630,7 @@ export default function CombinedApp() {
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onOpenReport }) {
   const [role, setRole] = useState(null);
   const [feature, setFeature] = useState(null);
   const [name, setName] = useState('');
@@ -609,9 +639,9 @@ function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
 
   const COUNTER_FEATURES = [
-    { id: 'recorder',      label: 'Recorder',            desc: 'บันทึกและส่งข้อมูลให้ผู้จัดการ',              icon: ScanLine,      accent: 'emerald' },
-    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'teal'    },
-    { id: 'invoice',       label: 'สแกนบิล AI',          desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'violet'  },
+    { id: 'recorder',      label: 'Recorder',            desc: 'บันทึกและส่งข้อมูลให้ผู้จัดการ',              icon: ScanLine,      accent: 'recorder' },
+    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'compare'    },
+    { id: 'invoice',       label: 'สแกนบิล AI',          desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'invoice'  },
   ];
   const MANAGER_FEATURES = [
     { id: 'recorder',      label: 'Recorder',            desc: 'รีวิว อนุมัติ และจัดการผลการบันทึก',        icon: ScanLine,      accent: 'indigo'  },
@@ -620,10 +650,10 @@ function LoginScreen({ onLogin }) {
 
   const accentClass = (a, type) => {
     const map = {
-      emerald: { border: 'hover:border-emerald-500 hover:bg-emerald-50', icon: 'bg-emerald-100 text-emerald-700', btn: 'bg-emerald-600 hover:bg-emerald-700' },
-      teal:    { border: 'hover:border-teal-500 hover:bg-teal-50',       icon: 'bg-teal-100 text-teal-700',       btn: 'bg-teal-600 hover:bg-teal-700'       },
-      violet:  { border: 'hover:border-violet-500 hover:bg-violet-50',   icon: 'bg-violet-100 text-violet-700',   btn: 'bg-violet-600 hover:bg-violet-700'   },
-      indigo:  { border: 'hover:border-indigo-500 hover:bg-indigo-50',   icon: 'bg-indigo-100 text-indigo-700',   btn: 'bg-indigo-600 hover:bg-indigo-700'   },
+      recorder: { border: 'hover:border-[#35706A] hover:bg-[#EAF1F0]', icon: 'bg-[#EAF1F0] text-[#2A5A55]', btn: 'bg-[#35706A] hover:bg-[#2A5A55]' },
+      compare:  { border: 'hover:border-[#7658C9] hover:bg-[#F2EFFA]', icon: 'bg-[#F2EFFA] text-[#5F45A8]', btn: 'bg-[#7658C9] hover:bg-[#5F45A8]' },
+      invoice:  { border: 'hover:border-[#2F6E90] hover:bg-[#EAF0F4]', icon: 'bg-[#EAF0F4] text-[#255771]', btn: 'bg-[#2F6E90] hover:bg-[#255771]' },
+      indigo:   { border: 'hover:border-[#0F172A] hover:bg-[#F6F7F8]', icon: 'bg-[#F6F7F8] text-[#0F172A]', btn: 'bg-[#0F172A] hover:bg-[#0F172A]' },
     };
     return map[a]?.[type] || map.indigo[type];
   };
@@ -658,10 +688,10 @@ function LoginScreen({ onLogin }) {
   const btnColor = role === 'manager' ? accentClass('indigo','btn') : selectedFeature ? accentClass(selectedFeature.accent,'btn') : 'bg-slate-600 hover:bg-slate-700';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
         <div className="text-center">
-          <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
+          <div className="bg-[#0F172A] text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
           <h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1>
           <p className="text-sm text-slate-500">เข้าสู่ระบบ</p>
         </div>
@@ -670,14 +700,22 @@ function LoginScreen({ onLogin }) {
         {!role && (
           <div className="space-y-3">
             <div className="text-sm font-semibold text-slate-700">เลือกบทบาท</div>
-            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-emerald-100 text-emerald-700 p-3 rounded-lg"><User size={24}/></div>
+            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-[#E4E6EA] hover:border-[#35706A] hover:bg-[#EAF1F0] rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-[#EAF1F0] text-[#2A5A55] p-3 rounded-lg"><User size={24}/></div>
               <div><div className="font-semibold text-slate-800">พนักงาน</div><div className="text-xs text-slate-500">นับสต็อก / สแกนบิล</div></div>
             </button>
-            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-indigo-100 text-indigo-700 p-3 rounded-lg"><Shield size={24}/></div>
+            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-[#E4E6EA] hover:border-[#0F172A] hover:bg-[#F6F7F8] rounded-xl transition-colors text-left flex items-center gap-3">
+              <div className="bg-[#F6F7F8] text-[#0F172A] p-3 rounded-lg"><Shield size={24}/></div>
               <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div>
             </button>
+          <button onClick={onOpenReport} className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] text-left">
+            <div className="p-2 rounded-lg bg-[#F6F7F8] text-[#0F172A]"><FileSpreadsheet size={18} /></div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-slate-800">ดูรายงาน</div>
+              <div className="text-[11.5px] text-slate-500">ไม่ต้องเลือกชื่อ — เข้าดูและส่งออกไฟล์ได้เลย</div>
+            </div>
+            <ArrowRight size={16} className="text-slate-400 shrink-0" />
+          </button>
           </div>
         )}
 
@@ -688,7 +726,7 @@ function LoginScreen({ onLogin }) {
               <button onClick={() => { setRole(null); setError(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
               <div className="text-sm font-semibold text-slate-700">เลือก Feature</div>
             </div>
-            <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-medium ${role === 'manager' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-medium ${role === 'manager' ? 'bg-[#F6F7F8] text-[#0F172A]' : 'bg-[#EAF1F0] text-[#2A5A55]'}`}>
               {role === 'manager' ? <Shield size={13}/> : <User size={13}/>}
               {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
             </div>
@@ -696,7 +734,7 @@ function LoginScreen({ onLogin }) {
               const Icon = f.icon;
               return (
                 <button key={f.id} onClick={() => setFeature(f.id)}
-                  className={`w-full p-4 border-2 border-slate-200 ${accentClass(f.accent,'border')} rounded-xl transition-colors text-left flex items-center gap-3`}>
+                  className={`w-full p-4 border-2 border-[#E4E6EA] ${accentClass(f.accent,'border')} rounded-xl transition-colors text-left flex items-center gap-3`}>
                   <div className={`${accentClass(f.accent,'icon')} p-3 rounded-lg`}><Icon size={22}/></div>
                   <div><div className="font-semibold text-slate-800">{f.label}</div><div className="text-xs text-slate-500">{f.desc}</div></div>
                 </button>
@@ -713,26 +751,26 @@ function LoginScreen({ onLogin }) {
               <div className="text-sm font-semibold text-slate-700">ข้อมูลผู้ใช้</div>
             </div>
             <div className="flex gap-2">
-              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${role === 'manager' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${role === 'manager' ? 'bg-[#F6F7F8] text-[#0F172A]' : 'bg-[#EAF1F0] text-[#2A5A55]'}`}>
                 {role === 'manager' ? <Shield size={12}/> : <User size={12}/>}
                 {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
               </div>
-              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${accentClass(selectedFeature?.accent || 'indigo','icon').replace('bg-','').includes('emerald') ? 'bg-emerald-50 text-emerald-700' : selectedFeature?.accent === 'teal' ? 'bg-teal-50 text-teal-700' : selectedFeature?.accent === 'violet' ? 'bg-violet-50 text-violet-700' : 'bg-indigo-50 text-indigo-700'}`}>
+              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${accentClass(selectedFeature?.accent || 'indigo','icon').replace('bg-','').includes('emerald') ? 'bg-[#EAF1F0] text-[#2A5A55]' : selectedFeature?.accent === 'teal' ? 'bg-[#F2EFFA] text-[#5F45A8]' : selectedFeature?.accent === 'violet' ? 'bg-[#EAF0F4] text-[#255771]' : 'bg-[#F6F7F8] text-[#0F172A]'}`}>
                 {selectedFeature && <selectedFeature.icon size={12}/>}
                 {selectedFeature?.label}
               </div>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
-              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" autoFocus/>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none" autoFocus/>
             </div>
             {role === 'manager' && (
               <div>
                 <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label>
-                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-lg tracking-widest text-center"/>
+                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none font-mono text-lg tracking-widest text-center"/>
               </div>
             )}
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-2">{error}</div>}
+            {error && <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-sm rounded-lg p-2">{error}</div>}
             <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${btnColor}`}>
               {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
             </button>
@@ -745,23 +783,23 @@ function LoginScreen({ onLogin }) {
 
 function EntryRow({ e, deleteEntry, highlight }) {
   return (
-    <div className={`flex items-center gap-2 p-3 border-b last:border-0 ${highlight ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100'}`}>
+    <div className={`flex items-center gap-2 p-3 border-b last:border-0 ${highlight ? 'border-[#FFFBEB] bg-[#FFFBEB]/30' : 'border-[#F6F7F8]'}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-sm font-medium text-slate-800 truncate">{e.productName}</span>
-          {e.notFound && <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">ไม่มีในระบบ</span>}
+          {e.notFound && <span className="text-[9px] bg-[#B45309] text-white px-1.5 py-0.5 rounded-full flex-shrink-0">ไม่มีในระบบ</span>}
         </div>
         <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
           {e.barcode}
-          {e.location && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{e.location}</span>}
+          {e.location && <span className="text-[9px] bg-[#F6F7F8] text-slate-500 px-1.5 py-0.5 rounded">{e.location}</span>}
         </div>
       </div>
       <div className="text-right mr-1">
         <div className="font-bold text-slate-800">{e.qty}</div>
-        <div className={`text-xs font-mono font-semibold ${e.notFound ? 'text-amber-600' : 'text-emerald-600'}`}>{new Date(e.timestamp).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>
+        <div className={`text-xs font-mono font-semibold ${e.notFound ? 'text-[#B45309]' : 'text-[#35706A]'}`}>{new Date(e.timestamp).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>
         <div className="text-[10px] text-slate-400">{new Date(e.timestamp).toLocaleDateString('th-TH',{day:'2-digit',month:'short'})}</div>
       </div>
-      <button onClick={() => deleteEntry(e.id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded"><Trash2 size={14}/></button>
+      <button onClick={() => deleteEntry(e.id)} className="p-1.5 hover:bg-[#FEF2F2] text-[#B91C1C] rounded"><Trash2 size={14}/></button>
     </div>
   );
 }
@@ -813,7 +851,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
             <input type="date" value={countDate} onChange={e => setCountDate(e.target.value)}
               className="mt-0.5 text-sm font-bold text-slate-800 bg-transparent outline-none" style={{ fontFamily: "'IBM Plex Mono', monospace" }} />
           </div>
-          <div className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md ${!isSupabaseReady ? 'bg-red-50 text-red-600' : connectionStatus === 'error' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+          <div className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md ${!isSupabaseReady ? 'bg-[#FEF2F2] text-[#B91C1C]' : connectionStatus === 'error' ? 'bg-[#FFFBEB] text-[#B45309]' : 'bg-[#F6F7F8] text-slate-500'}`}>
             {!isSupabaseReady ? 'ยังไม่ตั้งค่าเซิร์ฟเวอร์' : connectionStatus === 'error' ? 'ต่อเซิร์ฟเวอร์ไม่ได้' : 'เซิร์ฟเวอร์พร้อม'}
           </div>
         </div>
@@ -844,7 +882,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
             onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }}
             onKeyDown={e => e.key === 'Enter' && handleCheck()}
             placeholder="8850999320014"
-            className="flex-1 px-3 py-2.5 border rounded-lg outline-none focus:border-teal-600 text-[15px]"
+            className="flex-1 px-3 py-2.5 border rounded-lg outline-none focus:border-[#7658C9] text-[15px]"
             style={{ borderColor: '#e2e8f0', fontFamily: "'IBM Plex Mono', monospace" }} />
           <button onClick={() => handleCheck()} disabled={!barcode.trim() || checking}
             className="px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 flex items-center gap-1"
@@ -855,7 +893,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
         <div>
           <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1"><MapPin size={11} />ตำแหน่ง (ไม่บังคับ)</div>
           <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="A-1"
-            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-teal-600 text-[13px]"
+            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#7658C9] text-[13px]"
             style={{ borderColor: '#e2e8f0' }} />
         </div>
       </div>
@@ -899,7 +937,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
       {/* ไม่พบในระบบ — นับไว้ก่อน */}
       {error && (
         <div className="bg-white border rounded-xl p-3 space-y-2.5" style={{ borderColor: '#fde68a' }}>
-          <div className="flex items-start gap-2 text-[12px] text-amber-800">
+          <div className="flex items-start gap-2 text-[12px] text-[#B45309]">
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
             <div>{error} — ยังไม่มีในระบบ นับไว้ก่อนได้</div>
           </div>
@@ -912,7 +950,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
               className="flex-1 text-center font-bold text-slate-800 border-0 outline-none"
               style={{ fontSize: 26, fontFamily: "'IBM Plex Mono', monospace" }} />
             <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
-              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-amber-700"
+              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-[#B45309]"
               style={{ width: 48, height: 48, borderColor: '#fde68a', background: '#fffbeb' }}>+</button>
           </div>
           <button onClick={handleAddManually} disabled={!qty || parseInt(qty) <= 0}
@@ -946,7 +984,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
                 <div className="text-[10.5px] text-slate-400">{e.unit || ''}</div>
               </div>
               <button onClick={() => deleteEntry(e.id)}
-                className="shrink-0 rounded-lg flex items-center justify-center text-red-600"
+                className="shrink-0 rounded-lg flex items-center justify-center text-[#B91C1C]"
                 style={{ width: 32, height: 32, background: '#fef2f2' }}><X size={14} /></button>
             </div>
           ))}
@@ -975,25 +1013,25 @@ function GroupedRow({ g, highlight, onEditQty }) {
   const [editVal, setEditVal] = useState(String(g.qty));
   const confirmEdit = () => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onEditQty && onEditQty(g.barcode, v); setEditing(false); };
   return (
-    <div className={`p-3 flex items-center gap-3 ${highlight ? 'bg-amber-50/40' : ''}`}>
+    <div className={`p-3 flex items-center gap-3 ${highlight ? 'bg-[#FFFBEB]/40' : ''}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-mono text-sm text-slate-800">{g.barcode}</span>
-          {g.notFound && <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full">ไม่มีในระบบ</span>}
-          {g.location && <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{g.location}</span>}
+          {g.notFound && <span className="text-[9px] bg-[#B45309] text-white px-1.5 py-0.5 rounded-full">ไม่มีในระบบ</span>}
+          {g.location && <span className="text-[9px] bg-[#E4E6EA] text-slate-600 px-1.5 py-0.5 rounded-full">{g.location}</span>}
         </div>
         <div className="text-xs text-slate-500 truncate">{g.productName}</div>
       </div>
       {onEditQty && editing ? (
         <div className="flex items-center gap-1">
-          <input autoFocus type="number" value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')confirmEdit();if(e.key==='Escape')setEditing(false);}} className="w-16 h-8 text-center font-bold border border-indigo-400 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 text-sm"/>
-          <button onClick={confirmEdit} className="p-1 bg-indigo-600 text-white rounded"><Check size={14}/></button>
-          <button onClick={()=>setEditing(false)} className="p-1 bg-slate-200 text-slate-600 rounded"><X size={14}/></button>
+          <input autoFocus type="number" value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')confirmEdit();if(e.key==='Escape')setEditing(false);}} className="w-16 h-8 text-center font-bold border border-[#94A3B8] rounded-lg outline-none focus:ring-2 focus:ring-[#94A3B8] text-sm"/>
+          <button onClick={confirmEdit} className="p-1 bg-[#0F172A] text-white rounded"><Check size={14}/></button>
+          <button onClick={()=>setEditing(false)} className="p-1 bg-[#E4E6EA] text-slate-600 rounded"><X size={14}/></button>
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <div className="text-right"><div className={`text-lg font-bold ${highlight?'text-amber-600':'text-emerald-600'}`}>{g.qty}</div>{g.scans>1&&<div className="text-xs text-slate-400">{g.scans} ครั้ง</div>}</div>
-          {onEditQty && <button onClick={()=>{setEditVal(String(g.qty));setEditing(true);}} className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-indigo-600 rounded"><Edit3 size={14}/></button>}
+          <div className="text-right"><div className={`text-lg font-bold ${highlight?'text-[#B45309]':'text-[#35706A]'}`}>{g.qty}</div>{g.scans>1&&<div className="text-xs text-slate-400">{g.scans} ครั้ง</div>}</div>
+          {onEditQty && <button onClick={()=>{setEditVal(String(g.qty));setEditing(true);}} className="p-1.5 hover:bg-[#F6F7F8] text-slate-400 hover:text-[#0F172A] rounded"><Edit3 size={14}/></button>}
         </div>
       )}
     </div>
@@ -1018,37 +1056,37 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   const handleSubmit = async () => { if (!confirming) { setConfirming(true); return; } const sub = await submitForReview(grouped, note); clearMyEntries(); setSubmitted(sub); };
   if (submitted) return (
     <div className="space-y-4">
-      <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-6 text-center"><div className="bg-emerald-600 text-white p-3 rounded-full inline-block mb-3"><Send size={32}/></div><h2 className="text-xl font-bold text-emerald-900">ส่งเรียบร้อยแล้ว!</h2><p className="text-sm text-emerald-700 mt-1">รายการถูกส่งให้ผู้จัดการรีวิวแล้ว</p>{submitted.docNo&&<div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5 inline-block"><span className="text-xs text-emerald-600">เลขที่เอกสาร </span><span className="font-bold font-mono text-emerald-900">{submitted.docNo}</span></div>}<div className="bg-white rounded-lg p-3 mt-4 grid grid-cols-2 gap-2"><div><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="font-bold text-slate-800">{submitted.itemCount}</div></div><div><div className="text-xs text-slate-500">จำนวนรวม</div><div className="font-bold text-slate-800">{submitted.totalQty.toLocaleString()}</div></div></div></div>
-      <button onClick={() => setView('count')} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><ScanLine size={18}/>เริ่มนับรอบใหม่</button>
-      <button onClick={() => setView('my_submissions')} className="w-full border border-slate-300 hover:bg-slate-50 py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
+      <div className="bg-[#EAF1F0] border-2 border-[#B6D0CC] rounded-2xl p-6 text-center"><div className="bg-[#35706A] text-white p-3 rounded-full inline-block mb-3"><Send size={32}/></div><h2 className="text-xl font-bold text-[#2A5A55]">ส่งเรียบร้อยแล้ว!</h2><p className="text-sm text-[#2A5A55] mt-1">รายการถูกส่งให้ผู้จัดการรีวิวแล้ว</p>{submitted.docNo&&<div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5 inline-block"><span className="text-xs text-[#35706A]">เลขที่เอกสาร </span><span className="font-bold font-mono text-[#2A5A55]">{submitted.docNo}</span></div>}<div className="bg-white rounded-lg p-3 mt-4 grid grid-cols-2 gap-2"><div><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="font-bold text-slate-800">{submitted.itemCount}</div></div><div><div className="text-xs text-slate-500">จำนวนรวม</div><div className="font-bold text-slate-800">{submitted.totalQty.toLocaleString()}</div></div></div></div>
+      <button onClick={() => setView('count')} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><ScanLine size={18}/>เริ่มนับรอบใหม่</button>
+      <button onClick={() => setView('my_submissions')} className="w-full border border-[#E4E6EA] hover:bg-[#F6F7F8] py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
     </div>
   );
   if (entries.length === 0) return (
     <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบ</h2></div>
-      <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><ClipboardCheck className="mx-auto text-slate-300 mb-2" size={48}/><div className="text-slate-500 mb-4">ยังไม่ได้นับสินค้า</div><button onClick={() => setView('count')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">ไปหน้านับสต็อก</button></div>
+      <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><ClipboardCheck className="mx-auto text-[#E4E6EA] mb-2" size={48}/><div className="text-slate-500 mb-4">ยังไม่ได้นับสินค้า</div><button onClick={() => setView('count')} className="bg-[#35706A] hover:bg-[#2A5A55] text-white px-4 py-2 rounded-lg text-sm font-medium">ไปหน้านับสต็อก</button></div>
     </div>
   );
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบและส่ง</h2><p className="text-sm text-slate-500">รวมบาร์โค้ดซ้ำ ตรวจก่อนส่งผู้จัดการ</p></div>
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-white border border-slate-200 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-2xl font-bold text-slate-800">{totalItems}</div></div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-2xl font-bold text-emerald-600">{totalQty.toLocaleString()}</div></div>
+        <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-2xl font-bold text-slate-800">{totalItems}</div></div>
+        <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-2xl font-bold text-[#35706A]">{totalQty.toLocaleString()}</div></div>
       </div>
-      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-slate-200 overflow-hidden"><div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-600"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-emerald-600 hover:underline">← แก้ไข</button></div><div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
-      {grouped.filter(g=>g.notFound).length>0&&<div className="bg-white rounded-xl border border-amber-200 overflow-hidden"><div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2"><AlertCircle size={14} className="text-amber-600"/><h3 className="font-semibold text-amber-800 text-sm">ไม่พบในระบบ ({grouped.filter(g=>g.notFound).length} รายการ)</h3></div><div className="divide-y divide-amber-100 max-h-56 overflow-y-auto">{grouped.filter(g=>g.notFound).map(g=><GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty}/>)}</div></div>}
-      <div className="bg-white rounded-xl border border-slate-200 p-4"><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว..." rows={2} className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"/></div>
+      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden"><div className="px-4 py-3 border-b border-[#E4E6EA] bg-[#F6F7F8] flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-[#35706A]"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-[#35706A] hover:underline">← แก้ไข</button></div><div className="divide-y divide-[#F6F7F8] max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
+      {grouped.filter(g=>g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#FDE68A] overflow-hidden"><div className="px-4 py-3 border-b border-[#FDE68A] bg-[#FFFBEB] flex items-center gap-2"><AlertCircle size={14} className="text-[#B45309]"/><h3 className="font-semibold text-[#B45309] text-sm">ไม่พบในระบบ ({grouped.filter(g=>g.notFound).length} รายการ)</h3></div><div className="divide-y divide-[#FFFBEB] max-h-56 overflow-y-auto">{grouped.filter(g=>g.notFound).map(g=><GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty}/>)}</div></div>}
+      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4"><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว..." rows={2} className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] text-sm resize-none"/></div>
       {!confirming ? (
-        <button onClick={handleSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg"><Send size={20}/>ส่งให้ผู้จัดการรีวิว</button>
+        <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg"><Send size={20}/>ส่งให้ผู้จัดการรีวิว</button>
       ) : (
         <div className="space-y-3">
-          <div className="text-[11px] font-bold tracking-wide text-amber-700">ยืนยันก่อนส่ง</div>
+          <div className="text-[11px] font-bold tracking-wide text-[#B45309]">ยืนยันก่อนส่ง</div>
           <div className="text-xl font-bold text-slate-800 leading-snug">
             ใบนี้จะออกในชื่อ {currentUser?.name || 'พนักงาน'} — ใช่ไหม
           </div>
-          <div className="bg-white border-2 border-amber-300 rounded-2xl p-4">
+          <div className="bg-white border-2 border-[#FDE68A] rounded-2xl p-4">
             <div className="flex items-center gap-3">
-              <span className="w-11 h-11 shrink-0 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center text-lg font-bold">
+              <span className="w-11 h-11 shrink-0 rounded-full bg-[#EAF1F0] text-[#2A5A55] flex items-center justify-center text-lg font-bold">
                 {(currentUser?.name || '?').trim().charAt(0)}
               </span>
               <div className="min-w-0 flex-1">
@@ -1058,25 +1096,25 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
                 </div>
               </div>
             </div>
-            <div className="h-px bg-slate-100 my-3" />
+            <div className="h-px bg-[#F6F7F8] my-3" />
             <div className="flex gap-2">
-              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="flex-1 bg-[#F6F7F8] rounded-lg p-2.5 text-center">
                 <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums">{totalItems}</div>
               </div>
-              <div className="flex-1 bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="flex-1 bg-[#F6F7F8] rounded-lg p-2.5 text-center">
                 <div className="text-[10px] text-slate-500">รวมหน่วย</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums">{totalQty.toLocaleString('th-TH')}</div>
               </div>
             </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11.5px] text-amber-800 leading-relaxed">
+          <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-3 text-[11.5px] text-[#B45309] leading-relaxed">
             เครื่องรวมไม่มี PIN — ถ้าคนก่อนหน้าลืมกด “ไม่ใช่ฉัน” ของที่คุณนับจะเข้าใบเขา จุดนี้คือด่านสุดท้ายที่จับได้
           </div>
-          <button onClick={handleSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+          <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
           </button>
-          <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl font-medium text-sm text-slate-600">
+          <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] rounded-xl font-medium text-sm text-slate-600">
             ‹ กลับไปแก้
           </button>
         </div>
@@ -1087,16 +1125,16 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
 
 function MySubmissionsView({ submissions, setView }) {
   const [expanded, setExpanded] = useState(null);
-  const statusConfig = { pending:{label:'รอรีวิว',color:'bg-amber-100 text-amber-700',icon:Clock}, approved:{label:'อนุมัติแล้ว',color:'bg-green-100 text-green-700',icon:ThumbsUp}, rejected:{label:'ส่งกลับแก้ไข',color:'bg-red-100 text-red-700',icon:ThumbsDown} };
+  const statusConfig = { pending:{label:'รอรีวิว',color:'bg-[#FFFBEB] text-[#B45309]',icon:Clock}, approved:{label:'อนุมัติแล้ว',color:'bg-[#F0FDF4] text-[#15803D]',icon:ThumbsUp}, rejected:{label:'ส่งกลับแก้ไข',color:'bg-[#FEF2F2] text-[#B91C1C]',icon:ThumbsDown} };
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">รายการที่ส่งแล้ว</h2><p className="text-sm text-slate-500">ติดตามสถานะการรีวิว</p></div>
-      {submissions.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><Send className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500 mb-3">ยังไม่มีรายการที่ส่ง</div><button onClick={()=>setView('count')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">ไปนับสต็อก</button></div> : (
+      {submissions.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><Send className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500 mb-3">ยังไม่มีรายการที่ส่ง</div><button onClick={()=>setView('count')} className="bg-[#35706A] hover:bg-[#2A5A55] text-white px-4 py-2 rounded-lg text-sm font-medium">ไปนับสต็อก</button></div> : (
         <div className="space-y-2">
           {submissions.map(s => {
             const cfg = statusConfig[s.status]||statusConfig.pending; const Icon = cfg.icon;
             return (
-              <div key={s.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div key={s.id} className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
                 <div className="p-3">
                   <div className="flex items-start gap-3">
                     <div className={`p-2 rounded-lg ${cfg.color}`}><Icon size={18}/></div>
@@ -1104,11 +1142,11 @@ function MySubmissionsView({ submissions, setView }) {
                       <div className="flex items-center gap-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.label}</span><span className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span></div>
                       <div className="flex gap-4 mt-1 text-xs text-slate-600"><span><strong>{s.itemCount}</strong> บาร์โค้ด</span><span><strong>{s.totalQty.toLocaleString()}</strong> ชิ้น</span></div>
                       {s.note&&<div className="text-xs text-slate-500 mt-1 italic">"{s.note}"</div>}
-                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-green-50 text-green-800':'bg-red-50 text-red-800'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
+                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
                     </div>
                   </div>
-                  <button onClick={()=>setExpanded(expanded===s.id?null:s.id)} className="w-full mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500 hover:text-slate-700">{expanded===s.id?'▲ ซ่อนรายการ':'▼ ดูรายการ'}</button>
-                  {expanded===s.id&&<div className="mt-2 bg-slate-50 rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
+                  <button onClick={()=>setExpanded(expanded===s.id?null:s.id)} className="w-full mt-2 pt-2 border-t border-[#F6F7F8] text-xs text-slate-500 hover:text-slate-700">{expanded===s.id?'▲ ซ่อนรายการ':'▼ ดูรายการ'}</button>
+                  {expanded===s.id&&<div className="mt-2 bg-[#F6F7F8] rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
                 </div>
               </div>
             );
@@ -1133,7 +1171,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [rejectError, setRejectError] = useState('');
   const filtered = submissions.filter(s => s.status === tab);
-  const statusConfig = { pending:{label:'รอรีวิว',color:'text-amber-600'}, approved:{label:'อนุมัติแล้ว',color:'text-green-600'}, rejected:{label:'ส่งกลับ',color:'text-red-600'} };
+  const statusConfig = { pending:{label:'รอรีวิว',color:'text-[#B45309]'}, approved:{label:'อนุมัติแล้ว',color:'text-[#15803D]'}, rejected:{label:'ส่งกลับ',color:'text-[#B91C1C]'} };
   const DRIVE_FOLDER = feature === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
   const handleApprove = () => { onReview(selected.id,'approved',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
   const handleReject = () => { if(!reviewNote.trim()){setRejectError('กรุณาใส่เหตุผลก่อนส่งกลับ');return;} onReview(selected.id,'rejected',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
@@ -1166,23 +1204,23 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">รีวิว Recorder</h2><p className="text-sm text-slate-500">ตรวจสอบและอนุมัติ / ส่งกลับ</p></div>
-      <div className="flex border-b border-slate-200">
-        {['pending','approved','rejected'].map(t => { const cnt = submissions.filter(s=>s.status===t).length; return <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-2.5 text-sm font-medium ${tab===t?'text-indigo-600 border-b-2 border-indigo-600':'text-slate-500'}`}>{statusConfig[t].label}{cnt>0&&<span className={`ml-1 text-xs font-bold ${statusConfig[t].color}`}>({cnt})</span>}</button>; })}
+      <div className="flex border-b border-[#E4E6EA]">
+        {['pending','approved','rejected'].map(t => { const cnt = submissions.filter(s=>s.status===t).length; return <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-2.5 text-sm font-medium ${tab===t?'text-[#0F172A] border-b-2 border-[#0F172A]':'text-slate-500'}`}>{statusConfig[t].label}{cnt>0&&<span className={`ml-1 text-xs font-bold ${statusConfig[t].color}`}>({cnt})</span>}</button>; })}
       </div>
-      {filtered.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><Inbox className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500">ไม่มีรายการ{statusConfig[tab].label}</div></div> : (
+      {filtered.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><Inbox className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500">ไม่มีรายการ{statusConfig[tab].label}</div></div> : (
         <div className="space-y-2">
           {filtered.map(s => (
-            <div key={s.id} className="bg-white rounded-xl border border-slate-200 p-3">
-              <div className="flex items-center gap-2"><span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
+            <div key={s.id} className="bg-white rounded-xl border border-[#E4E6EA] p-3">
+              <div className="flex items-center gap-2"><span className="text-xs font-mono font-bold text-[#0F172A] bg-[#F6F7F8] px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
               <div className="grid grid-cols-2 gap-x-3 mt-1">
                 <div><div className="text-[10px] text-slate-400">เริ่มนับ (window start)</div><div className="text-xs font-mono text-blue-700 font-semibold">{s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>
                 <div><div className="text-[10px] text-slate-400">ส่งงาน (window end)</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
               </div>
-              <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-emerald-700 font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
-              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-slate-50 rounded p-1.5">"{s.note}"</div>}
-              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-green-50 text-green-800':'bg-red-50 text-red-800'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
-              <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-slate-100">
-                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
+              <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-[#2A5A55] font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
+              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-[#F6F7F8] rounded p-1.5">"{s.note}"</div>}
+              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
+              <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-[#F6F7F8]">
+                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#F6F7F8] hover:bg-[#F6F7F8] rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
                 <PDFDownloadButton sub={s}/>
                 {s.status==='approved'&&(() => {
                   const key = `${s.id}_csv`;
@@ -1195,17 +1233,17 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
                         {saving?'กำลังอัปโหลด...':(res?.ok?'✓ Drive':'☁️ Upload Drive')}
                       </button>
                       {res?.ok&&res.link&&<a href={res.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 underline self-center">เปิด</a>}
-                      {res&&!res.ok&&<span className="text-[10px] text-red-600 self-center">✗ {res.err}</span>}
+                      {res&&!res.ok&&<span className="text-[10px] text-[#B91C1C] self-center">✗ {res.err}</span>}
                     </>
                   );
                 })()}
-                {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold">รีวิว →</button>}
-                {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-red-600 font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-red-600 text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded" title="ลบ"><Trash2 size={14}/></button>}
+                {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-[#0F172A] hover:bg-[#0F172A] text-white rounded text-xs font-semibold">รีวิว →</button>}
+                {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-[#B91C1C] font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-[#B91C1C] text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-[#F6F7F8] text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-[#FEF2F2] hover:bg-[#FEF2F2] text-[#B91C1C] rounded" title="ลบ"><Trash2 size={14}/></button>}
               </div>
               {expandedId===s.id&&(
-                <div className="mt-2 pt-2 border-t border-slate-100">
-                  <div className="bg-slate-50 rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-slate-100">
-                    {s.data.map((d,i)=><div key={i} className="py-1.5 px-1 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-700">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400">{d.location}</div>}</div><div className="text-sm font-bold text-emerald-600 ml-3 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}
+                <div className="mt-2 pt-2 border-t border-[#F6F7F8]">
+                  <div className="bg-[#F6F7F8] rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-[#F6F7F8]">
+                    {s.data.map((d,i)=><div key={i} className="py-1.5 px-1 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-700">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400">{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] ml-3 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}
                   </div>
                 </div>
               )}
@@ -1216,13 +1254,13 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
       {selected&&(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิว Recorder</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
+            <div className="p-4 border-b border-[#E4E6EA] flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิว Recorder</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2"><div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-emerald-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-emerald-600">{selected.totalQty.toLocaleString()}</div></div></div>
+              <div className="grid grid-cols-2 gap-2"><div className="bg-[#F6F7F8] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-[#EAF1F0] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-[#35706A]">{selected.totalQty.toLocaleString()}</div></div></div>
               {selected.note&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800"><strong>หมายเหตุ:</strong> {selected.note}</div>}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden"><div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-slate-100">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-emerald-600 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
-              <div><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุ / เหตุผล <span className="text-red-500 text-xs">(บังคับถ้าส่งกลับ)</span></label><textarea value={reviewNote} onChange={e=>{setReviewNote(e.target.value);setRejectError('');}} placeholder="เพิ่มหมายเหตุ..." rows={2} className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none ${rejectError?'border-red-400 bg-red-50':'border-slate-300'}`}/>{rejectError&&<div className="text-xs text-red-600 mt-1 flex items-center gap-1"><XCircle size={12}/>{rejectError}</div>}</div>
-              <div className="flex gap-2"><button onClick={handleReject} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsDown size={16}/>ส่งกลับแก้ไข</button><button onClick={handleApprove} className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsUp size={16}/>อนุมัติ</button></div>
+              <div className="bg-white border border-[#E4E6EA] rounded-xl overflow-hidden"><div className="px-3 py-2 bg-[#F6F7F8] border-b border-[#E4E6EA] text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-[#F6F7F8]">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
+              <div><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุ / เหตุผล <span className="text-[#B91C1C] text-xs">(บังคับถ้าส่งกลับ)</span></label><textarea value={reviewNote} onChange={e=>{setReviewNote(e.target.value);setRejectError('');}} placeholder="เพิ่มหมายเหตุ..." rows={2} className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-[#0F172A] text-sm resize-none ${rejectError?'border-red-400 bg-[#FEF2F2]':'border-[#E4E6EA]'}`}/>{rejectError&&<div className="text-xs text-[#B91C1C] mt-1 flex items-center gap-1"><XCircle size={12}/>{rejectError}</div>}</div>
+              <div className="flex gap-2"><button onClick={handleReject} className="flex-1 py-3 bg-[#B91C1C] hover:bg-[#B91C1C] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsDown size={16}/>ส่งกลับแก้ไข</button><button onClick={handleApprove} className="flex-1 py-3 bg-[#15803D] hover:bg-[#15803D] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsUp size={16}/>อนุมัติ</button></div>
             </div>
           </div>
         </div>
@@ -1238,17 +1276,17 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
   const todaySubmissions = submissions.filter(s=>new Date(s.submittedAt).toDateString()===today);
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2"><div><h2 className="text-2xl font-bold text-slate-800">แดชบอร์ด</h2><p className="text-sm text-slate-500">ภาพรวมระบบ</p></div><button onClick={()=>setView('settings')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${isSupabaseReady?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-red-50 border-red-200 text-red-600'}`}><Cloud size={12}/>{isSupabaseReady?'Supabase':'ยังไม่ได้ตั้งค่า'}</button></div>
-      {pendingCount>0&&<button onClick={()=>setView('inbox')} className="w-full bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"><div className="bg-amber-500 text-white p-2 rounded-lg"><Inbox size={20}/></div><div className="flex-1"><div className="font-semibold text-amber-900">มี {pendingCount} รายการรอรีวิว</div><div className="text-xs text-amber-700">คลิกเพื่อตรวจสอบ</div></div><ArrowRight size={18} className="text-amber-600"/></button>}
+      <div className="flex items-center justify-between gap-2"><div><h2 className="text-2xl font-bold text-slate-800">แดชบอร์ด</h2><p className="text-sm text-slate-500">ภาพรวมระบบ</p></div><button onClick={()=>setView('settings')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${isSupabaseReady?'bg-[#EAF1F0] border-[#B6D0CC] text-[#2A5A55]':'bg-[#FEF2F2] border-[#FECACA] text-[#B91C1C]'}`}><Cloud size={12}/>{isSupabaseReady?'Supabase':'ยังไม่ได้ตั้งค่า'}</button></div>
+      {pendingCount>0&&<button onClick={()=>setView('inbox')} className="w-full bg-[#FFFBEB] border-2 border-[#FDE68A] rounded-xl p-4 flex items-center gap-3 text-left hover:bg-[#FFFBEB] transition-colors"><div className="bg-[#B45309] text-white p-2 rounded-lg"><Inbox size={20}/></div><div className="flex-1"><div className="font-semibold text-[#B45309]">มี {pendingCount} รายการรอรีวิว</div><div className="text-xs text-[#B45309]">คลิกเพื่อตรวจสอบ</div></div><ArrowRight size={18} className="text-[#B45309]"/></button>}
       <div className="grid grid-cols-2 gap-3">
         {[{label:'รอรีวิว',value:pending.length,color:'amber'},{label:'อนุมัติแล้ว',value:approved.length,color:'green'},{label:'ส่งวันนี้',value:todaySubmissions.length,color:'indigo'},{label:'สินค้า cache',value:products.length.toLocaleString(),color:'slate'}].map(c=>(
-          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-amber-50 text-amber-700 border-amber-100':c.color==='green'?'bg-green-50 text-green-700 border-green-100':c.color==='indigo'?'bg-indigo-50 text-indigo-700 border-indigo-100':'bg-slate-50 text-slate-700 border-slate-200'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
+          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-[#FFFBEB] text-[#B45309] border-[#FFFBEB]':c.color==='green'?'bg-[#F0FDF4] text-[#15803D] border-[#F0FDF4]':c.color==='indigo'?'bg-[#F6F7F8] text-[#0F172A] border-[#F6F7F8]':'bg-[#F6F7F8] text-slate-700 border-[#E4E6EA]'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
         ))}
       </div>
-      <div className="bg-white rounded-xl p-4 border border-slate-200">
-        <div className="flex justify-between items-center mb-3"><h3 className="font-semibold text-slate-800">ส่งล่าสุด</h3>{submissions.length>0&&<button onClick={()=>setView('inbox')} className="text-xs text-indigo-600 hover:underline">ดูทั้งหมด</button>}</div>
+      <div className="bg-white rounded-xl p-4 border border-[#E4E6EA]">
+        <div className="flex justify-between items-center mb-3"><h3 className="font-semibold text-slate-800">ส่งล่าสุด</h3>{submissions.length>0&&<button onClick={()=>setView('inbox')} className="text-xs text-[#0F172A] hover:underline">ดูทั้งหมด</button>}</div>
         {submissions.length===0?<div className="text-center py-6 text-slate-400 text-sm">ยังไม่มีรายการ</div>:(
-          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-amber-400':s.status==='approved'?'bg-green-500':'bg-red-400'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-amber-600':s.status==='approved'?'text-green-600':'text-red-500'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
+          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-[#F6F7F8] last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-[#B45309]':s.status==='approved'?'bg-[#15803D]':'bg-[#B91C1C]'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-[#B45309]':s.status==='approved'?'text-[#15803D]':'text-[#B91C1C]'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
         )}
       </div>
     </div>
@@ -1394,19 +1432,19 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
 
   if (!sbUrl || !sbKey) return (
     <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2></div>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4"><AlertCircle className="text-amber-600 mb-2" size={24}/><div className="font-semibold text-amber-900">ยังไม่ได้ตั้งค่า Supabase</div><p className="text-sm text-amber-800 mt-1">ไปที่ ตั้งค่า เพื่อใส่ URL และ Anon Key ก่อน</p></div>
+      <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-4"><AlertCircle className="text-[#B45309] mb-2" size={24}/><div className="font-semibold text-[#B45309]">ยังไม่ได้ตั้งค่า Supabase</div><p className="text-sm text-[#B45309] mt-1">ไปที่ ตั้งค่า เพื่อใส่ URL และ Anon Key ก่อน</p></div>
     </div>
   );
 
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2><p className="text-sm text-slate-500">เปรียบเทียบยอดนับกับ Supabase ผ่าน REST API</p></div>
-      {approvedSubs.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-slate-200"><ArrowLeftRight className="mx-auto text-slate-300 mb-2" size={40}/><div className="text-slate-500">ยังไม่มีรายการที่อนุมัติแล้ว</div></div> : (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+      {approvedSubs.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><ArrowLeftRight className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500">ยังไม่มีรายการที่อนุมัติแล้ว</div></div> : (
+        <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-2">
           <div className="text-sm font-semibold text-slate-700 mb-2">เลือก submission ที่จะเปรียบเทียบ:</div>
           {approvedSubs.map(s => (
-            <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-indigo-400 bg-indigo-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'} disabled:opacity-50`}>
-              <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
+            <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#E4E6EA] hover:bg-[#F6F7F8]'} disabled:opacity-50`}>
+              <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-[#0F172A] bg-[#F6F7F8] px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
               <div className="text-xs text-slate-500 mt-0.5">{s.itemCount} รายการ • {s.totalQty.toLocaleString()} ชิ้น</div>
               <div className="text-[10px] text-slate-500 mt-1 font-mono">
                 <span className="text-blue-600">เริ่มนับ: {s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'}</span>
@@ -1417,8 +1455,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           ))}
         </div>
       )}
-      {loading && <div className="bg-white rounded-xl border border-slate-200 p-6 text-center"><div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3"/><div className="text-sm text-slate-600">{loadProgress || 'กำลังดึงข้อมูล...'}</div></div>}
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 text-sm"><strong>ข้อผิดพลาด:</strong> {error}</div>}
+      {loading && <div className="bg-white rounded-xl border border-[#E4E6EA] p-6 text-center"><div className="w-8 h-8 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin mx-auto mb-3"/><div className="text-sm text-slate-600">{loadProgress || 'กำลังดึงข้อมูล...'}</div></div>}
+      {error && <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-xl p-4 text-[#B91C1C] text-sm"><strong>ข้อผิดพลาด:</strong> {error}</div>}
       {compareData.length > 0 && (
         <div className="space-y-3">
           {selectedSub && (
@@ -1434,35 +1472,35 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           )}
           {compareState.debugInfo && null}
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
-            <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>
-            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive (รหัส,ผลต่าง)</button>
-            {driveResult?.ok && <span className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12}/>อัพโหลดแล้ว{driveResult.link&&<a href={driveResult.link} target="_blank" rel="noopener noreferrer" className="underline ml-1">เปิด</a>}</span>}
-            {driveResult?.err && <span className="text-xs text-red-600">Error: {driveResult.err}</span>}
+            <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-[#F6F7F8] hover:bg-[#F6F7F8] text-[#0F172A] rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
+            <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-[#EAF0F4] hover:bg-[#EAF0F4] text-[#255771] rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>
+            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-[#EAF1F0] hover:bg-[#EAF1F0] text-[#2A5A55] rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive (รหัส,ผลต่าง)</button>
+            {driveResult?.ok && <span className="flex items-center gap-1 text-xs text-[#15803D]"><CheckCircle2 size={12}/>อัพโหลดแล้ว{driveResult.link&&<a href={driveResult.link} target="_blank" rel="noopener noreferrer" className="underline ml-1">เปิด</a>}</span>}
+            {driveResult?.err && <span className="text-xs text-[#B91C1C]">Error: {driveResult.err}</span>}
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
             {[{label:'พบในระบบ',v:compareData.filter(d=>d.found).length,c:'emerald'},{label:'ไม่พบ',v:compareData.filter(d=>!d.found).length,c:'amber'},{label:'ส่วนต่าง≠0',v:compareData.filter(d=>d.adjustStock!==null&&d.adjustStock!==0).length,c:'red'}].map(x=>(
-              <div key={x.label} className={`rounded-lg p-2 border ${x.c==='emerald'?'bg-emerald-50 border-emerald-100 text-emerald-700':x.c==='amber'?'bg-amber-50 border-amber-100 text-amber-700':'bg-red-50 border-red-100 text-red-700'}`}><div className="text-lg font-bold">{x.v}</div><div className="opacity-75">{x.label}</div></div>
+              <div key={x.label} className={`rounded-lg p-2 border ${x.c==='emerald'?'bg-[#EAF1F0] border-[#EAF1F0] text-[#2A5A55]':x.c==='amber'?'bg-[#FFFBEB] border-[#FFFBEB] text-[#B45309]':'bg-[#FEF2F2] border-[#FEF2F2] text-[#B91C1C]'}`}><div className="text-lg font-bold">{x.v}</div><div className="opacity-75">{x.label}</div></div>
             ))}
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-[#F6F7F8] border-b border-[#E4E6EA]">
                   <tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#F6F7F8]">
                   {compareData.map((d,i) => {
-                    const adjColor = d.adjustStock===null?'text-slate-400':d.adjustStock===0?'text-emerald-600':d.adjustStock>0?'text-blue-600':'text-red-600';
+                    const adjColor = d.adjustStock===null?'text-slate-400':d.adjustStock===0?'text-[#35706A]':d.adjustStock>0?'text-blue-600':'text-[#B91C1C]';
                     return (
-                      <tr key={i} className={d.notFound?'bg-amber-50/30':''}>
+                      <tr key={i} className={d.notFound?'bg-[#FFFBEB]/30':''}>
                         <td className="px-3 py-2 font-mono text-slate-700">{d.barcode}</td>
                         <td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{d.productName}{d.locations?.length>0&&<div className="text-[10px] text-slate-400">{d.locations.join(', ')}</div>}</td>
                         <td className="px-3 py-2 font-semibold text-slate-800">{d.counted}</td>
                         <td className="px-3 py-2 text-orange-600">{d.sale}</td>
                         <td className="px-3 py-2 text-blue-600">{d.purchase}</td>
                         <td className="px-3 py-2 font-semibold">{d.adjustedCount}</td>
-                        <td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-amber-500">N/A</span>}</td>
+                        <td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-[#B45309]">N/A</span>}</td>
                         <td className={`px-3 py-2 font-bold ${adjColor}`}>{d.adjustStock!==null?d.adjustStock:<span className="text-slate-400">N/A</span>}</td>
                       </tr>
                     );
@@ -1605,14 +1643,14 @@ function ReportView() {
       </div>
 
       {/* เลือกเรื่อง */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-4">
         <div className="flex flex-wrap gap-2">
           {REPORT_TOPICS.map(t => (
             <button key={t.id} onClick={() => { setTopic(t.id); setRows(null); }}
               className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 topic === t.id
                   ? 'bg-slate-800 border-slate-800 text-white'
-                  : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                  : 'bg-white border-[#E4E6EA] text-slate-600 hover:bg-[#F6F7F8]'}`}>
               {t.label}
             </button>
           ))}
@@ -1624,12 +1662,12 @@ function ReportView() {
               <label className="block">
                 <span className="text-xs font-medium text-slate-500">ตั้งแต่</span>
                 <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
               </label>
               <label className="block">
                 <span className="text-xs font-medium text-slate-500">ถึง</span>
                 <input type="date" value={to} onChange={e => setTo(e.target.value)}
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                  className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
               </label>
             </>
           )}
@@ -1637,13 +1675,13 @@ function ReportView() {
             <label className="block">
               <span className="text-xs font-medium text-slate-500">เลขที่เอกสาร</span>
               <input value={doc} onChange={e => setDoc(e.target.value)} placeholder="ทั้งหมด"
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
           <label className="block">
             <span className="text-xs font-medium text-slate-500">บาร์โค้ด / ชื่อสินค้า</span>
             <input value={barcode} onChange={e => setBarcode(e.target.value)} placeholder="ทั้งหมด"
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
           </label>
           {(topic === 'invoice' || topic === 'in' || topic === 'out') && (
             <label className="block">
@@ -1651,26 +1689,26 @@ function ReportView() {
                 {topic === 'out' ? 'ลูกค้า' : 'ผู้ขาย'}
               </span>
               <input value={party} onChange={e => setParty(e.target.value)} placeholder="ทั้งหมด"
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
           {topic === 'stock' && (
             <label className="block">
               <span className="text-xs font-medium text-slate-500">ประเภทสินค้า</span>
               <input value={party} onChange={e => setParty(e.target.value)} placeholder="ทั้งหมด"
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
         </div>
 
         <button onClick={run} disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
+          className="w-full bg-[#0F172A] hover:bg-[#0F172A] disabled:bg-[#E4E6EA] text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
           {loading ? <><RefreshCw size={18} className="animate-spin" />กำลังดึง…</>
                    : <><Search size={18} />ดึงรายงาน</>}
         </button>
 
         {err && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm flex items-start gap-2">
+          <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] rounded-lg px-3 py-2 text-sm flex items-start gap-2">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />{err}
           </div>
         )}
@@ -1678,8 +1716,8 @@ function ReportView() {
 
       {/* ผลลัพธ์ */}
       {rows && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+        <div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#E4E6EA] bg-[#F6F7F8] flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-slate-800">
               {conf.label} · {shown.length.toLocaleString('th-TH')} แถว
               {shown.length !== rows.length && (
@@ -1689,16 +1727,16 @@ function ReportView() {
             <div className="flex gap-2">
               {Object.values(colFilter).some(v => v?.trim()) && (
                 <button onClick={() => setColFilter({})}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 text-slate-600 hover:bg-white flex items-center gap-1">
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-600 hover:bg-white flex items-center gap-1">
                   <X size={12} />ล้างตัวกรอง
                 </button>
               )}
               <button onClick={exportCsv} disabled={!shown.length}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 text-slate-700 hover:bg-white disabled:opacity-40 flex items-center gap-1">
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white disabled:opacity-40 flex items-center gap-1">
                 <Download size={12} />CSV
               </button>
               <button onClick={exportXlsx} disabled={!shown.length}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 flex items-center gap-1">
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#35706A] hover:bg-[#2A5A55] text-white disabled:opacity-40 flex items-center gap-1">
                 <FileSpreadsheet size={12} />Excel
               </button>
             </div>
@@ -1721,18 +1759,18 @@ function ReportView() {
                   </tr>
                   <tr>
                     {cols.map(k => (
-                      <th key={k} className="px-2 pb-2 border-b border-slate-200">
+                      <th key={k} className="px-2 pb-2 border-b border-[#E4E6EA]">
                         <input value={colFilter[k] || ''}
                           onChange={e => setColFilter(f => ({ ...f, [k]: e.target.value }))}
                           placeholder="กรอง"
-                          className="w-full min-w-[70px] border border-slate-200 rounded px-1.5 py-1 text-[11px] font-normal focus:border-indigo-400 focus:outline-none" />
+                          className="w-full min-w-[70px] border border-[#E4E6EA] rounded px-1.5 py-1 text-[11px] font-normal focus:border-[#94A3B8] focus:outline-none" />
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map((r, i) => (
-                    <tr key={i} className={i % 2 ? 'bg-slate-50/60' : ''}>
+                    <tr key={i} className={i % 2 ? 'bg-[#F6F7F8]/60' : ''}>
                       {cols.map(k => (
                         <td key={k} className={`px-3 py-1.5 whitespace-nowrap ${
                           isNumCol(k) ? 'text-right tabular-nums font-medium text-slate-800' : 'text-slate-600'}`}>
@@ -1743,7 +1781,7 @@ function ReportView() {
                   ))}
                 </tbody>
                 {Object.keys(sums).length > 0 && (
-                  <tfoot className="sticky bottom-0 bg-white border-t-2 border-slate-300">
+                  <tfoot className="sticky bottom-0 bg-white border-t-2 border-[#E4E6EA]">
                     <tr>
                       {cols.map((k, idx) => (
                         <td key={k} className={`px-3 py-2 font-bold text-slate-800 ${isNumCol(k) ? 'text-right tabular-nums' : ''}`}>
@@ -1777,22 +1815,22 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   return (
     <div className="space-y-4">
       <div><h2 className="text-2xl font-bold text-slate-800">ตั้งค่า Supabase</h2></div>
-      <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-emerald-50 border-emerald-200':'bg-slate-50 border-slate-200'}`}>
-        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-emerald-600':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (เชื่อมต่อแล้ว)':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
+      <div className={`rounded-xl p-4 border ${dataSource==='supabase'?'bg-[#EAF1F0] border-[#B6D0CC]':'bg-[#F6F7F8] border-[#E4E6EA]'}`}>
+        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg text-white ${dataSource==='supabase'?'bg-[#35706A]':'bg-slate-400'}`}><Cloud size={20}/></div><div><div className="font-semibold text-slate-800">{dataSource==='supabase'?'Supabase (เชื่อมต่อแล้ว)':'ยังไม่ได้เชื่อมต่อ'}</div><div className="text-xs text-slate-500">{productCount.toLocaleString()} รายการ cache{lastSyncAt&&dataSource==='supabase'&&` • ${new Date(lastSyncAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}`}</div></div></div>
       </div>
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
-        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Anon Key</label><div className="relative"><input type={showKey?'text':'password'} value={anonKey} onChange={e=>{setAnonKey(e.target.value);setTestResult(null);}} placeholder="eyJ..." className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/><button onClick={()=>setShowKey(!showKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1">{showKey?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></div>
+      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-3">
+        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Supabase URL</label><input type="text" value={url} onChange={e=>{setUrl(e.target.value);setTestResult(null);}} placeholder="https://xxxxx.supabase.co" className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/></div>
+        <div><label className="text-sm font-medium text-slate-700 mb-1 block">Anon Key</label><div className="relative"><input type={showKey?'text':'password'} value={anonKey} onChange={e=>{setAnonKey(e.target.value);setTestResult(null);}} placeholder="eyJ..." className="w-full px-3 py-2 pr-10 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/><button onClick={()=>setShowKey(!showKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1">{showKey?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Product <span className="text-xs text-slate-400">(checkBarcode)</span></label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="product_price" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
-          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Stock <span className="text-xs text-slate-400">(compare)</span></label><input type="text" value={stockTableName} onChange={e=>setStockTableName(e.target.value)} placeholder="product_stock" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"/></div>
+          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Product <span className="text-xs text-slate-400">(checkBarcode)</span></label><input type="text" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="product_price" className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/></div>
+          <div><label className="text-sm font-medium text-slate-700 mb-1 block">ตาราง Stock <span className="text-xs text-slate-400">(compare)</span></label><input type="text" value={stockTableName} onChange={e=>setStockTableName(e.target.value)} placeholder="product_stock" className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] font-mono text-sm"/></div>
         </div>
-        {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-green-50 border border-green-200 text-green-800':'bg-red-50 border border-red-200 text-red-800'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
+        {testResult&&<div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${testResult.ok?'bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D]':'bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C]'}`}>{testResult.ok?<CheckCircle2 size={16} className="flex-shrink-0 mt-0.5"/>:<XCircle size={16} className="flex-shrink-0 mt-0.5"/>}<span>{testResult.msg}</span></div>}
         <div className="flex gap-2">
-          <button onClick={handleTest} disabled={testing||!url||!anonKey} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">{testing?<RefreshCw size={14} className="animate-spin"/>:<Zap size={14}/>}{testing?'กำลังทดสอบ...':'ทดสอบการเชื่อมต่อ'}</button>
-          <button onClick={handleSave} disabled={!url||!anonKey} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium"><Save size={14} className="inline mr-1"/>บันทึก</button>
+          <button onClick={handleTest} disabled={testing||!url||!anonKey} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-800 disabled:bg-[#E4E6EA] text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1.5">{testing?<RefreshCw size={14} className="animate-spin"/>:<Zap size={14}/>}{testing?'กำลังทดสอบ...':'ทดสอบการเชื่อมต่อ'}</button>
+          <button onClick={handleSave} disabled={!url||!anonKey} className="flex-1 py-2.5 bg-[#35706A] hover:bg-[#2A5A55] disabled:bg-[#E4E6EA] text-white rounded-lg text-sm font-medium"><Save size={14} className="inline mr-1"/>บันทึก</button>
         </div>
-        {saveMsg&&<div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-2 text-center">{saveMsg}</div>}
+        {saveMsg&&<div className="bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D] text-sm rounded-lg p-2 text-center">{saveMsg}</div>}
       </div>
     </div>
   );
@@ -1806,10 +1844,10 @@ function StepBar({ current }) {
         return (
           <React.Fragment key={n}>
             <div className="flex flex-col items-center gap-1">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-indigo-600 border-indigo-600 text-white':active?'bg-white border-indigo-600 text-indigo-600':'bg-white border-slate-300 text-slate-400'}`}>{done?'✓':n}</div>
-              <span className={`text-[10px] whitespace-nowrap ${active?'text-indigo-600 font-semibold':'text-slate-400'}`}>{label}</span>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-[#0F172A] border-[#0F172A] text-white':active?'bg-white border-[#0F172A] text-[#0F172A]':'bg-white border-[#E4E6EA] text-slate-400'}`}>{done?'✓':n}</div>
+              <span className={`text-[10px] whitespace-nowrap ${active?'text-[#0F172A] font-semibold':'text-slate-400'}`}>{label}</span>
             </div>
-            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n+1?'bg-indigo-600':current > n?'bg-indigo-300':'bg-slate-200'}`}/>}
+            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n+1?'bg-[#0F172A]':current > n?'bg-[#E4E6EA]':'bg-[#E4E6EA]'}`}/>}
           </React.Fragment>
         );
       })}
@@ -1824,7 +1862,7 @@ function DropZone({ onFiles, multiple, accept, children }) {
     <div ref={ref} onClick={() => ref.current.querySelector('input')?.click()}
       onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
       onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files);}}
-      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-indigo-400 bg-indigo-50':'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'}`}>
+      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#94A3B8] hover:bg-[#F6F7F8]'}`}>
       <input type="file" multiple={multiple} accept={accept} className="hidden" onChange={e=>handle(e.target.files)}/>
       {children}
     </div>
@@ -2599,11 +2637,11 @@ function ScannerModal({ products, onScan, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto">
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center sticky top-0 bg-white z-10">
+        <div className="p-4 border-b border-[#E4E6EA] flex justify-between items-center sticky top-0 bg-white z-10">
           <h3 className="font-semibold">สแกนบาร์โค้ด</h3>
           <button onClick={onClose}><X size={20} /></button>
         </div>
-        <div className="flex border-b border-slate-200 sticky top-[57px] bg-white z-10">
+        <div className="flex border-b border-[#E4E6EA] sticky top-[57px] bg-white z-10">
           {[
             { id: 'camera', label: 'กล้อง',    icon: Camera    },
             { id: 'upload', label: 'อัพโหลด',  icon: ImageIcon },
@@ -2614,7 +2652,7 @@ function ScannerModal({ products, onScan, onClose }) {
               <button
                 key={t.id}
                 onClick={() => { setScanError(''); setTab(t.id); }}
-                className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-slate-500'}`}
+                className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${tab === t.id ? 'text-[#35706A] border-b-2 border-[#35706A]' : 'text-slate-500'}`}
               >
                 <Icon size={16} />{t.label}
               </button>
@@ -2626,7 +2664,7 @@ function ScannerModal({ products, onScan, onClose }) {
           <div className="p-2">
             <div id="__qr_reader__" className="w-full rounded-lg overflow-hidden" />
             {scanError && (
-              <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>
+              <div className="mt-2 bg-[#FEF2F2] border border-[#FECACA] rounded-lg p-3 text-sm text-[#B91C1C]">{scanError}</div>
             )}
             <p className="text-center text-xs text-slate-400 mt-2">จ่อบาร์โค้ดให้อยู่ในกรอบ</p>
           </div>
@@ -2637,16 +2675,16 @@ function ScannerModal({ products, onScan, onClose }) {
             <div id="__qr_file_reader__" style={{ display: 'none' }} />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 rounded-xl p-8 flex flex-col items-center gap-2"
+              className="w-full border-2 border-dashed border-[#E4E6EA] hover:border-[#35706A] hover:bg-[#EAF1F0] rounded-xl p-8 flex flex-col items-center gap-2"
             >
-              <div className="bg-emerald-100 p-3 rounded-full">
-                <Upload className="text-emerald-600" size={24} />
+              <div className="bg-[#EAF1F0] p-3 rounded-full">
+                <Upload className="text-[#35706A]" size={24} />
               </div>
               <div className="text-sm font-medium text-slate-700">{scanning ? 'กำลังอ่าน...' : 'เลือกรูปบาร์โค้ด'}</div>
               <div className="text-xs text-slate-400">รองรับทุกเบราว์เซอร์</div>
             </button>
             {scanError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scanError}</div>
+              <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-lg p-3 text-sm text-[#B91C1C]">{scanError}</div>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
           </div>
@@ -2659,13 +2697,13 @@ function ScannerModal({ products, onScan, onClose }) {
               value={manualBarcode}
               onChange={(e) => setManualBarcode(e.target.value)}
               placeholder="พิมพ์รหัสสินค้า..."
-              className="w-full px-3 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-mono"
+              className="w-full px-3 py-3 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] text-lg font-mono"
               autoFocus
             />
             <button
               onClick={() => manualBarcode && onScan(manualBarcode)}
               disabled={!manualBarcode}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium"
+              className="w-full bg-[#35706A] hover:bg-[#2A5A55] disabled:bg-[#E4E6EA] text-white py-2.5 rounded-lg font-medium"
             >
               ใช้รหัสนี้
             </button>
@@ -2677,7 +2715,7 @@ function ScannerModal({ products, onScan, onClose }) {
                     <button
                       key={p.id}
                       onClick={() => onScan(p.id)}
-                      className="text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs"
+                      className="text-left p-2 bg-[#F6F7F8] hover:bg-[#F6F7F8] rounded-lg text-xs"
                     >
                       <div className="font-medium text-slate-700 truncate">{p.name}</div>
                       <div className="text-slate-500 font-mono">{p.id}</div>

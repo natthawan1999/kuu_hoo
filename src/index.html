@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#35706A" />
+    <title>KUUHOO — Stock Counting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      /* ตัวหนังสือทั้งแอป Sarabun · ตัวเลข IBM Plex Mono (class font-mono และ tabular-nums) */
+      body { font-family: 'Sarabun', system-ui, sans-serif; color: #0F172A; }
+      .font-mono, .tabular-nums { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+      input, textarea, select, button { font-family: inherit; }
+      /* ปุ่มบนมือถือกดง่าย — พื้นที่กดขั้นต่ำ 44px ตามที่ออกแบบไว้ */
+      button { touch-action: manipulation; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

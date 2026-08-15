@@ -575,15 +575,13 @@ export default function CombinedApp() {
       <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            {view !== navItems[0]?.id ? (
-              <button onClick={() => setView(navItems[0].id)} title="กลับหน้าแรก"
-                className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
-                style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
-                <ArrowRight size={17} className="rotate-180" />
-              </button>
-            ) : (
-              <div className="text-white p-2 rounded-lg shrink-0" style={{ background: C.main }}><Package size={20} /></div>
-            )}
+            <button
+              onClick={() => { if (view !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
+              title={view !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
+              className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
+              style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
+              <ArrowRight size={17} className="rotate-180" />
+            </button>
             <div>
               <h1 className="font-bold text-slate-800">KUUHOO</h1>
               <p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'} • {currentUser.name} • {FEATURE_LABEL[feature] || feature}</p>
@@ -591,9 +589,7 @@ export default function CombinedApp() {
           </div>
           <div className="flex items-center gap-2">
             {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-[#EAF1F0] text-[#2A5A55]' : connectionStatus === 'error' ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#F6F7F8] text-slate-500'}`}><Cloud size={10} />Supabase</div>}
-            {!isManager
-              ? <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-700 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] px-3 py-2 rounded-lg"><User size={14} />ไม่ใช่ฉัน</button>
-              : <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>}
+            <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>
           </div>
         </div>
       </header>
@@ -606,7 +602,7 @@ export default function CombinedApp() {
             </span>
             <span className="font-bold text-slate-800">{currentUser.name}</span>
             <span className="text-slate-400">·</span>
-            <span className="text-slate-500">ถ้าไม่ใช่คุณ กด “ไม่ใช่ฉัน” มุมขวาบน</span>
+            <span className="text-slate-500">ถ้าไม่ใช่คุณ กด “ออก” มุมขวาบนเพื่อเปลี่ยนคน</span>
           </div>
         </div>
       )}
@@ -1236,7 +1232,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
             </div>
           </div>
           <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-3 text-[11.5px] text-[#B45309] leading-relaxed">
-            เครื่องรวมไม่มี PIN — ถ้าคนก่อนหน้าลืมกด “ไม่ใช่ฉัน” ของที่คุณนับจะเข้าใบเขา จุดนี้คือด่านสุดท้ายที่จับได้
+            เครื่องรวมไม่มี PIN — ถ้าคนก่อนหน้าลืมออกจากระบบ ของที่คุณนับจะเข้าใบเขา จุดนี้คือด่านสุดท้ายที่จับได้
           </div>
           <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}

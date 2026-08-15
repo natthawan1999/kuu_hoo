@@ -516,9 +516,9 @@ export default function CombinedApp() {
   // พนักงาน + รายงาน + ตั้งค่า เปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
   if (publicPage) {
     const PAGES = {
-      staff:    { icon: Users,           title: 'จัดการพนักงาน', sub: 'รายชื่อ สิทธิ์ ปิดการใช้งาน', body: <StaffAdminView /> },
-      report:   { icon: FileSpreadsheet, title: 'รายงาน',        sub: 'ดึงข้อมูลและส่งออกไฟล์',      body: <ReportView /> },
-      settings: { icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง',
+      staff:    { icon: Users,           title: 'จัดการพนักงาน', body: <StaffAdminView /> },
+      report:   { icon: FileSpreadsheet, title: 'รายงาน',      body: <ReportView /> },
+      settings: { icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์',
                   body: <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} /> },
     };
     const P = PAGES[publicPage] || PAGES.report;
@@ -535,7 +535,6 @@ export default function CombinedApp() {
               </button>
               <div className="min-w-0">
                 <h1 className="font-bold text-slate-800">{P.title}</h1>
-                <p className="text-xs text-slate-500 truncate">{P.sub}</p>
               </div>
             </div>
             <div className="text-white p-2 rounded-lg shrink-0" style={{ background: '#0F172A' }}><PIcon size={18} /></div>
@@ -606,8 +605,6 @@ export default function CombinedApp() {
               กำลังทำงานในชื่อ
             </span>
             <span className="font-bold text-slate-800">{currentUser.name}</span>
-            <span className="text-slate-400">·</span>
-            <span className="text-slate-500">ถ้าไม่ใช่คุณ กด “ออก” มุมขวาบนเพื่อเปลี่ยนคน</span>
           </div>
         </div>
       )}
@@ -747,7 +744,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
             style={{ width: 52, height: 52, background: '#0F172A' }}><Package size={26} /></div>
           <div className="min-w-0">
             <h1 className="text-[26px] font-bold text-slate-800 leading-none">KUUHOO</h1>
-            <p className="text-[12.5px] text-slate-500 mt-1">ระบบนับสต็อกและคีย์บิลหน้าร้าน</p>
           </div>
         </div>
 
@@ -777,7 +773,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
               style={{ width: 42, height: 42, background: '#EAF1F0', color: '#2A5A55' }}><User size={21} /></div>
             <div className="mt-auto">
               <div className="text-[15px] font-bold text-slate-800">พนักงาน</div>
-              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">นับสต็อก หรือคีย์บิลซื้อ</div>
             </div>
           </button>
           <button onClick={() => setRole('manager')}
@@ -787,7 +782,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
               style={{ width: 42, height: 42, background: '#F6F7F8', color: '#0F172A' }}><Shield size={21} /></div>
             <div className="mt-auto">
               <div className="text-[15px] font-bold text-slate-800">ผู้จัดการ</div>
-              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">รีวิว อนุมัติ เทียบยอด</div>
             </div>
           </button>
         </div>
@@ -796,9 +790,9 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เครื่องมือ · เปิดได้เลย ไม่ต้องเลือกชื่อ</div>
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
           {[
-            { id: 'staff',    icon: Users,           title: 'จัดการพนักงาน',    sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
-            { id: 'report',   icon: FileSpreadsheet, title: 'รายงาน',           sub: 'ดึงข้อมูลและส่งออก Excel / CSV' },
-            { id: 'settings', icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง' },
+            { id: 'staff',    icon: Users,           title: 'จัดการพนักงาน' },
+            { id: 'report',   icon: FileSpreadsheet, title: 'รายงาน' },
+            { id: 'settings', icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์' },
           ].map((p, i) => {
             const PIcon = p.icon;
             return (
@@ -809,7 +803,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
                   style={{ width: 36, height: 36, background: '#F6F7F8', color: '#0F172A' }}><PIcon size={17} /></div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-bold text-slate-800">{p.title}</div>
-                  <div className="text-[11px] text-slate-500 truncate">{p.sub}</div>
                 </div>
                 <ArrowRight size={15} className="text-slate-300 shrink-0" />
               </button>
@@ -817,9 +810,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           })}
         </div>
 
-        <div className="text-[10.5px] text-slate-400 text-center mt-5 leading-relaxed">
-          เครื่องรวมหลายคนใช้ร่วมกัน — เลือกชื่อทุกครั้งก่อนเริ่มนับ
-        </div>
       </div>
       ) : (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
@@ -889,8 +879,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
               </>
             ) : (
               <>
-                <div className="text-[11.5px] text-slate-500">แตะชื่อของคุณเพื่อเริ่ม — ไม่มีรหัสผ่าน</div>
-
                 {staffLoading || staffList === undefined ? (
                   <div className="py-8 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2">
                     <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
@@ -1044,7 +1032,6 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
       {/* พิมพ์เอง */}
       <div className="bg-white border rounded-xl p-3 space-y-2.5" style={{ borderColor: '#e2e8f0' }}>
-        <div className="text-[11.5px] text-slate-500">หรือพิมพ์รหัสสินค้า / บาร์โค้ด</div>
         <div className="flex gap-2">
           <input ref={barcodeInputRef} type="text" value={barcode}
             onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }}
@@ -1059,7 +1046,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
           </button>
         </div>
         <div>
-          <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1"><MapPin size={11} />ตำแหน่ง (ไม่บังคับ)</div>
+          <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1"><MapPin size={11} />ตำแหน่ง</div>
           <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="A-1"
             className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#7658C9] text-[13px]"
             style={{ borderColor: '#e2e8f0' }} />
@@ -1240,7 +1227,6 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         <div className="px-4 py-5 text-center" style={{ background: '#EAF1F0' }}>
           <div className="text-white p-3 rounded-full inline-block mb-2" style={{ background: '#35706A' }}><Send size={26} /></div>
           <h2 className="text-lg font-bold" style={{ color: '#2A5A55' }}>ส่งเรียบร้อยแล้ว</h2>
-          <p className="text-[12px] mt-1" style={{ color: '#2A5A55' }}>ผู้จัดการจะรีวิวและแจ้งผลกลับ</p>
         </div>
         <div className="p-3 space-y-2.5">
           {submitted.docNo && (
@@ -1259,7 +1245,6 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
               <div className="text-lg font-bold text-slate-800 tabular-nums">{submitted.totalQty.toLocaleString('th-TH')}</div>
             </div>
           </div>
-          <div className="text-[11px] text-slate-500 leading-relaxed text-center">ใบนี้แก้ไม่ได้แล้ว — ถ้ามีจุดผิดผู้จัดการจะส่งกลับมาให้นับใหม่</div>
         </div>
       </div>
       <button onClick={() => setView('count')}
@@ -1286,7 +1271,6 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
     <div className="space-y-3">
       <div>
         <h2 className="text-xl font-bold text-slate-800">ตรวจสอบและส่ง</h2>
-        <p className="text-[12px] text-slate-500 mt-0.5">บาร์โค้ดเดียวกันรวมเป็นบรรทัดเดียว — แก้จำนวนได้ที่นี่</p>
       </div>
 
       <div className="bg-white border rounded-xl grid grid-cols-2 divide-x" style={{ borderColor: '#E4E6EA' }}>
@@ -1322,16 +1306,13 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
           <div className="divide-y max-h-56 overflow-y-auto" style={{ borderColor: '#FFFBEB' }}>
             {missing.map(g => <GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty} />)}
           </div>
-          <div className="px-3 py-2 text-[10.5px] leading-relaxed" style={{ background: '#FFFBEB', color: '#B45309' }}>
-            ส่งไปได้ — ผู้จัดการจะเป็นคนจับคู่รหัสสินค้าให้
-          </div>
         </div>
       )}
 
       <div className="bg-white rounded-xl border p-3" style={{ borderColor: '#E4E6EA' }}>
-        <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label>
+        <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">หมายเหตุถึงผู้จัดการ</label>
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-          placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว"
+          placeholder=""
           className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#35706A] text-[13px] resize-none"
           style={{ borderColor: '#E2E8F0' }} />
       </div>
@@ -1370,9 +1351,6 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
               </div>
             </div>
           </div>
-          <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-3 text-[11.5px] text-[#B45309] leading-relaxed">
-            เครื่องรวมไม่มี PIN — ถ้าคนก่อนหน้าลืมออกจากระบบ ของที่คุณนับจะเข้าใบเขา จุดนี้คือด่านสุดท้ายที่จับได้
-          </div>
           <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
           </button>
@@ -1399,7 +1377,6 @@ function MySubmissionsView({ submissions, setView }) {
       <div className="flex items-baseline justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
-          <p className="text-[12px] text-slate-500 mt-0.5">ส่งแล้วแก้ไม่ได้ — ถ้าผิดผู้จัดการจะส่งกลับมา</p>
         </div>
         <div className="text-[11.5px] text-slate-400 shrink-0">{submissions.length} ใบ</div>
       </div>
@@ -1547,7 +1524,6 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
     <div className="space-y-3">
       <div>
         <h2 className="text-xl font-bold text-slate-800">กล่องขาเข้า</h2>
-        <p className="text-[12px] text-slate-500 mt-0.5">อนุมัติหรือส่งกลับ — ส่งกลับต้องบอกเหตุผล</p>
       </div>
 
       <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
@@ -1734,10 +1710,10 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
 
               <div>
                 <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">
-                  หมายเหตุถึงพนักงาน <span style={{ color: '#B91C1C' }}>(บังคับถ้าส่งกลับ)</span>
+                  หมายเหตุถึงพนักงาน
                 </label>
                 <textarea value={reviewNote} onChange={e => { setReviewNote(e.target.value); setRejectError(''); }} rows={2}
-                  placeholder="เช่น โซน A ยังไม่ครบ นับชั้นล่างด้วย"
+                  placeholder=""
                   className="w-full px-3 py-2 border rounded-lg outline-none text-[13px] resize-none"
                   style={rejectError ? { borderColor: '#B91C1C', background: '#FEF2F2' } : { borderColor: '#E2E8F0' }} />
                 {rejectError && (
@@ -1777,7 +1753,6 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-slate-800">แดชบอร์ด</h2>
-          <p className="text-[12px] text-slate-500 mt-0.5">ภาพรวมใบนับที่พนักงานส่งเข้ามา</p>
         </div>
         <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold border shrink-0"
           style={isSupabaseReady
@@ -1794,7 +1769,6 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
           <div className="text-white p-2 rounded-lg shrink-0" style={{ background: '#B45309' }}><Inbox size={19} /></div>
           <div className="flex-1 min-w-0">
             <div className="text-[14px] font-bold" style={{ color: '#B45309' }}>{pendingCount} ใบรอคุณรีวิว</div>
-            <div className="text-[11.5px] mt-0.5" style={{ color: '#B45309' }}>พนักงานรอผลอยู่ — กดเพื่อเปิดกล่องขาเข้า</div>
           </div>
           <ArrowRight size={17} className="shrink-0" style={{ color: '#B45309' }} />
         </button>
@@ -2089,7 +2063,7 @@ const REPORT_TOPICS = [
 // หัวคอลัมน์ภาษาไทย — คีย์ตรงกับที่ /api/report ส่งกลับมา
 const COL_LABEL = {
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
-  barcode: 'บาร์โค้ด', product_code: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
+  barcode: 'รหัสสินค้า', product_code: 'รหัสสินค้า (POS)', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',
@@ -2242,7 +2216,7 @@ function ReportView() {
             </label>
           )}
           <label className="block">
-            <span className="text-xs font-medium text-slate-500">บาร์โค้ด / ชื่อสินค้า</span>
+            <span className="text-xs font-medium text-slate-500">รหัสสินค้า / ชื่อสินค้า</span>
             <input value={barcode} onChange={e => setBarcode(e.target.value)} placeholder="ทั้งหมด"
               className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
           </label>
@@ -2375,9 +2349,9 @@ function StaffAdminView() {
   const [saving, setSaving] = useState(false);
 
   const FEAT_META = [
-    { key: 'allow_recorder', label: 'Recorder', sub: 'นับสต็อกส่งผู้จัดการ', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
-    { key: 'allow_compare',  label: 'นับ+เปรียบเทียบ', sub: 'นับแล้วเทียบกับยอดในระบบ', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
-    { key: 'allow_invoice',  label: 'สแกนบิล', sub: 'คีย์บิลซื้อด้วยรูป', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
+    { key: 'allow_recorder', label: 'Recorder', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
+    { key: 'allow_compare',  label: 'นับ+เปรียบเทียบ', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
+    { key: 'allow_invoice',  label: 'สแกนบิล', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
   ];
   const DEPTS = ['คลังสินค้า', 'หน้าร้าน', 'บัญชี'];
 
@@ -2416,7 +2390,6 @@ function StaffAdminView() {
       <button onClick={() => setMode(null)} className="text-[12px] font-semibold text-slate-500 hover:text-slate-800">‹ กลับรายชื่อ</button>
       <div>
         <h2 className="text-xl font-bold text-slate-800">เพิ่มพนักงาน</h2>
-        <p className="text-[12px] text-slate-500 mt-0.5">ไม่ต้องตั้งรหัสผ่าน — ระบบไม่ใช้ล็อกอิน</p>
       </div>
 
       <div className="bg-white border rounded-xl p-3 space-y-3" style={{ borderColor: '#E4E6EA' }}>
@@ -2426,7 +2399,6 @@ function StaffAdminView() {
             placeholder="สมชาย พ."
             className="w-full px-3 py-2.5 border rounded-lg outline-none focus:border-[#35706A] text-[15px]"
             style={{ borderColor: '#E2E8F0' }} />
-          <div className="text-[10.5px] text-slate-400 mt-1">ใช้ชื่อจริง + อักษรย่อนามสกุล เพราะเครื่องรวมกันหลายคน</div>
         </div>
         <div>
           <div className="text-[11.5px] font-semibold text-slate-600 mb-1.5">แผนก</div>
@@ -2445,7 +2417,6 @@ function StaffAdminView() {
       <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
         <div className="px-3 py-2.5 border-b" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>
           <div className="text-[12px] font-bold text-slate-700">ใช้ฟีเจอร์อะไรได้</div>
-          <div className="text-[10.5px] text-slate-500 mt-0.5">เปิดเท่าที่ต้องใช้ — หน้าเลือกชื่อของฟีเจอร์อื่นจะไม่มีชื่อนี้</div>
         </div>
         <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
           {FEAT_META.map(f => {
@@ -2576,9 +2547,6 @@ function StaffAdminView() {
         </button>
       )}
 
-      <div className="bg-white border rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed" style={{ borderColor: '#E4E6EA' }}>
-        ไม่มีปุ่มลบถาวร — ลบคนออกจะทำให้ใบเก่ากลายเป็นใบไม่มีเจ้าของ ตรวจย้อนหลังไม่ได้
-      </div>
     </div>
   );
 
@@ -2588,7 +2556,6 @@ function StaffAdminView() {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-slate-800">พนักงาน</h2>
-          <p className="text-[12px] text-slate-500 mt-0.5">รายชื่อนี้คือหน้าเลือกชื่อที่พนักงานเห็น</p>
         </div>
         <button onClick={load} disabled={loading}
           className="shrink-0 rounded-lg flex items-center justify-center text-slate-500 border bg-white"
@@ -2656,9 +2623,6 @@ function StaffAdminView() {
         className="w-full text-white font-bold text-[15px] rounded-xl flex items-center justify-center gap-2"
         style={{ minHeight: 52, background: '#0F172A' }}><Plus size={18} />เพิ่มพนักงาน</button>
 
-      <div className="bg-white border rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed" style={{ borderColor: '#E4E6EA' }}>
-        ชื่อที่ปิดใช้งานจะหายจากหน้าเลือกชื่อทันที แต่ใบเก่ายังมีชื่อกำกับไว้ครบ — ไม่มีปุ่มลบถาวร
-      </div>
     </div>
   );
 }
@@ -2700,7 +2664,6 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
             style={{ width: 44, height: 44, background: '#0F172A' }}><Lock size={20} /></div>
           <div className="min-w-0">
             <div className="text-[16px] font-bold text-slate-800">ต้องใส่รหัสผ่าน</div>
-            <div className="text-[11.5px] text-slate-500 mt-0.5">หน้านี้แก้การเชื่อมต่อฐานข้อมูล</div>
           </div>
         </div>
         <input type="password" value={gate} autoFocus
@@ -2719,7 +2682,6 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
           style={{ minHeight: 50, background: '#0F172A' }}>
           {gateBusy ? <><RefreshCw size={16} className="animate-spin" />กำลังตรวจสอบ</> : 'เข้าหน้าตั้งค่า'}
         </button>
-        <div className="text-[10.5px] text-slate-400 leading-relaxed text-center">รหัสเดียวกับที่ผู้จัดการใช้เข้าระบบ</div>
       </div>
     </div>
   );

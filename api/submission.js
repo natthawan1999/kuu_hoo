@@ -93,6 +93,20 @@ export default async function handler(req, res) {
         compare_data: s.compareData || null,
       };
 
+      // กันกดส่งซ้ำ — ใบเดิมของคนเดิมภายใน 90 วินาที ถือว่าเป็นใบเดียวกัน
+      try {
+        const since = new Date(Date.now() - 90 * 1000).toISOString();
+        const dupes = await sb(
+          `count_submissions?select=*&counter_id=eq.${encodeURIComponent(row.counter_id)}` +
+          `&feature_type=eq.${encodeURIComponent(row.feature_type)}` +
+          `&item_count=eq.${row.item_count}&total_qty=eq.${row.total_qty}` +
+          `&submitted_at=gte.${encodeURIComponent(since)}&limit=1`
+        );
+        if (dupes?.length) {
+          return res.status(200).json({ submission: toApp(dupes[0]), deduped: true });
+        }
+      } catch { /* เช็คซ้ำไม่ได้ก็ให้บันทึกต่อ ดีกว่าบล็อกงาน */ }
+
       try {
         const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
         return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });

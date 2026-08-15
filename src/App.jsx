@@ -392,16 +392,18 @@ export default function CombinedApp() {
   const [products, setProducts] = useState([]);
   const [countEntries, setCountEntries] = useState([]);
   const [submissions, setSubmissions] = useState([]);
-  const [view, setView] = useState('count');
+  const [view, setView] = useState(() => safeGet('lastView', 'count') || 'count');
   const [loaded, setLoaded] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { const v = localStorage.getItem('currentUser'); return v ? JSON.parse(v) : null; } catch { return null; }
+  });
   const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price', stockTableName: 'product_stock' });
   const [dataSource, setDataSource] = useState('none');
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
-  const [publicPage, setPublicPage] = useState(null);   // 'staff' | 'report' — เปิดได้ก่อนเลือกชื่อ
+  const [publicPage, setPublicPage] = useState(() => safeGet('lastPublicPage', '') || null);   // 'staff' | 'report' | 'settings'
   const [pickedAt, setPickedAt] = useState(null);   // เลือกชื่อไว้กี่โมง — โชว์ในหน้ายืนยันก่อนส่ง
   const [compareState, setCompareState] = useState({
     selectedSub: null, compareData: [], loading: false, loadProgress: '',
@@ -433,7 +435,21 @@ export default function CombinedApp() {
   useDebouncedStorage('submissions', submissions, loaded);
 
   const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
-  const handleLogout = () => { setCurrentUser(null); storage.delete('currentUser').catch(() => {}); };
+  const handleLogout = () => {
+    setCurrentUser(null);
+    storage.delete('currentUser').catch(() => {});
+    try { localStorage.removeItem('lastView'); localStorage.removeItem('lastPublicPage'); } catch {}
+  };
+
+  // จำหน้าที่เปิดอยู่ กด refresh แล้วไม่เด้งกลับหน้าแรก
+  useEffect(() => { safeSet('lastView', view); }, [view]);
+  useEffect(() => {
+    if (publicPage) safeSet('lastPublicPage', publicPage);
+    else { try { localStorage.removeItem('lastPublicPage'); } catch {} }
+  }, [publicPage]);
+  useEffect(() => {
+    if (currentUser) { try { localStorage.setItem('currentUser', JSON.stringify(currentUser)); } catch {} }
+  }, [currentUser]);
 
 
   const checkBarcode = async (barcode) => {
@@ -573,6 +589,11 @@ export default function CombinedApp() {
       : feature === 'stock_compare'
         ? [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
         : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
+
+  // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → กลับหน้าแรกของเมนู
+  useEffect(() => {
+    if (navItems.length && !navItems.some(i => i.id === view)) setView(navItems[0].id);
+  }, [feature, isManager]);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
@@ -1068,17 +1089,17 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
           <div className="p-3 space-y-3">
             <div>
               <div className="text-xs font-semibold text-slate-600 mb-1.5">จำนวนที่นับได้</div>
-              <div className="flex items-center gap-2.5">
+              <div className="grid items-center gap-2.5" style={{ gridTemplateColumns: '52px minmax(0,1fr) 52px' }}>
                 <button onClick={() => setQty(String(Math.max(0, (parseInt(qty) || 0) - 1)))}
-                  className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-slate-700"
+                  className="rounded-xl border flex items-center justify-center text-2xl text-slate-700"
                   style={{ width: 52, height: 52, borderColor: '#e2e8f0', background: '#f8fafc' }}>−</button>
                 <input ref={qtyInputRef} type="number" inputMode="numeric" value={qty}
                   onChange={e => setQty(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()} placeholder="0"
-                  className="flex-1 text-center font-bold text-slate-800 border-0 outline-none"
+                  className="w-full min-w-0 text-center font-bold text-slate-800 border-0 outline-none"
                   style={{ fontSize: 30, fontFamily: "'IBM Plex Mono', monospace" }} />
                 <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
-                  className="shrink-0 rounded-xl border flex items-center justify-center text-2xl"
+                  className="rounded-xl border flex items-center justify-center text-2xl"
                   style={{ width: 52, height: 52, borderColor: '#b6d0cc', background: '#eaf1f0', color: '#2a5a55' }}>+</button>
               </div>
             </div>
@@ -1096,16 +1117,16 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
             <div>{error} — ยังไม่มีในระบบ นับไว้ก่อนได้</div>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="grid items-center gap-2.5" style={{ gridTemplateColumns: '48px minmax(0,1fr) 48px' }}>
             <button onClick={() => setQty(String(Math.max(0, (parseInt(qty) || 0) - 1)))}
-              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-slate-700"
+              className="rounded-xl border flex items-center justify-center text-2xl text-slate-700"
               style={{ width: 48, height: 48, borderColor: '#e2e8f0', background: '#f8fafc' }}>−</button>
             <input type="number" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAddManually()} placeholder="0"
-              className="flex-1 text-center font-bold text-slate-800 border-0 outline-none"
+              className="w-full min-w-0 text-center font-bold text-slate-800 border-0 outline-none"
               style={{ fontSize: 26, fontFamily: "'IBM Plex Mono', monospace" }} />
             <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
-              className="shrink-0 rounded-xl border flex items-center justify-center text-2xl text-[#B45309]"
+              className="rounded-xl border flex items-center justify-center text-2xl text-[#B45309]"
               style={{ width: 48, height: 48, borderColor: '#fde68a', background: '#fffbeb' }}>+</button>
           </div>
           <button onClick={handleAddManually} disabled={!qty || parseInt(qty) <= 0}
@@ -1152,11 +1173,6 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
           className="w-full text-white font-bold text-[15.5px] rounded-xl"
           style={{ minHeight: 52, background: '#0f172a' }}>ตรวจสอบ &amp; ส่ง →</button>
       )}
-
-      <div className="bg-white border rounded-xl px-3 py-2.5 flex items-center gap-2" style={{ borderColor: '#e2e8f0' }}>
-        <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#35706a' }}></span>
-        <div className="text-[11px] text-slate-500 leading-relaxed">เซฟทันทีที่กด — ปิดแอปหรือเน็ตหลุดก็กลับมานับต่อได้</div>
-      </div>
 
       {scanMode && <ScannerModal products={products} onScan={(code) => { setScanMode(false); setBarcode(code); handleCheck(code); }} onClose={() => setScanMode(false)} />}
     </div>

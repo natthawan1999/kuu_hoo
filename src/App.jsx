@@ -590,10 +590,9 @@ export default function CombinedApp() {
         ? [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
         : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
-  // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → กลับหน้าแรกของเมนู
-  useEffect(() => {
-    if (navItems.length && !navItems.some(i => i.id === view)) setView(navItems[0].id);
-  }, [feature, isManager]);
+  // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
+  // ต้องเป็นค่าคำนวณ ไม่ใช่ hook เพราะอยู่หลังจุด return ของหน้าเลือกชื่อ
+  const activeView = navItems.some(i => i.id === view) ? view : (navItems[0]?.id || view);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
@@ -601,8 +600,8 @@ export default function CombinedApp() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <button
-              onClick={() => { if (view !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
-              title={view !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
+              onClick={() => { if (activeView !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
+              title={activeView !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
               className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
               style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
               <ArrowRight size={17} className="rotate-180" />
@@ -632,22 +631,22 @@ export default function CombinedApp() {
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
-        {!isManager && feature !== 'invoice' && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
-        {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
-        {!isManager && feature !== 'invoice' && view === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
-        {!isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
+        {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
+        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
+        {!isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
         {/* Manager */}
-        {isManager && view === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
-        {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && activeView === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
+        {isManager && activeView === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+        {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
-            const Icon = item.icon; const active = view === item.id;
+            const Icon = item.icon; const active = activeView === item.id;
             return (
               <button key={item.id} onClick={() => setView(item.id)}
                 className="relative flex flex-col items-center justify-center gap-1 text-[10px] leading-none"

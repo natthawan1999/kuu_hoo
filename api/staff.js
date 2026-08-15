@@ -12,8 +12,9 @@
 const FEATURES = { recorder: 'allow_recorder', compare: 'allow_compare', invoice: 'allow_invoice' };
 
 function env() {
-  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  // รับชื่อสำรองด้วย เผื่อตั้งไว้คนละชื่อบน Vercel
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || '').replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SERVICE_ROLE_KEY || '';
   const missing = [];
   if (!url) missing.push('SUPABASE_URL');
   if (!key) missing.push('SUPABASE_SERVICE_ROLE_KEY');
@@ -56,6 +57,8 @@ export default async function handler(req, res) {
         url_set: !!url,
         url_host: url ? url.replace(/^https?:\/\//, '').split('.')[0] + '.supabase.co' : null,
         node: process.version,
+        // ชื่อ env ที่มีอยู่จริง (ไม่โชว์ค่า) — ดูว่าตั้งไว้ชื่ออะไร
+        env_keys: Object.keys(process.env).filter(k => /supabase|manager|drive|anthropic/i.test(k)).sort(),
       });
     }
     if (missing.length) {

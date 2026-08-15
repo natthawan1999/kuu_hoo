@@ -10,10 +10,13 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY   // service role — อยู่ฝั่งเซิร์ฟเวอร์เท่านั้น
-);
+// รับชื่อ env สำรองด้วย เผื่อตั้งไว้เป็น VITE_SUPABASE_URL บน Vercel
+const SB_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+
+// สร้างตอนเรียกใช้ ไม่ใช่ตอนโหลดไฟล์ — env ไม่ครบจะได้ตอบเป็น JSON ไม่ใช่ครashทั้งฟังก์ชัน
+let _sb = null;
+const client = () => (_sb ||= createClient(SB_URL, SB_KEY));
 
 const FN = {
   count:   'report_count',
@@ -34,6 +37,11 @@ export default async function handler(req, res) {
     limit = 5000, estimateOnly = false,
   } = req.body || {};
 
+  if (!SB_URL || !SB_KEY) {
+    const missing = [!SB_URL && 'SUPABASE_URL (หรือ VITE_SUPABASE_URL)', !SB_KEY && 'SUPABASE_SERVICE_ROLE_KEY'].filter(Boolean);
+    return res.status(500).json({ error: `ยังไม่ได้ตั้งค่า env บน Vercel: ${missing.join(', ')} — ตั้งแล้วต้อง Redeploy` });
+  }
+
   if (!FN[topic]) return res.status(400).json({ error: 'topic ไม่ถูกต้อง' });
   if (topic !== 'stock' && (!from || !to)) {
     return res.status(400).json({ error: 'ต้องมีช่วงวันที่' });
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
 
   // นับจำนวนแถวก่อน (ปุ่ม "ดึงรายงาน (~N แถว)")
   if (estimateOnly) {
-    const { data, error } = await supabase.rpc('report_estimate', {
+    const { data, error } = await client().rpc('report_estimate', {
       p_topic: topic, p_from: nz(from), p_to: nz(to),
       p_doc: nz(doc), p_barcode: nz(barcode),
       p_party: nz(party), p_person: nz(person),
@@ -65,7 +73,7 @@ export default async function handler(req, res) {
              p_barcode: nz(barcode), p_party: nz(party), p_limit: limit };
   }
 
-  const { data, error } = await supabase.rpc(FN[topic], args);
+  const { data, error } = await client().rpc(FN[topic], args);
   if (error) return res.status(500).json({ error: error.message });
 
   return res.status(200).json({

@@ -487,10 +487,6 @@ export default function CombinedApp() {
     } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
   };
 
-  useEffect(() => {
-    if (currentUser) pullSubmissions(currentUser.feature || 'recorder');
-  }, [currentUser, pullSubmissions]);
-
   const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => {
     setCurrentUser(null);
@@ -620,6 +616,11 @@ export default function CombinedApp() {
       setSubSync({ busy: false, at: new Date().toISOString(), err: '' });
     } catch (e) { setSubSync({ busy: false, at: null, err: e.message }); }
   }, []);
+
+  // เข้าชื่อ/สลับฟีเจอร์ → ดึงใบล่าสุดจากเซิร์ฟเวอร์
+  useEffect(() => {
+    if (currentUser) pullSubmissions(currentUser.feature || 'recorder');
+  }, [currentUser, pullSubmissions]);
 
   const saveSupabaseConfig = async (cfg) => {
     setSupabaseConfig(cfg);
@@ -1293,7 +1294,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
               </div>
               <button onClick={() => deleteEntry(e.id)}
                 className="shrink-0 rounded-lg flex items-center justify-center text-[#B91C1C]"
-                style={{ width: 32, height: 32, background: '#fef2f2' }}><X size={14} /></button>
+                style={{ width: 40, height: 40, background: '#fef2f2' }}><X size={14} /></button>
             </div>
           ))}
           {recent.length > 30 && <div className="text-center text-[11px] text-slate-400 py-1">แสดง 30 รายการล่าสุด จาก {recent.length}</div>}
@@ -1345,7 +1346,7 @@ function GroupedRow({ g, highlight, onEditQty }) {
           {onEditQty && (
             <button onClick={() => { setEditVal(String(g.qty)); setEditing(true); }}
               className="rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700"
-              style={{ width: 36, height: 36, background: '#F6F7F8' }}><Edit3 size={14} /></button>
+              style={{ width: 40, height: 40, background: '#F6F7F8' }}><Edit3 size={14} /></button>
           )}
         </div>
       )}
@@ -1529,7 +1530,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
           {onRefresh && (
             <button onClick={onRefresh} disabled={subSync.busy} title="ดึงสถานะล่าสุดจากเซิร์ฟเวอร์"
               className="rounded-lg flex items-center justify-center border bg-white text-slate-500"
-              style={{ width: 34, height: 34, borderColor: '#E4E6EA' }}>
+              style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}>
               <RefreshCw size={14} className={subSync.busy ? 'animate-spin' : ''} />
             </button>
           )}
@@ -1764,7 +1765,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
                   <div className="flex flex-wrap gap-1.5 pt-2 border-t" style={{ borderColor: '#F6F7F8' }}>
                     <button onClick={() => setExpandedId(open ? null : s.id)}
                       className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-semibold text-slate-600"
-                      style={{ minHeight: 36, background: '#F6F7F8' }}>
+                      style={{ minHeight: 40, background: '#F6F7F8' }}>
                       <FileSpreadsheet size={12} />{open ? 'ซ่อนรายการ' : `รายการ (${s.data?.length || 0})`}
                     </button>
                     <PDFDownloadButton sub={s} />
@@ -1774,7 +1775,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
                         <>
                           <button onClick={() => uploadToDrive(s, 'csv')} disabled={saving}
                             className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-semibold disabled:opacity-60"
-                            style={{ minHeight: 36, background: '#EAF0F4', color: '#255771' }}>
+                            style={{ minHeight: 40, background: '#EAF0F4', color: '#255771' }}>
                             {saving ? <RefreshCw size={12} className="animate-spin" /> : <Upload size={12} />}
                             {saving ? 'กำลังอัปโหลด' : res?.ok ? 'ขึ้น Drive แล้ว' : 'ส่งขึ้น Drive'}
                           </button>
@@ -1787,14 +1788,14 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
                       <div className="flex items-center gap-1 ml-auto">
                         <span className="text-[10.5px] font-semibold" style={{ color: '#B91C1C' }}>ลบใบนี้?</span>
                         <button onClick={() => { onDelete(s.id); setConfirmDelete(null); }}
-                          className="px-2.5 rounded-lg text-[10.5px] font-bold text-white" style={{ minHeight: 32, background: '#B91C1C' }}>ลบ</button>
+                          className="px-2.5 rounded-lg text-[10.5px] font-bold text-white" style={{ minHeight: 40, background: '#B91C1C' }}>ลบ</button>
                         <button onClick={() => setConfirmDelete(null)}
-                          className="px-2.5 rounded-lg text-[10.5px] font-semibold text-slate-600" style={{ minHeight: 32, background: '#F6F7F8' }}>ยกเลิก</button>
+                          className="px-2.5 rounded-lg text-[10.5px] font-semibold text-slate-600" style={{ minHeight: 40, background: '#F6F7F8' }}>ยกเลิก</button>
                       </div>
                     ) : (
                       <button onClick={() => setConfirmDelete(s.id)} title="ลบใบนี้"
                         className="ml-auto rounded-lg flex items-center justify-center"
-                        style={{ width: 36, height: 36, background: '#FEF2F2', color: '#B91C1C' }}><Trash2 size={14} /></button>
+                        style={{ width: 40, height: 40, background: '#FEF2F2', color: '#B91C1C' }}><Trash2 size={14} /></button>
                     )}
                   </div>
 
@@ -1820,7 +1821,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
 
       {selected && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92dvh] overflow-y-auto">
             <div className="px-4 py-3 border-b flex justify-between items-start gap-2 sticky top-0 bg-white" style={{ borderColor: '#E4E6EA' }}>
               <div className="min-w-0">
                 <h3 className="font-bold text-slate-800 text-[15px]">รีวิวใบนับ</h3>
@@ -1829,7 +1830,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
                 </p>
               </div>
               <button onClick={() => setSelected(null)} className="shrink-0 rounded-lg flex items-center justify-center text-slate-500"
-                style={{ width: 36, height: 36, background: '#F6F7F8' }}><X size={17} /></button>
+                style={{ width: 40, height: 40, background: '#F6F7F8' }}><X size={17} /></button>
             </div>
             <div className="p-4 space-y-3">
               <div className="flex gap-2">
@@ -2447,8 +2448,8 @@ function ReportView() {
               ไม่มีข้อมูลในเงื่อนไขนี้
             </div>
           ) : (
-            <div className="overflow-auto max-h-[70vh]">
-              <table className="w-full text-xs">
+            <div className="overflow-auto max-h-[70dvh]" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <table className="text-xs" style={{ minWidth: '100%' }}>
                 <thead className="sticky top-0 bg-white shadow-sm">
                   <tr>
                     {cols.map(k => (
@@ -3729,7 +3730,7 @@ function ScannerModal({ products, onScan, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[95vh] overflow-y-auto">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[95dvh] overflow-y-auto">
         <div className="p-4 border-b border-[#E4E6EA] flex justify-between items-center sticky top-0 bg-white z-10">
           <h3 className="font-semibold">สแกนบาร์โค้ด</h3>
           <button onClick={onClose}><X size={20} /></button>

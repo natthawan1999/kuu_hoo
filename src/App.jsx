@@ -854,21 +854,6 @@ export default function CombinedApp() {
                 );
               })}
 
-              <div className="px-4 py-2 mt-2 text-[10px] font-bold tracking-wide text-slate-400">เครื่องมือ</div>
-              {[{ id: 'staff', label: 'จัดการพนักงาน', icon: Users },
-                { id: 'report', label: 'รายงาน', icon: FileSpreadsheet },
-                { id: 'settings', label: 'ตั้งค่าเซิร์ฟเวอร์', icon: Cloud }].map(p => {
-                const Icon = p.icon;
-                return (
-                  <button key={p.id} onClick={() => { setMenuOpen(false); setPublicPage(p.id); }}
-                    className="w-full flex items-center gap-3 px-4 text-left hover:bg-[#F6F7F8]"
-                    style={{ minHeight: 52, borderLeft: '3px solid transparent' }}>
-                    <Icon size={18} className="shrink-0 text-slate-500" />
-                    <span className="flex-1 text-[14px] font-semibold text-slate-700">{p.label}</span>
-                    <ArrowRight size={14} className="text-slate-300 shrink-0" />
-                  </button>
-                );
-              })}
             </div>
 
             <div className="border-t p-3" style={{ borderColor: '#E4E6EA' }}>
@@ -891,7 +876,8 @@ export default function CombinedApp() {
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
         {/* Manager */}
-                {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+                {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
@@ -1819,7 +1805,6 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
   const [expandedId, setExpandedId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [rejectError, setRejectError] = useState('');
-  const [featFilter, setFeatFilter] = useState('all');
   const [invSel, setInvSel] = useState(null);
   const [invNote, setInvNote] = useState('');
   const [invBusy, setInvBusy] = useState(false);
@@ -1837,13 +1822,13 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
   const items = [
     ...submissions.map(s => ({ kind: s.featureType || 'recorder', at: s.submittedAt, status: s.status, s })),
     ...invSubs.map(s => ({ kind: 'invoice', at: s.submittedAt, status: s.status, s })),
-  ].filter(it => it.status === tab && (featFilter === 'all' || it.kind === featFilter))
+  ].filter(it => it.status === tab)
    .sort((a, b) => new Date(b.at) - new Date(a.at));
 
   const counts = (st) => [
     ...submissions.filter(s => s.status === st),
     ...invSubs.filter(s => s.status === st),
-  ].filter(s => featFilter === 'all' || (s.featureType || (s.lines ? 'invoice' : 'recorder')) === featFilter).length;
+  ].length;
 
   const filtered = submissions.filter(s => s.status === tab);
   const DRIVE_FOLDER = feature === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
@@ -1895,20 +1880,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
       </div>
       {subSync.err && <div className="text-[11px] font-semibold" style={{ color: '#B91C1C' }}>ดึงใบไม่สำเร็จ: {subSync.err}</div>}
 
-      <div className="flex gap-1.5 flex-wrap">
-        {[['all','ทุกฟีเจอร์'],['recorder','นับสินค้า'],['stock_compare','นับเทียบยอด'],['invoice','บันทึกบิล']].map(([k,label]) => {
-          const on = featFilter === k;
-          const tone = KIND[k];
-          return (
-            <button key={k} onClick={() => setFeatFilter(k)}
-              className="rounded-full text-[11.5px] font-bold px-3 border"
-              style={{ minHeight: 36,
-                       background: on ? (tone?.soft || '#0F172A') : '#fff',
-                       borderColor: on ? (tone?.line || '#0F172A') : '#E4E6EA',
-                       color: on ? (tone?.ink || '#fff') : '#64748B' }}>{label}</button>
-          );
-        })}
-      </div>
+
 
       <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
         {['pending', 'approved', 'rejected'].map(k => {

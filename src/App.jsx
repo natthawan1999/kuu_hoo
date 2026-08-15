@@ -885,7 +885,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
               <>
                 <div className="text-[11.5px] text-slate-500">แตะชื่อของคุณเพื่อเริ่ม — ไม่มีรหัสผ่าน</div>
 
-                {staffLoading ? (
+                {staffLoading || staffList === undefined ? (
                   <div className="py-8 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2">
                     <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
                   </div>

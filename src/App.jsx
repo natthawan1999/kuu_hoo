@@ -2927,6 +2927,7 @@ function Spinner({ size = 16 }) {
 
 function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
+  const [invOpen, setInvOpen] = useState({});   // พับ/กางรายการสินค้าต่อใบ
   const w = useWinWidth(), mob = w < 600;
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
@@ -3469,117 +3470,163 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       )}
 
       {step===3&&(
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div style={{ fontWeight:600, fontSize:15, color:'#334155' }}>ตรวจสอบข้อมูลใบกำกับ</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>AI อ่านมาให้แล้ว — ตรวจทีละรายการ แตะแก้ตัวเลขที่ผิดได้เลย ยอดสุทธิคิดใหม่ให้ทันที</div>
+
           {doneInvs.map((inv,gi)=>{
             const d=inv.data, vs=vatSummary(d.products||[]);
             const upd = (patch) => updateData(gi, {...d, ...patch});
             const updP = (pi, patch) => { const prods=[...d.products]; prods[pi]=recalc({...prods[pi],...patch,_pt:d.price_type??'incl'}); updateData(gi,{...d,products:prods}); };
+            const open = invOpen[gi] ?? true;
+            const F = ({ label, k, wide, tag }) => (
+              <div style={{ gridColumn: wide ? '1 / -1' : 'auto', minWidth:0 }}>
+                <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3, display:'flex', alignItems:'center', gap:4 }}>{label}{tag}</div>
+                <input value={d[k]??''} onChange={e=>upd({[k]:e.target.value||null})}
+                  style={{ width:'100%', minHeight:40, padding:'0 9px', border:'1px solid #e4e6ea', borderRadius:9, fontSize:13, boxSizing:'border-box' }}/>
+              </div>
+            );
             return (
-              <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden' }}>
-                <div style={{ background:'#f8fafc', padding:'10px 14px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <div style={{ fontWeight:700, fontSize:13, color:'#334155' }}>ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</div>
-                  <button onClick={()=>reprocessInvoice(gi)} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, background:'#eaf0f4', color:'#2f6e90', border:'none', cursor:'pointer' }}>อ่านใหม่</button>
-                </div>
-                <div style={{ padding:14 }}>
-                  {/* Header fields */}
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:6, marginBottom:10, fontSize:12 }}>
-                    <div><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ชื่อร้าน / บริษัท</div><input value={d.vendor_name??''} onChange={e=>upd({vendor_name:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/></div>
+              <div key={gi} style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, overflow:'hidden' }}>
+                <div style={{ background:'#eaf0f4', padding:'10px 12px', borderBottom:'1px solid #b9cfdc', display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:10, fontWeight:700, color:'#255771' }}>ใบที่ {gi+1} · {(d.products||[]).length} รายการ</div>
+                    <div style={{ fontSize:13.5, fontWeight:700, color:'#0f172a', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.vendor_name||'(ไม่ระบุชื่อร้าน)'}</div>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:10, fontSize:12 }}>
-                    {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type'],['สาขา','vendor_branch']].map(([label,key])=>(
-                      <div key={key}><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>upd({[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/></div>
-                    ))}
-                    <div>
-                      <div style={{ color:'#94a3b8', fontSize:10, marginBottom:2, display:'flex', alignItems:'center', gap:4 }}>
-                        รหัสผู้ขาย (vendor_no)
-                        {d._vendorFromDB && d.vendor_no && <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>● DB</span>}
-                      </div>
-                      <input value={d.vendor_no??''} onChange={e=>upd({vendor_no:e.target.value||null, _vendorFromDB:false})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/>
-                    </div>
-                    <div><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ราคา</div>
-                      <select value={d.price_type??'incl'} onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12 }}>
-                        <option value="incl">รวม VAT แล้ว (incl)</option>
-                        <option value="excl">ยังไม่รวม VAT (excl)</option>
+                  <button onClick={()=>reprocessInvoice(gi)}
+                    style={{ flex:'none', minHeight:36, padding:'0 10px', borderRadius:9, background:'#fff', color:'#255771', border:'1px solid #b9cfdc', cursor:'pointer', fontSize:11.5, fontWeight:700, fontFamily:'inherit' }}>อ่านใหม่</button>
+                </div>
+
+                <div style={{ padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+                  {/* หัวบิล */}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    <F label="ชื่อร้าน / บริษัท" k="vendor_name" wide />
+                    <F label="เลขที่ใบกำกับ" k="invoice_no" />
+                    <F label="วันที่" k="invoice_date" />
+                    <F label="เลขภาษี" k="vendor_tax_id" />
+                    <F label="สาขา" k="vendor_branch" />
+                    <F label="ประเภทเอกสาร" k="document_type" />
+                    <F label="รหัสผู้ขาย" k="vendor_no"
+                      tag={d._vendorFromDB && d.vendor_no ? <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>จากระบบ</span> : null} />
+                    <div style={{ gridColumn:'1 / -1', minWidth:0 }}>
+                      <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3 }}>ราคาบนบิล</div>
+                      <select value={d.price_type??'incl'}
+                        onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }}
+                        style={{ width:'100%', minHeight:42, padding:'0 9px', border:'1px solid #e4e6ea', borderRadius:9, fontSize:13, fontFamily:'inherit' }}>
+                        <option value="incl">รวม VAT แล้ว</option>
+                        <option value="excl">ยังไม่รวม VAT</option>
                       </select>
                     </div>
+                    <div style={{ gridColumn:'1 / -1', minWidth:0 }}>
+                      <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3 }}>ที่อยู่</div>
+                      <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2}
+                        style={{ width:'100%', padding:'8px 9px', border:'1px solid #e4e6ea', borderRadius:9, fontSize:13, resize:'vertical', boxSizing:'border-box', fontFamily:'inherit' }}/>
+                    </div>
                   </div>
-                  <div style={{ marginBottom:10, fontSize:12 }}>
-                    <div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ที่อยู่</div>
-                    <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, resize:'vertical', boxSizing:'border-box' }}/>
+
+                  {/* ยอดรวมของใบ */}
+                  <div style={{ background:'#f8fafc', borderRadius:10, padding:10, display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {[['ส่วนลดรวม', '-฿'+vs.sdTot.toLocaleString(), '#b91c1c'],
+                      ['ไม่รวม VAT', '฿'+vs.excl.toLocaleString(), '#334155'],
+                      ['VAT 7%', '฿'+vs.vatAmt.toLocaleString(), '#334155'],
+                      ['ยอดสุทธิ', '฿'+vs.netTotal.toLocaleString(), '#15803d']].map(([k,v,c])=>(
+                      <div key={k}>
+                        <div style={{ fontSize:10, color:'#94a3b8' }}>{k}</div>
+                        <div style={{ fontSize:14, fontWeight:700, color:c, fontFamily:"'IBM Plex Mono', monospace", wordBreak:'break-all' }}>{v}</div>
+                      </div>
+                    ))}
                   </div>
-                  {/* Product table */}
-                  <div style={{ overflowX:'auto' }}>
-                    <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse', minWidth:1100 }}>
-                      <thead>
-                        <tr style={{ background:'#f8fafc' }}>
-                          {['#','สินค้า','ขนาดลัง','ลัง','หน่วยลัง','ชิ้น','หน่วย','รวม','ราคา/หน่วย','ยอดตามใบ','ส่วนลด','ยอดสุทธิ','diff','VAT','บาร์โค้ด'].map(h=>(
-                            <th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(d.products||[]).map((p,pi)=>{
-                          const bc=p.barcode??barcodeMap[String(p.description||'').trim()]??null;
-                          const inp = (field, w=50, type='number') => (
-                            <input type={type} value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value===''?null:e.target.value})}
-                              style={{ width:w, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/>
-                          );
-                          const inpText = (field, w=55) => (
-                            <input type="text" value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value||null})}
-                              style={{ width:w, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', textAlign:'center' }}/>
-                          );
-                          const diffColor = p.diff == null ? '#9ca3af'
-                            : Math.abs(p.diff) < 0.01 ? '#059669'
-                            : p.diff > 0 ? '#d97706' : '#dc2626';
-                          return (
-                            <tr key={pi} style={{ borderTop:'1px solid #f1f5f9' }}>
-                              <td style={{ padding:'4px 8px', color:'#94a3b8' }}>{p.no??pi+1}</td>
-                              <td style={{ padding:'4px 8px', minWidth:160 }}>
-                                <input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}}
-                                  style={{ width:'100%', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/>
-                              </td>
-                              <td style={{ padding:'4px 8px' }}>{inp('carton_size',50)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inp('carton',45)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inpText('carton_unit',55)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inp('ea',45)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inpText('ea_unit',55)}</td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#334155' }}>{p.qty??'-'}</span></td>
-                              <td style={{ padding:'4px 8px' }}>{inp('price_ea',70)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inp('amount',70)}</td>
-                              <td style={{ padding:'4px 8px' }}>{inp('special_discount',60)}</td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#15803d' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:diffColor }}>{p.diff!=null?Number(p.diff).toLocaleString():'-'}</span></td>
-                              <td style={{ padding:'4px 8px' }}>
-                                <select value={p.vat??'v'} onChange={e=>updP(pi,{vat:e.target.value})}
-                                  style={{ fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}>
-                                  <option value="v">7%</option><option value="n">0%</option>
-                                </select>
-                              </td>
-                              <td style={{ padding:'4px 8px' }}>
-                                <input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}}
-                                  style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#15803d' }}/>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'flex-end', gap:16, marginTop:8, fontSize:12, color:'#64748b', flexWrap:'wrap' }}>
-                    <span>ส่วนลดรวม: <strong style={{ color:'#b91c1c' }}>-฿{vs.sdTot.toLocaleString()}</strong></span>
-                    <span>ไม่รวม VAT: <strong style={{ color:'#334155' }}>฿{vs.excl.toLocaleString()}</strong></span>
-                    <span>VAT 7%: <strong style={{ color:'#334155' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
-                    <span>ยอดสุทธิ: <strong style={{ color:'#15803d' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
-                  </div>
+
+                  <button onClick={()=>setInvOpen(prev=>({ ...prev, [gi]: !open }))}
+                    style={{ width:'100%', minHeight:42, borderRadius:10, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>
+                    {open ? 'ซ่อนรายการสินค้า' : `ดูรายการสินค้า (${(d.products||[]).length})`}
+                  </button>
+
+                  {/* รายการสินค้า — การ์ดต่อรายการ */}
+                  {open && (d.products||[]).map((p,pi)=>{
+                    const bc=p.barcode??barcodeMap[String(p.description||'').trim()]??null;
+                    const diffColor = p.diff == null ? '#94a3b8'
+                      : Math.abs(p.diff) < 0.01 ? '#15803d'
+                      : p.diff > 0 ? '#b45309' : '#b91c1c';
+                    const num = (label, field) => (
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>{label}</div>
+                        <input type="number" inputMode="decimal" value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value===''?null:e.target.value})}
+                          style={{ width:'100%', minHeight:40, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 6px', textAlign:'center', fontSize:13.5, fontFamily:"'IBM Plex Mono', monospace", boxSizing:'border-box' }}/>
+                      </div>
+                    );
+                    const txt = (label, field) => (
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>{label}</div>
+                        <input type="text" value={p[field]??''} onChange={e=>updP(pi,{[field]:e.target.value||null})}
+                          style={{ width:'100%', minHeight:40, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 6px', textAlign:'center', fontSize:13, boxSizing:'border-box' }}/>
+                      </div>
+                    );
+                    return (
+                      <div key={pi} style={{ border:'1px solid #e4e6ea', borderRadius:11, padding:10, display:'flex', flexDirection:'column', gap:8, background: bc ? '#fff' : '#fffbeb' }}>
+                        <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+                          <span style={{ flex:'none', fontSize:11, fontWeight:700, color:'#94a3b8', fontFamily:"'IBM Plex Mono', monospace", paddingTop:11 }}>{p.no??pi+1}</span>
+                          <input value={p.description??''} placeholder="ชื่อสินค้าบนบิล"
+                            onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}}
+                            style={{ flex:1, minWidth:0, minHeight:42, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px', fontSize:13.5, fontWeight:600, color:'#0f172a' }}/>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>บาร์โค้ด{!bc && ' · ยังไม่มี'}</div>
+                          <input value={bc??''} placeholder="ยังไม่มีบาร์โค้ด"
+                            onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}}
+                            style={{ width:'100%', minHeight:42, fontFamily:"'IBM Plex Mono', monospace", fontSize:13.5, fontWeight:600, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px', color: bc?'#15803d':'#b45309', background:'#fff', boxSizing:'border-box' }}/>
+                        </div>
+
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:6 }}>
+                          {num('ขนาดลัง','carton_size')}
+                          {num('ลัง','carton')}
+                          {txt('หน่วยลัง','carton_unit')}
+                          {num('ชิ้น','ea')}
+                          {txt('หน่วย','ea_unit')}
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>รวมจำนวน</div>
+                            <div style={{ minHeight:40, borderRadius:9, background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#0f172a', fontFamily:"'IBM Plex Mono', monospace" }}>{p.qty??'—'}</div>
+                          </div>
+                        </div>
+
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:6 }}>
+                          {num('ราคา/หน่วย','price_ea')}
+                          {num('ยอดตามใบ','amount')}
+                          {num('ส่วนลด','special_discount')}
+                        </div>
+
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:6, alignItems:'end' }}>
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>ยอดสุทธิ</div>
+                            <div style={{ minHeight:40, borderRadius:9, background:'#f0fdf4', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#15803d', fontFamily:"'IBM Plex Mono', monospace" }}>{p.total!=null?Number(p.total).toLocaleString():'—'}</div>
+                          </div>
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>ต่างจากใบ</div>
+                            <div style={{ minHeight:40, borderRadius:9, background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13.5, fontWeight:700, color:diffColor, fontFamily:"'IBM Plex Mono', monospace" }}>{p.diff!=null?Number(p.diff).toLocaleString():'—'}</div>
+                          </div>
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>VAT</div>
+                            <select value={p.vat??'v'} onChange={e=>updP(pi,{vat:e.target.value})}
+                              style={{ width:'100%', minHeight:40, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 6px', fontSize:13, fontFamily:'inherit' }}>
+                              <option value="v">7%</option><option value="n">0%</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setStep(2)} style={{ padding:'10px 20px', borderRadius:10, border:'1px solid #e2e8f0', background:'#fff', color:'#334155', fontWeight:600, fontSize:13, cursor:'pointer' }}>← กลับ</button>
-            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} style={{ flex:1, padding:'10px', borderRadius:10, background:doneInvs.length===0?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:13, border:'none', cursor:doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
-          </div>
+
+          <button onClick={()=>setStep(4)} disabled={doneInvs.length===0}
+            style={{ width:'100%', minHeight:54, borderRadius:12, border:'none', fontFamily:'inherit', fontSize:15.5, fontWeight:700, color:'#fff',
+                     background: doneInvs.length===0?'#94a3b8':'#2f6e90',
+                     boxShadow: doneInvs.length===0?'none':'0 2px 0 #255771',
+                     cursor: doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
+          <button onClick={()=>setStep(2)}
+            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13.5, cursor:'pointer' }}>← กลับไปจับคู่บาร์โค้ด</button>
         </div>
       )}
 

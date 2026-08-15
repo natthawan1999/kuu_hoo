@@ -567,8 +567,8 @@ export default function CombinedApp() {
   // Nav per role+feature
   const navItems = isManager
     ? feature === 'stock_compare'
-      ? [{ id:'staff',label:'พนักงาน',icon:Users },{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
-      : [{ id:'staff',label:'พนักงาน',icon:Users },{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
+      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'สแกนบิล',icon:Receipt }]
       : feature === 'stock_compare'
@@ -624,9 +624,6 @@ export default function CombinedApp() {
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
-        {isManager && view === 'staff' && <StaffAdminView />}
-        {isManager && view === 'report' && <ReportView />}
-        {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -659,6 +656,30 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [staffList, setStaffList] = useState(undefined);   // undefined = ยังไม่โหลด · null = โหลดไม่ได้
+  const [staffLoading, setStaffLoading] = useState(false);
+
+  // โทนสีของแต่ละฟีเจอร์ ใช้กับป้ายบอกฟีเจอร์ที่เลือก
+  const FEAT_TONE = {
+    recorder: { soft: '#EAF1F0', ink: '#2A5A55' },
+    compare:  { soft: '#F2EFFA', ink: '#5F45A8' },
+    invoice:  { soft: '#EAF0F4', ink: '#255771' },
+    indigo:   { soft: '#F6F7F8', ink: '#0F172A' },
+  };
+
+  // พนักงานเลือกชื่อจากรายชื่อจริง — กรองตามสิทธิ์ฟีเจอร์นั้น
+  useEffect(() => {
+    if (role !== 'counter' || !feature) { setStaffList(undefined); return; }
+    const apiFeature = feature === 'stock_compare' ? 'compare' : feature;
+    let alive = true;
+    setStaffLoading(true);
+    fetch('/api/staff?feature=' + apiFeature)
+      .then(r => r.json())
+      .then(j => { if (alive) setStaffList(Array.isArray(j.staff) ? j.staff : null); })
+      .catch(() => { if (alive) setStaffList(null); })
+      .finally(() => { if (alive) setStaffLoading(false); });
+    return () => { alive = false; };
+  }, [role, feature]);
 
   const COUNTER_FEATURES = [
     { id: 'recorder',      label: 'Recorder',            desc: 'บันทึกและส่งข้อมูลให้ผู้จัดการ',              icon: ScanLine,      accent: 'recorder' },
@@ -680,8 +701,9 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
     return map[a]?.[type] || map.indigo[type];
   };
 
-  const handleLogin = async () => {
-    if (!name.trim()) return setError('กรุณาใส่ชื่อ');
+  const handleLogin = async (picked) => {
+    const useName = picked?.name || name.trim();
+    if (!useName) return setError('กรุณาเลือกหรือใส่ชื่อ');
     if (role === 'manager') {
       if (!pin) return setError('กรุณาใส่ PIN');
       setLoading(true); setError('');
@@ -701,13 +723,13 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
       } catch (e) { setError('เชื่อมต่อ server ไม่ได้: ' + e.message); setLoading(false); return; }
       setLoading(false);
     }
-    const stableId = `${role}_${feature}_${name.trim().toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: name.trim(), role, feature, loginAt: new Date().toISOString() });
+    // เลือกจากรายชื่อ → ใช้ id ของ staff เพื่อให้ร่างเดินตามคนข้ามเครื่อง
+    const stableId = picked?.id || `${role}_${feature}_${useName.toLowerCase().replace(/\s+/g,'_')}`;
+    onLogin({ id: stableId, name: useName, role, feature, loginAt: new Date().toISOString() });
   };
 
   const features = role === 'manager' ? MANAGER_FEATURES : COUNTER_FEATURES;
   const selectedFeature = features.find(f => f.id === feature);
-  const btnColor = role === 'manager' ? accentClass('indigo','btn') : selectedFeature ? accentClass(selectedFeature.accent,'btn') : 'bg-slate-600 hover:bg-slate-700';
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#F6F7F8' }}>
@@ -723,9 +745,8 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         </div>
 
-        {/* สถานะเซิร์ฟเวอร์ — กดเข้าไปตั้งค่าได้ทันที */}
-        <button onClick={() => onOpenPage('settings')}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-5 text-left"
+        {/* สถานะเซิร์ฟเวอร์ — บอกสถานะเท่านั้น ทางเข้าตั้งค่าอยู่ในรายการเครื่องมือ */}
+        <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-5"
           style={serverReady
             ? { background: '#EAF1F0', borderColor: '#B6D0CC' }
             : { background: '#FFFBEB', borderColor: '#FDE68A' }}>
@@ -738,8 +759,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
               {serverReady ? `สินค้าในเครื่อง ${productCount.toLocaleString('th-TH')} รายการ` : 'ต้องใส่ URL และ Anon Key ก่อนเริ่มนับ'}
             </div>
           </div>
-          <ArrowRight size={15} className="shrink-0" style={{ color: serverReady ? '#2A5A55' : '#B45309' }} />
-        </button>
+        </div>
 
         {/* เริ่มทำงาน */}
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
@@ -821,37 +841,99 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         )}
 
-        {/* Step 3: Name + PIN */}
+        {/* Step 3: เลือกชื่อจากรายชื่อ (พนักงาน) · ชื่อ+PIN (ผู้จัดการ) */}
         {role && feature && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <button onClick={() => { setFeature(null); setError(''); setPin(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
-              <div className="text-sm font-semibold text-slate-700">ข้อมูลผู้ใช้</div>
+              <button onClick={() => { setFeature(null); setError(''); setPin(''); setName(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <div className="text-sm font-semibold text-slate-700">{role === 'manager' ? 'ข้อมูลผู้ใช้' : 'เลือกชื่อของคุณ'}</div>
             </div>
-            <div className="flex gap-2">
-              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${role === 'manager' ? 'bg-[#F6F7F8] text-[#0F172A]' : 'bg-[#EAF1F0] text-[#2A5A55]'}`}>
-                {role === 'manager' ? <Shield size={12}/> : <User size={12}/>}
+
+            <div className="flex gap-2 flex-wrap">
+              <div className="rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium"
+                style={role === 'manager' ? { background: '#F6F7F8', color: '#0F172A' } : { background: '#EAF1F0', color: '#2A5A55' }}>
+                {role === 'manager' ? <Shield size={12} /> : <User size={12} />}
                 {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
               </div>
-              <div className={`rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium ${accentClass(selectedFeature?.accent || 'indigo','icon').replace('bg-','').includes('emerald') ? 'bg-[#EAF1F0] text-[#2A5A55]' : selectedFeature?.accent === 'teal' ? 'bg-[#F2EFFA] text-[#5F45A8]' : selectedFeature?.accent === 'violet' ? 'bg-[#EAF0F4] text-[#255771]' : 'bg-[#F6F7F8] text-[#0F172A]'}`}>
-                {selectedFeature && <selectedFeature.icon size={12}/>}
-                {selectedFeature?.label}
-              </div>
+              {selectedFeature && (
+                <div className="rounded-lg px-3 py-2 flex items-center gap-1.5 text-xs font-medium"
+                  style={{ background: FEAT_TONE[selectedFeature.accent]?.soft || '#F6F7F8', color: FEAT_TONE[selectedFeature.accent]?.ink || '#0F172A' }}>
+                  <selectedFeature.icon size={12} />{selectedFeature.label}
+                </div>
+              )}
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
-              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง" className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none" autoFocus/>
-            </div>
-            {role === 'manager' && (
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1"/>รหัส PIN</label>
-                <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4} className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none font-mono text-lg tracking-widest text-center"/>
-              </div>
+
+            {role === 'manager' ? (
+              <>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">ชื่อของคุณ</label>
+                  <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง"
+                    className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none" autoFocus />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block"><Lock size={12} className="inline mr-1" />รหัส PIN</label>
+                  <input type="password" value={pin} onChange={e => { setPin(e.target.value); setError(''); }} placeholder="••••" maxLength={4}
+                    className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#0F172A] outline-none font-mono text-lg tracking-widest text-center" />
+                </div>
+                {error && <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-sm rounded-lg p-2">{error}</div>}
+                <button onClick={() => handleLogin()} disabled={loading}
+                  className="w-full py-3 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: '#0F172A' }}>
+                  {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-[11.5px] text-slate-500">แตะชื่อของคุณเพื่อเริ่ม — ไม่มีรหัสผ่าน</div>
+
+                {staffLoading ? (
+                  <div className="py-8 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2">
+                    <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
+                  </div>
+                ) : staffList === null ? (
+                  <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
+                    โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้
+                  </div>
+                ) : staffList.length === 0 ? (
+                  <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
+                    ยังไม่มีชื่อที่เปิดสิทธิ์ฟีเจอร์นี้ — ไปเพิ่มที่ “จัดการพนักงาน” หน้าแรก
+                  </div>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                    {staffList.map((s, i) => (
+                      <button key={s.id} onClick={() => handleLogin(s)}
+                        className="w-full flex items-center gap-3 px-3 text-left hover:bg-[#F6F7F8]"
+                        style={{ minHeight: 58, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
+                        <span className="rounded-full flex items-center justify-center text-[15px] font-bold text-white shrink-0"
+                          style={{ width: 38, height: 38, background: '#35706A' }}>
+                          {s.initial || (s.name || '?').charAt(0)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[14.5px] font-bold text-slate-800 truncate">{s.name}</div>
+                          {s.dept && <div className="text-[11px] text-slate-500 truncate">{s.dept}</div>}
+                        </div>
+                        <ArrowRight size={15} className="text-slate-300 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {(staffList === null || staffList?.length === 0) && (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-slate-700 mb-1 block">พิมพ์ชื่อเอง</label>
+                      <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="เช่น สมหญิง"
+                        className="w-full px-3 py-2.5 border border-[#E4E6EA] rounded-lg focus:ring-2 focus:ring-[#35706A] outline-none" />
+                    </div>
+                    <button onClick={() => handleLogin()} disabled={!name.trim()}
+                      className="w-full py-3 rounded-xl font-bold text-white disabled:opacity-40" style={{ background: '#35706A' }}>
+                      เริ่มทำงาน
+                    </button>
+                  </>
+                )}
+
+                {error && <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-sm rounded-lg p-2">{error}</div>}
+              </>
             )}
-            {error && <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-sm rounded-lg p-2">{error}</div>}
-            <button onClick={handleLogin} disabled={loading} className={`w-full py-3 rounded-lg font-semibold text-white disabled:opacity-60 ${btnColor}`}>
-              {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
-            </button>
           </div>
         )}
       </div>
@@ -1690,13 +1772,12 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
           <h2 className="text-xl font-bold text-slate-800">แดชบอร์ด</h2>
           <p className="text-[12px] text-slate-500 mt-0.5">ภาพรวมใบนับที่พนักงานส่งเข้ามา</p>
         </div>
-        <button onClick={() => setView('settings')}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold border shrink-0"
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold border shrink-0"
           style={isSupabaseReady
             ? { background: '#EAF1F0', borderColor: '#B6D0CC', color: '#2A5A55' }
             : { background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
           <Cloud size={11} />{isSupabaseReady ? 'เซิร์ฟเวอร์พร้อม' : 'ยังไม่ตั้งค่า'}
-        </button>
+        </div>
       </div>
 
       {pendingCount > 0 && (
@@ -2579,6 +2660,59 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false); const [testResult, setTestResult] = useState(null);
   const [saveMsg, setSaveMsg] = useState('');
+  const [gate, setGate] = useState('');
+  const [gateErr, setGateErr] = useState('');
+  const [gateOk, setGateOk] = useState(false);
+  const [gateBusy, setGateBusy] = useState(false);
+
+  const checkGate = async () => {
+    if (!gate) return setGateErr('ใส่รหัสผ่านก่อน');
+    setGateBusy(true); setGateErr('');
+    try {
+      const r = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: gate }),
+      });
+      const d = await r.json();
+      if (!d.ok) { setGateErr(d.msg || 'รหัสผ่านไม่ถูกต้อง'); setGateBusy(false); return; }
+      setGateOk(true); setGate('');
+    } catch (e) { setGateErr('เชื่อมต่อไม่ได้: ' + e.message); }
+    setGateBusy(false);
+  };
+
+  // ตั้งค่าเซิร์ฟเวอร์ต้องใส่รหัสผ่านก่อน — คนนอกแก้การเชื่อมต่อไม่ได้
+  if (!gateOk) return (
+    <div className="max-w-sm mx-auto pt-6">
+      <div className="bg-white rounded-2xl border p-5 space-y-4" style={{ borderColor: '#E4E6EA' }}>
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl flex items-center justify-center text-white shrink-0"
+            style={{ width: 44, height: 44, background: '#0F172A' }}><Lock size={20} /></div>
+          <div className="min-w-0">
+            <div className="text-[16px] font-bold text-slate-800">ต้องใส่รหัสผ่าน</div>
+            <div className="text-[11.5px] text-slate-500 mt-0.5">หน้านี้แก้การเชื่อมต่อฐานข้อมูล</div>
+          </div>
+        </div>
+        <input type="password" value={gate} autoFocus
+          onChange={e => { setGate(e.target.value); setGateErr(''); }}
+          onKeyDown={e => e.key === 'Enter' && checkGate()}
+          placeholder="••••" maxLength={4}
+          className="w-full px-3 py-3 border rounded-xl outline-none font-mono text-xl tracking-[0.4em] text-center"
+          style={{ borderColor: gateErr ? '#B91C1C' : '#E4E6EA', background: gateErr ? '#FEF2F2' : '#fff' }} />
+        {gateErr && (
+          <div className="text-[11.5px] flex items-center gap-1.5" style={{ color: '#B91C1C' }}>
+            <XCircle size={13} />{gateErr}
+          </div>
+        )}
+        <button onClick={checkGate} disabled={gateBusy || !gate}
+          className="w-full text-white font-bold text-[14.5px] rounded-xl disabled:opacity-40 flex items-center justify-center gap-2"
+          style={{ minHeight: 50, background: '#0F172A' }}>
+          {gateBusy ? <><RefreshCw size={16} className="animate-spin" />กำลังตรวจสอบ</> : 'เข้าหน้าตั้งค่า'}
+        </button>
+        <div className="text-[10.5px] text-slate-400 leading-relaxed text-center">รหัสเดียวกับที่ผู้จัดการใช้เข้าระบบ</div>
+      </div>
+    </div>
+  );
+
   const cfg = { url: url.trim(), anonKey: anonKey.trim(), tableName: tableName.trim()||'product_price', stockTableName: stockTableName.trim()||'product_stock' };
   const handleSave = async () => { await onSave(cfg); setSaveMsg('บันทึกแล้ว'); setTimeout(()=>setSaveMsg(''), 2000); };
   const handleTest = async () => { setTesting(true); setTestResult(null); try { await handleSave(); const count = await onTestConnection(cfg); setTestResult({ok:true,msg:`เชื่อมต่อสำเร็จ! มี ${count.toLocaleString()} แถว ใน ${cfg.tableName}`}); } catch(e) { setTestResult({ok:false,msg:e.message}); } setTesting(false); };

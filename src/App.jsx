@@ -540,7 +540,11 @@ export default function CombinedApp() {
   const deleteCountEntry = (id) => setCountEntries(prev => prev.filter(e => e.id !== id));
   const clearMyEntries = () => setCountEntries(prev => prev.filter(e => e.counterId !== currentUser?.id));
 
+  const submittingRef = useRef(false);
   const submitForReview = async (grouped, note) => {
+    if (submittingRef.current) return null;   // กันส่งซ้อน
+    submittingRef.current = true;
+    try {
     const prefix = currentUser?.feature === 'stock_compare' ? 'ST' : 'RC';
     const docNo = await generateDocNo(prefix);
     const now = new Date().toISOString();
@@ -570,7 +574,11 @@ export default function CombinedApp() {
         }
         if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
         // ใช้แถวจากเซิร์ฟเวอร์เป็นตัวจริง (id ตรงกันทุกเครื่อง)
-        setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...j.submission, synced: true } : s));
+        // deduped = เซิร์ฟเวอร์เจอใบเดิมของคนเดิม ไม่สร้างใบใหม่ให้
+        setSubmissions(prev => {
+          const others = prev.filter(s => s.id !== sub.id && s.docNo !== j.submission.docNo);
+          return [{ ...j.submission, synced: true }, ...others];
+        });
         saved = j.submission;
         break;
       } catch (e) {
@@ -584,6 +592,7 @@ export default function CombinedApp() {
       await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}`, { method: 'DELETE' });
     } catch {}
     return saved;
+    } finally { submittingRef.current = false; }
   };
 
   const reviewSubmission = (id, status, reviewNote) => {
@@ -1358,6 +1367,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [sending, setSending] = useState(false);      // กดส่งซ้ำระหว่างกำลังส่ง = ได้ 2 ใบ
   const [qtyOverrides, setQtyOverrides] = useState({});
   const editQty = (barcode, newQty) => setQtyOverrides(prev => ({ ...prev, [barcode]: newQty }));
   const grouped = useMemo(() => {
@@ -1369,7 +1379,16 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
     return Array.from(map.values()).map(g => ({ ...g, qty: qtyOverrides[g.barcode] !== undefined ? qtyOverrides[g.barcode] : g.qty, overridden: qtyOverrides[g.barcode] !== undefined })).sort((a, b) => a.barcode.localeCompare(b.barcode));
   }, [entries, qtyOverrides]);
   const totalItems = grouped.length, totalQty = grouped.reduce((s, g) => s + g.qty, 0);
-  const handleSubmit = async () => { if (!confirming) { setConfirming(true); return; } const sub = await submitForReview(grouped, note); clearMyEntries(); setSubmitted(sub); };
+  const handleSubmit = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    if (sending || submitted) return;                 // กันกดซ้ำ
+    setSending(true);
+    try {
+      const sub = await submitForReview(grouped, note);
+      clearMyEntries();
+      setSubmitted(sub);
+    } finally { setSending(false); }
+  };
   if (submitted) return (
     <div className="space-y-3">
       <div className="bg-white rounded-2xl overflow-hidden border" style={{ borderColor: '#B6D0CC' }}>
@@ -1467,8 +1486,8 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
       </div>
 
       {!confirming ? (
-        <button onClick={handleSubmit}
-          className="w-full text-white font-bold text-[15.5px] rounded-xl flex items-center justify-center gap-2"
+        <button onClick={handleSubmit} disabled={sending}
+          className="w-full text-white font-bold text-[15.5px] rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
           style={{ minHeight: 54, background: '#35706A', boxShadow: '0 2px 0 #2A5A55' }}><Send size={19} />ส่งให้ผู้จัดการรีวิว</button>
       ) : (
         <div className="space-y-3">
@@ -2184,31 +2203,60 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
               <div key={x.label} className={`rounded-lg p-2 border ${x.c==='emerald'?'bg-[#EAF1F0] border-[#EAF1F0] text-[#2A5A55]':x.c==='amber'?'bg-[#FFFBEB] border-[#FFFBEB] text-[#B45309]':'bg-[#FEF2F2] border-[#FEF2F2] text-[#B91C1C]'}`}><div className="text-lg font-bold">{x.v}</div><div className="opacity-75">{x.label}</div></div>
             ))}
           </div>
-          <div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-[#F6F7F8] border-b border-[#E4E6EA]">
-                  <tr>{['รหัส','ชื่อสินค้า','นับได้','ขาย','รับ','Adj.Count','ยอดSB','Adj.Stock'].map(h=><th key={h} className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap">{h}</th>)}</tr>
-                </thead>
-                <tbody className="divide-y divide-[#F6F7F8]">
-                  {compareData.map((d,i) => {
-                    const adjColor = d.adjustStock===null?'text-slate-400':d.adjustStock===0?'text-[#35706A]':d.adjustStock>0?'text-blue-600':'text-[#B91C1C]';
-                    return (
-                      <tr key={i} className={d.notFound?'bg-[#FFFBEB]/30':''}>
-                        <td className="px-3 py-2 font-mono text-slate-700">{d.barcode}</td>
-                        <td className="px-3 py-2 text-slate-800 max-w-[160px] truncate">{d.productName}{d.locations?.length>0&&<div className="text-[10px] text-slate-400">{d.locations.join(', ')}</div>}</td>
-                        <td className="px-3 py-2 font-semibold text-slate-800">{d.counted}</td>
-                        <td className="px-3 py-2 text-orange-600">{d.sale}</td>
-                        <td className="px-3 py-2 text-blue-600">{d.purchase}</td>
-                        <td className="px-3 py-2 font-semibold">{d.adjustedCount}</td>
-                        <td className="px-3 py-2 text-slate-600">{d.stockAtSubmit??<span className="text-[#B45309]">N/A</span>}</td>
-                        <td className={`px-3 py-2 font-bold ${adjColor}`}>{d.adjustStock!==null?d.adjustStock:<span className="text-slate-400">N/A</span>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <div className="space-y-2">
+            {compareData.map((d,i) => {
+              const zero = d.adjustStock === 0;
+              const na = d.adjustStock === null;
+              const tone = na
+                ? { soft:'#F6F7F8', line:'#E4E6EA', ink:'#64748B', label:'ไม่มียอดระบบ' }
+                : zero
+                  ? { soft:'#EAF1F0', line:'#B6D0CC', ink:'#2A5A55', label:'ตรงกัน' }
+                  : d.adjustStock > 0
+                    ? { soft:'#EAF0F4', line:'#B9CFDC', ink:'#255771', label:'นับได้มากกว่า' }
+                    : { soft:'#FEF2F2', line:'#FECACA', ink:'#B91C1C', label:'นับได้น้อยกว่า' };
+              return (
+                <div key={i} className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: d.notFound ? '#FDE68A' : tone.line }}>
+                  <div className="px-3 py-2 flex items-center gap-2 border-b"
+                    style={{ background: d.notFound ? '#FFFBEB' : tone.soft, borderColor: d.notFound ? '#FDE68A' : tone.line }}>
+                    <span className="text-[11.5px] font-bold tabular-nums" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
+                      {d.notFound ? 'ไม่พบในระบบ' : tone.label}
+                    </span>
+                    <span className="ml-auto text-[13px] font-bold tabular-nums shrink-0" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
+                      {na ? '—' : (d.adjustStock > 0 ? '+' : '') + d.adjustStock}
+                    </span>
+                  </div>
+
+                  <div className="p-3 space-y-2.5">
+                    <div>
+                      <div className="text-[13.5px] font-semibold text-slate-800">{d.productName}</div>
+                      <div className="text-[10.5px] text-slate-400 tabular-nums mt-0.5" style={{ overflowWrap: 'anywhere' }}>
+                        {d.barcode}{d.locations?.length > 0 ? ' · ' + d.locations.join(', ') : ''}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['นับได้', d.counted, '#0F172A'], ['ขาย', d.sale, '#B45309'], ['รับ', d.purchase, '#255771']].map(([k,v,c]) => (
+                        <div key={k} className="rounded-lg px-2 py-1.5 text-center" style={{ background: '#F6F7F8' }}>
+                          <div className="text-[10px] text-slate-500">{k}</div>
+                          <div className="text-[15px] font-bold tabular-nums" style={{ color: c }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['ควรเหลือ', d.adjustedCount, '#0F172A'],
+                        ['ยอดระบบ', d.stockAtSubmit ?? '—', d.stockAtSubmit == null ? '#94A3B8' : '#0F172A'],
+                        ['ส่วนต่าง', na ? '—' : d.adjustStock, na ? '#94A3B8' : tone.ink]].map(([k,v,c]) => (
+                        <div key={k} className="rounded-lg px-2 py-1.5 text-center border" style={{ background: '#fff', borderColor: '#EEF0F3' }}>
+                          <div className="text-[10px] text-slate-500">{k}</div>
+                          <div className="text-[15px] font-bold tabular-nums" style={{ color: c }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

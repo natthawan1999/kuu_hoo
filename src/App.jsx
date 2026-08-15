@@ -2885,10 +2885,10 @@ function StepBar({ current }) {
         return (
           <React.Fragment key={n}>
             <div className="flex flex-col items-center gap-1">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-[#0F172A] border-[#0F172A] text-white':active?'bg-white border-[#0F172A] text-[#0F172A]':'bg-white border-[#E4E6EA] text-slate-400'}`}>{done?'✓':n}</div>
-              <span className={`text-[10px] whitespace-nowrap ${active?'text-[#0F172A] font-semibold':'text-slate-400'}`}>{label}</span>
+              <div className={`rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-[#2F6E90] border-[#2F6E90] text-white':active?'bg-white border-[#2F6E90] text-[#255771]':'bg-white border-[#E4E6EA] text-slate-400'}`} style={{ width: 32, height: 32 }}>{done?'✓':n}</div>
+              <span className={`text-[10px] whitespace-nowrap ${active?'text-[#255771] font-bold':'text-slate-400'}`}>{label}</span>
             </div>
-            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n+1?'bg-[#0F172A]':current > n?'bg-[#E4E6EA]':'bg-[#E4E6EA]'}`}/>}
+            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n?'bg-[#2F6E90]':'bg-[#E4E6EA]'}`}/>}
           </React.Fragment>
         );
       })}
@@ -2896,15 +2896,20 @@ function StepBar({ current }) {
   );
 }
 
-function DropZone({ onFiles, multiple, accept, children }) {
+function DropZone({ onFiles, multiple, accept, children, capture, bare }) {
   const [drag, setDrag] = useState(false); const ref = useRef();
   const handle = fs => { if (fs?.length) onFiles(Array.from(fs)); };
   return (
     <div ref={ref} onClick={() => ref.current.querySelector('input')?.click()}
       onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
       onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files);}}
-      className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center ${drag?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#94A3B8] hover:bg-[#F6F7F8]'}`}>
-      <input type="file" multiple={multiple} accept={accept} className="hidden" onChange={e=>handle(e.target.files)}/>
+      className="cursor-pointer transition-colors text-center"
+      style={bare
+        ? { borderRadius: 12 }
+        : { borderRadius: 12, padding: '30px 16px', background: '#fff',
+            border: drag ? '1px dashed #2F6E90' : '1px dashed #CBD5E1',
+            boxShadow: drag ? 'inset 0 0 0 3px #EAF0F4' : 'none' }}>
+      <input type="file" multiple={multiple} accept={accept} {...(capture ? { capture: 'environment' } : {})} className="hidden" onChange={e=>handle(e.target.files)}/>
       {children}
     </div>
   );
@@ -3265,22 +3270,22 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
     <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0 }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
-        <h2 style={{ fontWeight:700, fontSize:20, color:'#1e293b', margin:0 }}>สแกนใบกำกับภาษี</h2>
+        <h2 style={{ fontWeight:700, fontSize:20, color:'#0f172a', margin:0 }}>สแกนใบกำกับภาษี</h2>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:6, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
+          <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
-          <button onClick={()=>setShowInvCfg(!showInvCfg)} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, border:'1px solid #cbd5e1', background:'#f8fafc', cursor:'pointer' }}>⚙ ตั้งค่า</button>
-          {step>1&&<button onClick={reset} style={{ fontSize:12, padding:'4px 10px', borderRadius:6, border:'1px solid #fca5a5', background:'#fef2f2', color:'#dc2626', cursor:'pointer' }}>↺ ใหม่</button>}
+          <button onClick={()=>setShowInvCfg(!showInvCfg)} style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', cursor:'pointer' }}>⚙ ตั้งค่า</button>
+          {step>1&&<button onClick={reset} style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ ใหม่</button>}
         </div>
       </div>
 
       {showInvCfg&&(
         <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:16, marginBottom:16 }}>
           <div style={{ fontWeight:600, marginBottom:10 }}>ตั้งค่า Google Drive</div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:6, background:'#0f172a', color:'#fff', border:'none', cursor:'pointer' }}>บันทึก</button>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:9, background:'#2f6e90', color:'#fff', border:'none', cursor:'pointer' }}>บันทึก</button>
         </div>
       )}
 
@@ -3304,35 +3309,59 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       <StepBar current={step}/>
 
       {step===1&&(
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <DropZone multiple accept="image/*,.pdf" onFiles={addFiles}>
-            <div style={{ fontSize:32, marginBottom:8 }}>📄</div>
-            <div style={{ fontWeight:600, color:'#374151', marginBottom:4 }}>ลากหรือคลิกเพื่ออัปโหลดใบกำกับภาษี</div>
-            <div style={{ fontSize:12, color:'#9ca3af' }}>รองรับ JPG, PNG, PDF (หลายไฟล์)</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>ถ่ายบิลทีละหน้า หลายหน้าที่เป็นใบเดียวกันให้อยู่กลุ่มเดียวกัน — AI จะอ่านต่อกันเป็นใบเดียว</div>
+
+          <DropZone bare multiple accept="image/*" capture onFiles={addFiles}>
+            <div style={{ minHeight:54, borderRadius:12, background:'#2f6e90', color:'#fff', fontSize:16, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:9, boxShadow:'0 2px 0 #255771' }}>
+              <span style={{ width:18, height:15, border:'2px solid #fff', borderRadius:4, display:'inline-block' }}></span>ถ่ายรูปบิล
+            </div>
           </DropZone>
-          {invoices.length>0&&(
-            <div>
+
+          <DropZone bare multiple accept="image/*,.pdf" onFiles={addFiles}>
+            <div style={{ minHeight:46, borderRadius:11, background:'#fff', border:'1px solid #e4e6ea', color:'#475569', fontSize:13.5, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              เลือกจากคลังรูป / ไฟล์ PDF
+            </div>
+          </DropZone>
+
+          {invoices.length===0 ? (
+            <div style={{ background:'#fff', border:'1px dashed #cbd5e1', borderRadius:12, padding:'34px 16px', textAlign:'center', color:'#94a3b8', fontSize:12.5 }}>
+              ยังไม่มีรูป — เริ่มจากถ่ายรูปบิล
+            </div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               {invoices.map((inv,gi)=>(
-                <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12, marginBottom:10 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <div style={{ fontWeight:600, fontSize:13, color:'#374151' }}>กลุ่ม {gi+1} • {inv.files.length} หน้า</div>
-                    <button onClick={()=>removeInv(gi)} style={{ color:'#ef4444', background:'none', border:'none', cursor:'pointer', fontSize:12 }}>✕ ลบ</button>
+                <div key={gi} style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
+                    <div style={{ fontSize:12.5, fontWeight:700, color:'#334155', whiteSpace:'nowrap' }}>กลุ่ม {gi+1} · {inv.files.length} หน้า</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flex:'none' }}>
+                      <span style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>= 1 ใบกำกับ</span>
+                      <button onClick={()=>removeInv(gi)} style={{ minHeight:34, padding:'0 10px', borderRadius:9, background:'#fef2f2', color:'#b91c1c', border:'none', cursor:'pointer', fontSize:11.5, fontWeight:700, fontFamily:'inherit' }}>ลบกลุ่ม</button>
+                    </div>
                   </div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+
+                  <div style={{ display:'flex', gap:8, marginTop:11, flexWrap:'wrap' }}>
                     {inv.files.map((f,pi)=>(
-                      <div key={pi} style={{ position:'relative' }}>
-                        <InvFileThumb file={f}/>
-                        <div style={{ position:'absolute', bottom:2, right:2, fontSize:9, background:'rgba(0,0,0,0.6)', color:'#fff', borderRadius:3, padding:'1px 4px' }}>
-                          {inv.pageStatus[pi]==='processing'?'⏳':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':'⋯'}
+                      <div key={pi} style={{ position:'relative', width:70, height:92, flex:'none' }}>
+                        <div style={{ width:70, height:92, borderRadius:8, border:'1px solid #e4e6ea', background:'#f8fafc', overflow:'hidden' }}>
+                          <InvFileThumb file={f}/>
                         </div>
-                        <button onClick={()=>removePage(gi,pi)} style={{ position:'absolute', top:-6, left:-6, width:18, height:18, borderRadius:'50%', background:'#ef4444', color:'#fff', border:'none', cursor:'pointer', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10 }}>✕</button>
+                        <div style={{ position:'absolute', bottom:3, right:3, fontSize:9, fontWeight:600, fontFamily:"'IBM Plex Mono', monospace", background:'rgba(15,23,42,.72)', color:'#fff', borderRadius:3, padding:'1px 4px' }}>
+                          {inv.pageStatus[pi]==='processing'?'…':inv.pageStatus[pi]==='done'?'✓':inv.pageStatus[pi]==='error'?'✗':pi+1}
+                        </div>
+                        <button onClick={()=>removePage(gi,pi)} aria-label="ลบหน้านี้"
+                          style={{ position:'absolute', top:-7, left:-7, width:26, height:26, borderRadius:'50%', background:'#b91c1c', color:'#fff', border:'2px solid #fff', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10, padding:0 }}>✕</button>
                       </div>
                     ))}
                   </div>
+
+                  <div style={{ marginTop:11, fontSize:11, color:'#94a3b8', lineHeight:1.55 }}>ถ่ายให้เห็นครบทั้งหัวบิลและบรรทัดล่างสุด · แสงสะท้อนบนพลาสติกใสทำให้อ่านตัวเลขพลาดบ่อยที่สุด</div>
                 </div>
               ))}
-              <button onClick={processAll} disabled={processing} style={{ width:'100%', padding:'12px', borderRadius:8, background:processing?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:14, border:'none', cursor:processing?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                {processing?<><Spinner size={18}/>กำลังประมวลผล...</>:<>🤖 ประมวลผลทุกใบ ({invoices.length} กลุ่ม)</>}
+
+              <button onClick={processAll} disabled={processing}
+                style={{ width:'100%', minHeight:54, borderRadius:12, background:processing?'#94a3b8':'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:processing?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                {processing?<><Spinner size={18}/>AI กำลังอ่านบิล…</>:<>อ่านด้วย AI ({invoices.reduce((s,i)=>s+i.files.length,0)} หน้า) →</>}
               </button>
             </div>
           )}
@@ -3340,82 +3369,108 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       )}
 
       {step===2&&(
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div style={{ fontWeight:600, fontSize:15, color:'#374151' }}>สแกนรูปสินค้าเพื่อดึงบาร์โค้ด</div>
-          <DropZone multiple accept="image/*" onFiles={addProductFiles}>
-            <div style={{ fontSize:28, marginBottom:6 }}>📷</div>
-            <div style={{ fontWeight:600, color:'#374151', fontSize:13 }}>ลากรูปสินค้าที่มีบาร์โค้ด</div>
-            <div style={{ fontSize:11, color:'#9ca3af' }}>Claude จะอ่านบาร์โค้ดจากรูปและจับคู่กับรายการสินค้า</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ background:'#eaf0f4', border:'1px solid #b9cfdc', borderRadius:12, padding:12, display:'flex', gap:9, alignItems:'center' }}>
+            <span style={{ fontSize:15, color:'#255771', flex:'none' }}>✓</span>
+            <div style={{ flex:1, minWidth:0, fontSize:11.5, color:'#255771', lineHeight:1.5 }}>
+              อ่านได้ {doneInvs.reduce((s,inv)=>s+((inv.data?.products||[]).length),0)} รายการจาก {doneInvs.length} ใบ — ขั้นนี้เป็นงาน<strong>เสริม</strong> ข้ามไปตรวจข้อมูลได้เลย
+            </div>
+          </div>
+
+          <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>บิลบางใบไม่มีบาร์โค้ด มีแต่ชื่อสินค้า ถ่ายรูปตัวสินค้าเพิ่มเพื่อให้ AI ดึงบาร์โค้ดมาจับคู่ให้</div>
+
+          <DropZone bare multiple accept="image/*" capture onFiles={addProductFiles}>
+            <div style={{ minHeight:50, borderRadius:12, background:'#fff', border:'1px solid #e4e6ea', color:'#334155', fontSize:15, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              ถ่ายรูปสินค้าเพื่อดึงบาร์โค้ด
+            </div>
           </DropZone>
+
           {productFiles.length>0&&(
-            <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, gap:8, flexWrap:'wrap' }}>
-                <div style={{ fontSize:13, fontWeight:600, color:'#374151' }}>รูปสินค้า ({productFiles.length} ไฟล์)</div>
+            <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                <div style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>รูปสินค้า · {productFiles.length} ไฟล์</div>
                 <div style={{ display:'flex', gap:6 }}>
                   {productFiles.some(it=>it.status==='pending')&&(
-                    <button onClick={scanPendingPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 12px', borderRadius:6, background:'#059669', color:'#fff', border:'none', cursor:scanning?'wait':'pointer', fontWeight:600 }}>
-                      {scanning?'กำลังสแกน...':`▶ เริ่ม scan (${productFiles.filter(it=>it.status==='pending').length})`}
+                    <button onClick={scanPendingPFiles} disabled={scanning}
+                      style={{ minHeight:36, padding:'0 12px', borderRadius:9, background:'#2f6e90', color:'#fff', border:'none', cursor:scanning?'wait':'pointer', fontWeight:700, fontSize:11.5, fontFamily:'inherit' }}>
+                      {scanning?'กำลังอ่าน…':`เริ่มอ่าน (${productFiles.filter(it=>it.status==='pending').length})`}
                     </button>
                   )}
-                  {selPFileIds.size>0&&<button onClick={rescanSelectedPFiles} disabled={scanning} style={{ fontSize:11, padding:'4px 10px', borderRadius:6, background:'#4f46e5', color:'#fff', border:'none', cursor:'pointer' }}>{scanning?'กำลังสแกน...':'Re-scan ที่เลือก'}</button>}
+                  {selPFileIds.size>0&&(
+                    <button onClick={rescanSelectedPFiles} disabled={scanning}
+                      style={{ minHeight:36, padding:'0 12px', borderRadius:9, background:'#eaf0f4', color:'#255771', border:'1px solid #b9cfdc', cursor:'pointer', fontWeight:700, fontSize:11.5, fontFamily:'inherit' }}>
+                      {scanning?'กำลังอ่าน…':`อ่านซ้ำ ${selPFileIds.size} รูป`}
+                    </button>
+                  )}
                 </div>
               </div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:11 }}>
                 {productFiles.map(it=>(
-                  <div key={it.id} style={{ position:'relative' }}>
-                    <div style={{ cursor:'pointer' }} onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
+                  <div key={it.id} style={{ position:'relative', width:70, height:92, flex:'none' }}>
+                    <div style={{ cursor:'pointer', width:70, height:92, borderRadius:8, border:'1px solid #e4e6ea', background:'#f8fafc', overflow:'hidden' }}
+                      onClick={()=>setSelPFIds(prev=>{const s=new Set(prev);s.has(it.id)?s.delete(it.id):s.add(it.id);return s;})}>
                       <InvFileThumb file={it.file}/>
-                      <div style={{ position:'absolute', top:2, right:2, fontSize:10, background:it.status==='done'?'#10b981':it.status==='error'?'#ef4444':it.status==='processing'?'#f59e0b':'#6b7280', color:'#fff', borderRadius:3, padding:'1px 4px' }}>{it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'⏳':'⋯'}</div>
-                      {selPFileIds.has(it.id)&&<div style={{ position:'absolute', inset:0, border:'2px solid #4f46e5', borderRadius:6, background:'rgba(79,70,229,0.1)' }}/>}
                     </div>
-                    <button onClick={e=>{e.stopPropagation();deleteProductFile(it.id);}} style={{ position:'absolute', top:-6, left:-6, width:18, height:18, borderRadius:'50%', background:'#ef4444', color:'#fff', border:'none', cursor:'pointer', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10 }}>✕</button>
+                    <div style={{ position:'absolute', bottom:3, right:3, fontSize:9, fontWeight:700, fontFamily:"'IBM Plex Mono', monospace", color:'#fff', borderRadius:3, padding:'1px 4px',
+                      background: it.status==='done'?'#15803d':it.status==='error'?'#b91c1c':it.status==='processing'?'#b45309':'rgba(15,23,42,.72)' }}>
+                      {it.status==='done'?'✓':it.status==='error'?'✗':it.status==='processing'?'…':'⋯'}
+                    </div>
+                    {selPFileIds.has(it.id)&&<div style={{ position:'absolute', inset:0, border:'2px solid #2f6e90', borderRadius:8, background:'rgba(47,110,144,.12)', pointerEvents:'none' }}/>}
+                    <button onClick={e=>{e.stopPropagation();deleteProductFile(it.id);}} aria-label="ลบรูปนี้"
+                      style={{ position:'absolute', top:-7, left:-7, width:26, height:26, borderRadius:'50%', background:'#b91c1c', color:'#fff', border:'2px solid #fff', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, zIndex:10, padding:0 }}>✕</button>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
           {scanResults.length>0&&(
-            <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:12 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#374151', marginBottom:8 }}>ผลการจับคู่บาร์โค้ด ({scanResults.length} รายการ)</div>
-              <div style={{ overflowX:'auto' }}>
-                <table style={{ width:'100%', fontSize:11, borderCollapse:'collapse' }}>
-                  <thead><tr style={{ background:'#f8fafc' }}>{['#','บาร์โค้ด','รูป (description_image)','จับคู่กับ'].map(h=><th key={h} style={{ padding:'6px 8px', textAlign:'left', fontWeight:600, color:'#64748b', whiteSpace:'nowrap' }}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {scanResults.map((r,i)=>{
-                      const usedByOthers = new Set(scanResults.filter((_,j)=>j!==i).map(x=>x.match).filter(Boolean));
-                      const allDescs = [...new Set(doneInvs.flatMap(inv=>(inv.data.products||[]).map(p=>p.description)).filter(Boolean))];
-                      return (
-                      <tr key={i} style={{ borderTop:'1px solid #f1f5f9', background: r._userOverride ? '#fefce8' : 'transparent' }}>
-                        <td style={{ padding:'5px 8px', color:'#9ca3af' }}>{i+1}</td>
-                        <td style={{ padding:'4px 8px' }}><input value={r.barcode??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:130, fontFamily:'monospace', fontSize:11, color:'#065f46', border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
-                        <td style={{ padding:'4px 8px' }}><input value={r.description_image??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}} style={{ width:180, fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/></td>
-                        <td style={{ padding:'4px 8px' }}>
-                          <select value={r.match??''} onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}} style={{ width:200, fontSize:11, border: r._userOverride?'2px solid #eab308':'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', background: r._userOverride?'#fefce8':'#fff' }}>
-                            <option value="">— เลือก —</option>
-                            {allDescs.map((desc,idx) => {
-                              const isUsed = usedByOthers.has(desc);
-                              return <option key={idx} value={desc} disabled={isUsed}>{(desc||'').slice(0,40)}{isUsed?' (ใช้แล้ว)':''}</option>;
-                            })}
-                          </select>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, overflow:'hidden' }}>
+              <div style={{ padding:'10px 12px', background:'#f8fafc', borderBottom:'1px solid #e4e6ea', fontSize:11, fontWeight:700, color:'#64748b' }}>
+                ผลการจับคู่บาร์โค้ด · {scanResults.length} รูป
               </div>
+              {scanResults.map((r,i)=>{
+                const usedByOthers = new Set(scanResults.filter((_,j)=>j!==i).map(x=>x.match).filter(Boolean));
+                const allDescs = [...new Set(doneInvs.flatMap(inv=>(inv.data.products||[]).map(p=>p.description)).filter(Boolean))];
+                return (
+                  <div key={i} style={{ padding:'11px 12px', borderBottom:'1px solid #f6f7f8', display:'flex', flexDirection:'column', gap:7, background: r._userOverride ? '#fffbeb' : 'transparent' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:10.5, fontWeight:700, color:'#94a3b8', fontFamily:"'IBM Plex Mono', monospace", flex:'none' }}>{i+1}</span>
+                      <input value={r.barcode??''} placeholder="บาร์โค้ด"
+                        onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}}
+                        style={{ flex:1, minWidth:0, minHeight:38, fontFamily:"'IBM Plex Mono', monospace", fontSize:12.5, fontWeight:600, color:'#15803d', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                      {r._userOverride&&<span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#b45309', background:'#fffbeb', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>แก้เอง</span>}
+                    </div>
+                    <input value={r.description_image??''} placeholder="ชื่อที่อ่านจากรูป"
+                      onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}}
+                      style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#334155', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                    <select value={r.match??''}
+                      onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}}
+                      style={{ width:'100%', minHeight:40, fontSize:12.5, fontFamily:'inherit', borderRadius:9, padding:'0 9px',
+                               border: r._userOverride?'1px solid #b45309':'1px solid #e4e6ea', background: r._userOverride?'#fffbeb':'#fff' }}>
+                      <option value="">— จับคู่กับรายการในบิล —</option>
+                      {allDescs.map((desc,idx) => {
+                        const isUsed = usedByOthers.has(desc);
+                        return <option key={idx} value={desc} disabled={isUsed}>{(desc||'').slice(0,40)}{isUsed?' (ใช้แล้ว)':''}</option>;
+                      })}
+                    </select>
+                  </div>
+                );
+              })}
+              <div style={{ padding:'11px 12px', fontSize:11, color:'#94a3b8', lineHeight:1.55 }}>แถวสีเหลืองคือแก้เอง — ระบบจำการแก้ไว้ใช้กับบิลใบต่อไป</div>
             </div>
           )}
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setStep(1)} style={{ padding:'12px 20px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:14, cursor:'pointer' }}>← กลับ</button>
-            <button onClick={()=>setStep(3)} style={{ flex:1, padding:'12px', borderRadius:8, background:'#4f46e5', color:'#fff', fontWeight:700, fontSize:14, border:'none', cursor:'pointer' }}>ตรวจสอบข้อมูล →</button>
-          </div>
+
+          <button onClick={()=>setStep(3)}
+            style={{ width:'100%', minHeight:52, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:'pointer' }}>ตรวจสอบข้อมูล →</button>
+          <button onClick={()=>setStep(1)}
+            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontWeight:600, fontSize:13.5, fontFamily:'inherit', cursor:'pointer' }}>← กลับไปหน้าอัปโหลด</button>
         </div>
       )}
 
       {step===3&&(
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div style={{ fontWeight:600, fontSize:15, color:'#374151' }}>ตรวจสอบข้อมูลใบกำกับ</div>
+          <div style={{ fontWeight:600, fontSize:15, color:'#334155' }}>ตรวจสอบข้อมูลใบกำกับ</div>
           {doneInvs.map((inv,gi)=>{
             const d=inv.data, vs=vatSummary(d.products||[]);
             const upd = (patch) => updateData(gi, {...d, ...patch});
@@ -3423,35 +3478,35 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             return (
               <div key={gi} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden' }}>
                 <div style={{ background:'#f8fafc', padding:'10px 14px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <div style={{ fontWeight:700, fontSize:13, color:'#374151' }}>ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</div>
-                  <button onClick={()=>reprocessInvoice(gi)} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, background:'#e0e7ff', color:'#4f46e5', border:'none', cursor:'pointer' }}>อ่านใหม่</button>
+                  <div style={{ fontWeight:700, fontSize:13, color:'#334155' }}>ใบที่ {gi+1}: {d.vendor_name||'(ไม่ระบุ)'}</div>
+                  <button onClick={()=>reprocessInvoice(gi)} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, background:'#eaf0f4', color:'#2f6e90', border:'none', cursor:'pointer' }}>อ่านใหม่</button>
                 </div>
                 <div style={{ padding:14 }}>
                   {/* Header fields */}
                   <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:6, marginBottom:10, fontSize:12 }}>
-                    <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ชื่อร้าน / บริษัท</div><input value={d.vendor_name??''} onChange={e=>upd({vendor_name:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
+                    <div><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ชื่อร้าน / บริษัท</div><input value={d.vendor_name??''} onChange={e=>upd({vendor_name:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/></div>
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:10, fontSize:12 }}>
                     {[['เลขที่ใบกำกับ','invoice_no'],['วันที่','invoice_date'],['เลขภาษี','vendor_tax_id'],['ประเภทเอกสาร','document_type'],['สาขา','vendor_branch']].map(([label,key])=>(
-                      <div key={key}><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>upd({[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/></div>
+                      <div key={key}><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>{label}</div><input value={d[key]??''} onChange={e=>upd({[key]:e.target.value||null})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/></div>
                     ))}
                     <div>
-                      <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2, display:'flex', alignItems:'center', gap:4 }}>
+                      <div style={{ color:'#94a3b8', fontSize:10, marginBottom:2, display:'flex', alignItems:'center', gap:4 }}>
                         รหัสผู้ขาย (vendor_no)
-                        {d._vendorFromDB && d.vendor_no && <span style={{ background:'#d1fae5', color:'#065f46', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>● DB</span>}
+                        {d._vendorFromDB && d.vendor_no && <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>● DB</span>}
                       </div>
-                      <input value={d.vendor_no??''} onChange={e=>upd({vendor_no:e.target.value||null, _vendorFromDB:false})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, boxSizing:'border-box' }}/>
+                      <input value={d.vendor_no??''} onChange={e=>upd({vendor_no:e.target.value||null, _vendorFromDB:false})} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, boxSizing:'border-box' }}/>
                     </div>
-                    <div><div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ราคา</div>
-                      <select value={d.price_type??'incl'} onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12 }}>
+                    <div><div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ราคา</div>
+                      <select value={d.price_type??'incl'} onChange={e=>{ const pt=e.target.value; const prods=(d.products||[]).map(p=>recalc({...p,_pt:pt})); updateData(gi,{...d,price_type:pt,products:prods}); }} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12 }}>
                         <option value="incl">รวม VAT แล้ว (incl)</option>
                         <option value="excl">ยังไม่รวม VAT (excl)</option>
                       </select>
                     </div>
                   </div>
                   <div style={{ marginBottom:10, fontSize:12 }}>
-                    <div style={{ color:'#9ca3af', fontSize:10, marginBottom:2 }}>ที่อยู่</div>
-                    <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, resize:'vertical', boxSizing:'border-box' }}/>
+                    <div style={{ color:'#94a3b8', fontSize:10, marginBottom:2 }}>ที่อยู่</div>
+                    <textarea value={d.vendor_address??''} onChange={e=>upd({vendor_address:e.target.value||null})} rows={2} style={{ width:'100%', padding:'5px 8px', border:'1px solid #e2e8f0', borderRadius:9, fontSize:12, resize:'vertical', boxSizing:'border-box' }}/>
                   </div>
                   {/* Product table */}
                   <div style={{ overflowX:'auto' }}>
@@ -3479,7 +3534,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                             : p.diff > 0 ? '#d97706' : '#dc2626';
                           return (
                             <tr key={pi} style={{ borderTop:'1px solid #f1f5f9' }}>
-                              <td style={{ padding:'4px 8px', color:'#9ca3af' }}>{p.no??pi+1}</td>
+                              <td style={{ padding:'4px 8px', color:'#94a3b8' }}>{p.no??pi+1}</td>
                               <td style={{ padding:'4px 8px', minWidth:160 }}>
                                 <input value={p.description??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}}
                                   style={{ width:'100%', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px' }}/>
@@ -3489,11 +3544,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                               <td style={{ padding:'4px 8px' }}>{inpText('carton_unit',55)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('ea',45)}</td>
                               <td style={{ padding:'4px 8px' }}>{inpText('ea_unit',55)}</td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#374151' }}>{p.qty??'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#334155' }}>{p.qty??'-'}</span></td>
                               <td style={{ padding:'4px 8px' }}>{inp('price_ea',70)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('amount',70)}</td>
                               <td style={{ padding:'4px 8px' }}>{inp('special_discount',60)}</td>
-                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#059669' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
+                              <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:'#15803d' }}>{p.total!=null?Number(p.total).toLocaleString():'-'}</span></td>
                               <td style={{ padding:'4px 8px' }}><span style={{ fontWeight:600, color:diffColor }}>{p.diff!=null?Number(p.diff).toLocaleString():'-'}</span></td>
                               <td style={{ padding:'4px 8px' }}>
                                 <select value={p.vat??'v'} onChange={e=>updP(pi,{vat:e.target.value})}
@@ -3503,7 +3558,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                               </td>
                               <td style={{ padding:'4px 8px' }}>
                                 <input value={bc??''} onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],barcode:e.target.value||null};updateData(gi,{...d,products:prods});}}
-                                  style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#065f46' }}/>
+                                  style={{ width:130, fontFamily:'monospace', fontSize:11, border:'1px solid #e2e8f0', borderRadius:4, padding:'2px 4px', color:'#15803d' }}/>
                               </td>
                             </tr>
                           );
@@ -3512,92 +3567,144 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                     </table>
                   </div>
                   <div style={{ display:'flex', justifyContent:'flex-end', gap:16, marginTop:8, fontSize:12, color:'#64748b', flexWrap:'wrap' }}>
-                    <span>ส่วนลดรวม: <strong style={{ color:'#dc2626' }}>-฿{vs.sdTot.toLocaleString()}</strong></span>
-                    <span>ไม่รวม VAT: <strong style={{ color:'#374151' }}>฿{vs.excl.toLocaleString()}</strong></span>
-                    <span>VAT 7%: <strong style={{ color:'#374151' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
-                    <span>ยอดสุทธิ: <strong style={{ color:'#059669' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
+                    <span>ส่วนลดรวม: <strong style={{ color:'#b91c1c' }}>-฿{vs.sdTot.toLocaleString()}</strong></span>
+                    <span>ไม่รวม VAT: <strong style={{ color:'#334155' }}>฿{vs.excl.toLocaleString()}</strong></span>
+                    <span>VAT 7%: <strong style={{ color:'#334155' }}>฿{vs.vatAmt.toLocaleString()}</strong></span>
+                    <span>ยอดสุทธิ: <strong style={{ color:'#15803d' }}>฿{vs.netTotal.toLocaleString()}</strong></span>
                   </div>
                 </div>
               </div>
             );
           })}
           <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setStep(2)} style={{ padding:'10px 20px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:13, cursor:'pointer' }}>← กลับ</button>
-            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} style={{ flex:1, padding:'10px', borderRadius:8, background:doneInvs.length===0?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:13, border:'none', cursor:doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
+            <button onClick={()=>setStep(2)} style={{ padding:'10px 20px', borderRadius:10, border:'1px solid #e2e8f0', background:'#fff', color:'#334155', fontWeight:600, fontSize:13, cursor:'pointer' }}>← กลับ</button>
+            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0} style={{ flex:1, padding:'10px', borderRadius:10, background:doneInvs.length===0?'#9ca3af':'#4f46e5', color:'#fff', fontWeight:700, fontSize:13, border:'none', cursor:doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
           </div>
         </div>
       )}
 
       {step===4&&(
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:16 }}>
-            <div style={{ fontWeight:700, fontSize:15, color:'#374151', marginBottom:12 }}>สรุปภาพรวม</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, textAlign:'center', marginBottom:16 }}>
-              {[['ใบกำกับ',`${doneInvs.length} ใบ`],['สินค้า',`${allProds.length} รายการ`],['ยอดรวม',`฿${grandTotal.toLocaleString()}`]].map(([k,v])=>(
-                <div key={k} style={{ background:'#f8fafc', borderRadius:8, padding:'10px' }}><div style={{ fontSize:11, color:'#9ca3af', marginBottom:4 }}>{k}</div><div style={{ fontWeight:700, fontSize:16, color:'#374151' }}>{v}</div></div>
-              ))}
-            </div>
-            {(() => {
-              const issues = [];
-              for (const inv of doneInvs) {
-                for (const p of (inv.data.products||[])) {
-                  const miss = [];
-                  const bc = p.barcode ?? barcodeMap[String(p.description||'').trim()] ?? '';
-                  if (!bc) miss.push('barcode');
-                  const qty = p.qty != null ? +p.qty : 0;
-                  if (qty <= 0) miss.push('qty');
-                  if (p.price_ea == null && qty > 0) miss.push('total/qty');
-                  if (miss.length > 0) issues.push({ invoice_no: inv.data.invoice_no, no: p.no, description: p.description, missing: miss });
-                }
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:8 }}>
+            {[['ใบกำกับ',`${doneInvs.length}`,'ใบ'],['สินค้า',`${allProds.length}`,'รายการ'],['ยอดรวม',`฿${grandTotal.toLocaleString()}`,'']].map(([k,v,u])=>(
+              <div key={k} style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:'10px 8px', textAlign:'center' }}>
+                <div style={{ fontSize:10, color:'#94a3b8' }}>{k}</div>
+                <div style={{ fontWeight:700, fontSize:16, color:'#0f172a', fontFamily:"'IBM Plex Mono', monospace", marginTop:2, wordBreak:'break-all' }}>{v}</div>
+                {u&&<div style={{ fontSize:9.5, color:'#94a3b8' }}>{u}</div>}
+              </div>
+            ))}
+          </div>
+
+          {(() => {
+            const issues = [];
+            for (const inv of doneInvs) {
+              for (const p of (inv.data.products||[])) {
+                const miss = [];
+                const bc = p.barcode ?? barcodeMap[String(p.description||'').trim()] ?? '';
+                if (!bc) miss.push('บาร์โค้ด');
+                const qty = p.qty != null ? +p.qty : 0;
+                if (qty <= 0) miss.push('จำนวน');
+                if (p.price_ea == null && qty > 0) miss.push('ราคา');
+                if (miss.length > 0) issues.push({ invoice_no: inv.data.invoice_no, no: p.no, description: p.description, missing: miss });
               }
-              if (issues.length === 0) return null;
-              return (
-                <div style={{ background:'#fef2f2', border:'1.5px solid #fecaca', borderRadius:8, padding:10, marginBottom:12 }}>
-                  <div style={{ fontWeight:700, fontSize:12, color:'#991b1b', marginBottom:6 }}>⚠ พบ {issues.length} รายการ ที่ข้อมูลไม่ครบ (จะส่งออกไปเป็นค่าว่าง / 0)</div>
-                  <div style={{ maxHeight:120, overflowY:'auto', fontSize:11, color:'#7f1d1d' }}>
-                    {issues.slice(0, 30).map((iss, idx) => (
-                      <div key={idx} style={{ marginBottom:2 }}>
-                        • {iss.invoice_no} #{iss.no} <span style={{ color:'#9ca3af' }}>{(iss.description||'').slice(0,30)}</span> — ขาด: <strong>{iss.missing.join(', ')}</strong>
-                      </div>
-                    ))}
-                    {issues.length > 30 && <div style={{ color:'#9ca3af' }}>... และอีก {issues.length - 30} รายการ</div>}
-                  </div>
-                </div>
-              );
-            })()}
-            <div style={{ marginBottom:12 }}>
-              <label style={{ fontSize:12, fontWeight:600, color:'#374151', display:'block', marginBottom:4 }}>ชื่อไฟล์</label>
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <input value={fileName} onChange={e=>setFileName(e.target.value)} placeholder="260517xxxx" style={{ flex:1, padding:'8px 12px', border:`1.5px solid ${nameStatus==='duplicate'?'#ef4444':nameStatus==='available'?'#10b981':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontFamily:'monospace' }}/>
-                {nameStatus==='checking'&&<Spinner size={16}/>}
-                {nameStatus==='duplicate'&&<span style={{ color:'#ef4444', fontSize:11 }}>ซ้ำ!</span>}
-                {nameStatus==='available'&&<span style={{ color:'#10b981', fontSize:11 }}>✓</span>}
+            }
+            if (issues.length === 0) return (
+              <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:12, padding:12, display:'flex', gap:9, alignItems:'center' }}>
+                <span style={{ fontSize:15, color:'#15803d', flex:'none' }}>✓</span>
+                <div style={{ flex:1, minWidth:0, fontSize:11.5, color:'#15803d', lineHeight:1.5 }}>ข้อมูลครบทุกรายการ พร้อมบันทึก</div>
               </div>
-            </div>
-            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
-              <div style={{ fontWeight:600, fontSize:13, color:'#374151', marginBottom:8 }}>อัปโหลดไปยัง Google Drive</div>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                {!gToken ? <button onClick={connectGoogle} style={{ padding:'8px 16px', borderRadius:8, background:'#4285f4', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' }}>🔗 Connect Google Drive</button>
-                : <><button onClick={uploadToDrive} disabled={driveStatus==='uploading'} style={{ padding:'8px 16px', borderRadius:8, background:driveStatus==='uploading'?'#9ca3af':'#4285f4', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:driveStatus==='uploading'?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:8 }}>{driveStatus==='uploading'?<><Spinner size={16}/>กำลังอัปโหลด...</>:'📤 อัปโหลด CSV → Drive'}</button><button onClick={disconnectGoogle} style={{ padding:'8px 12px', borderRadius:8, background:'#fee2e2', color:'#dc2626', border:'none', fontSize:12, cursor:'pointer' }}>ยกเลิก Google</button></>}
-              </div>
-              {driveStatus==='done'&&driveUrl&&<div style={{ marginTop:8, fontSize:12, color:'#059669' }}>✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" style={{ color:'#4f46e5', textDecoration:'underline' }}>เปิดใน Drive →</a></div>}
-              {driveStatus==='error'&&driveErr&&<div style={{ marginTop:8, fontSize:12, color:'#dc2626' }}>✗ {driveErr}</div>}
-            </div>
-            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
-              <div style={{ fontWeight:600, fontSize:13, color:'#374151', marginBottom:8 }}>บันทึกลง Supabase</div>
-              {!sbUrl||!sbKey ? <div style={{ fontSize:12, color:'#f59e0b' }}>⚠ ยังไม่ได้ตั้งค่า Supabase — ไปที่ ตั้งค่า ก่อน</div> : (
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                  <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'} style={{ padding:'8px 16px', borderRadius:8, background:sbSt==='saving'||nameStatus==='duplicate'?'#9ca3af':'#0f172a', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:sbSt==='saving'||nameStatus==='duplicate'?'not-allowed':'pointer', display:'flex', alignItems:'center', gap:8 }}>{sbSt==='saving'?<><Spinner size={16}/>กำลังบันทึก...</>:'💾 บันทึก bill_header + imp_data'}</button>
-                  {sbSt==='done'&&<span style={{ fontSize:12, color:'#059669' }}>✓ บันทึกแล้ว!</span>}
-                  {sbSt==='error'&&sbErr&&<span style={{ fontSize:12, color:'#dc2626' }}>✗ {sbErr}</span>}
+            );
+            return (
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:12, overflow:'hidden' }}>
+                <div style={{ padding:'10px 12px', fontSize:11.5, fontWeight:700, color:'#b45309' }}>
+                  {issues.length} รายการข้อมูลไม่ครบ — บันทึกได้ แต่ช่องที่ขาดจะเป็นค่าว่าง
                 </div>
-              )}
-            </div>
-            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:12 }}>
-              <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}} style={{ padding:'8px 16px', borderRadius:8, background:'#059669', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' }}>⬇ ดาวน์โหลด Excel</button>
+                <div style={{ maxHeight:150, overflowY:'auto' }}>
+                  {issues.slice(0, 30).map((iss, idx) => (
+                    <div key={idx} style={{ padding:'8px 12px', borderTop:'1px solid #fde68a', fontSize:11, color:'#b45309', lineHeight:1.5 }}>
+                      <span style={{ fontFamily:"'IBM Plex Mono', monospace" }}>{iss.invoice_no} #{iss.no}</span>{' '}
+                      <span style={{ color:'#94a3b8' }}>{(iss.description||'').slice(0,30)}</span><br/>
+                      ขาด: <strong>{iss.missing.join(', ')}</strong>
+                    </div>
+                  ))}
+                  {issues.length > 30 && <div style={{ padding:'8px 12px', fontSize:11, color:'#94a3b8' }}>และอีก {issues.length - 30} รายการ</div>}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginBottom:7 }}>ชื่อไฟล์</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <input value={fileName} onChange={e=>setFileName(e.target.value)} placeholder="260517xxxx"
+                style={{ flex:1, minWidth:0, minHeight:44, padding:'0 12px', borderRadius:10, fontSize:14, fontFamily:"'IBM Plex Mono', monospace",
+                         border:`1px solid ${nameStatus==='duplicate'?'#b91c1c':nameStatus==='available'?'#15803d':'#e4e6ea'}`,
+                         background: nameStatus==='duplicate'?'#fef2f2':'#fff' }}/>
+              {nameStatus==='checking'&&<Spinner size={16}/>}
+              {nameStatus==='duplicate'&&<span style={{ flex:'none', color:'#b91c1c', fontSize:11, fontWeight:700 }}>ซ้ำ</span>}
+              {nameStatus==='available'&&<span style={{ flex:'none', color:'#15803d', fontSize:13, fontWeight:700 }}>✓</span>}
             </div>
           </div>
-          <button onClick={()=>setStep(3)} style={{ padding:'10px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#374151', fontWeight:600, fontSize:13, cursor:'pointer' }}>← แก้ไขข้อมูล</button>
+
+          {/* บันทึกลงระบบ — งานหลักของขั้นนี้ */}
+          <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12, display:'flex', flexDirection:'column', gap:9 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>บันทึกเข้าระบบ</div>
+            {!sbUrl||!sbKey ? (
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:10, fontSize:11.5, color:'#b45309', lineHeight:1.5 }}>
+                ยังไม่ได้เชื่อมต่อฐานข้อมูล — เปิดหน้า “ตั้งค่าเซิร์ฟเวอร์” จากหน้าแรกก่อน
+              </div>
+            ) : (
+              <>
+                <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'}
+                  style={{ width:'100%', minHeight:54, borderRadius:12, border:'none', fontFamily:'inherit', fontSize:15.5, fontWeight:700, color:'#fff',
+                           background: (sbSt==='saving'||nameStatus==='duplicate')?'#94a3b8':'#2f6e90',
+                           boxShadow: (sbSt==='saving'||nameStatus==='duplicate')?'none':'0 2px 0 #255771',
+                           cursor:(sbSt==='saving'||nameStatus==='duplicate')?'not-allowed':'pointer',
+                           display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  {sbSt==='saving'?<><Spinner size={18}/>กำลังบันทึก…</>:'บันทึกบิลเข้าระบบ'}
+                </button>
+                {sbSt==='done'&&(
+                  <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:10, fontSize:11.5, fontWeight:700, color:'#15803d' }}>✓ บันทึกแล้ว — ร่างบนเซิร์ฟเวอร์ถูกล้างเรียบร้อย</div>
+                )}
+                {sbSt==='error'&&sbErr&&(
+                  <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:10, fontSize:11.5, color:'#b91c1c', lineHeight:1.5 }}>{sbErr}</div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ส่งออกไฟล์ */}
+          <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12, display:'flex', flexDirection:'column', gap:9 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>ส่งออกไฟล์ (ไม่บังคับ)</div>
+            <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}}
+              style={{ width:'100%', minHeight:48, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#334155', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+              ดาวน์โหลด Excel
+            </button>
+            {!gToken ? (
+              <button onClick={connectGoogle}
+                style={{ width:'100%', minHeight:48, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#334155', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                เชื่อมต่อ Google Drive
+              </button>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <button onClick={uploadToDrive} disabled={driveStatus==='uploading'}
+                  style={{ width:'100%', minHeight:48, borderRadius:11, border:'none', fontFamily:'inherit', fontSize:14, fontWeight:700, color:'#fff',
+                           background: driveStatus==='uploading'?'#94a3b8':'#2f6e90',
+                           cursor:driveStatus==='uploading'?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  {driveStatus==='uploading'?<><Spinner size={16}/>กำลังอัปโหลด…</>:'อัปโหลด CSV ขึ้น Drive'}
+                </button>
+                <button onClick={disconnectGoogle}
+                  style={{ width:'100%', minHeight:40, borderRadius:10, background:'#fef2f2', color:'#b91c1c', border:'none', fontFamily:'inherit', fontSize:12, fontWeight:600, cursor:'pointer' }}>ตัดการเชื่อมต่อ Google</button>
+              </div>
+            )}
+            {driveStatus==='done'&&driveUrl&&(
+              <div style={{ fontSize:11.5, color:'#15803d', fontWeight:600 }}>✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" style={{ color:'#255771' }}>เปิดใน Drive →</a></div>
+            )}
+            {driveStatus==='error'&&driveErr&&<div style={{ fontSize:11.5, color:'#b91c1c' }}>{driveErr}</div>}
+          </div>
+
+          <button onClick={()=>setStep(3)}
+            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13.5, cursor:'pointer' }}>← กลับไปแก้ข้อมูล</button>
         </div>
       )}
     </div>

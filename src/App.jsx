@@ -392,6 +392,7 @@ const NAV_TONE = {
 };
 
 function defaultViewFor(user) {
+  if (user?.role === 'manager') return 'inbox';
   if (user?.role === 'manager') return 'staff';
   if (!user) return 'count';
   if (user.role === 'manager') return 'dashboard';
@@ -622,6 +623,7 @@ export default function CombinedApp() {
   // ดึงใบจากเซิร์ฟเวอร์ — ผู้จัดการ/พนักงานเปิดเครื่องไหนก็เห็นของเดียวกัน
   const [subSync, setSubSync] = useState({ busy: false, at: null, err: '' });
   const [invSubs, setInvSubs] = useState([]);   // บิลรออนุมัติ
+  const [menuOpen, setMenuOpen] = useState(false);   // เมนูข้างของผู้จัดการ
   const pullSubmissions = useCallback(async (feat) => {
     setSubSync(s => ({ ...s, busy: true, err: '' }));
     try {
@@ -756,12 +758,10 @@ export default function CombinedApp() {
 
   // Nav per role+feature
   const navItems = isManager
-    ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight }]
+    ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
-      : feature === 'stock_compare'
-        ? [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
-        : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
+      : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
   // ต้องเป็นค่าคำนวณ ไม่ใช่ hook เพราะอยู่หลังจุด return ของหน้าเลือกชื่อ
@@ -772,16 +772,36 @@ export default function CombinedApp() {
       <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => { if (activeView !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
-              title={activeView !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
-              className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
-              style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
-              <ArrowRight size={17} className="rotate-180" />
-            </button>
-            <div>
-              <h1 className="font-bold text-slate-800">KUUHOO</h1>
-              <p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'} • {currentUser.name} • {FEATURE_LABEL[feature] || feature}</p>
+            {isManager ? (
+              <button onClick={() => setMenuOpen(true)} title="เมนู"
+                className="shrink-0 rounded-lg flex items-center justify-center border bg-white relative"
+                style={{ width: 40, height: 40, borderColor: '#E4E6EA', color: '#0F172A' }}>
+                <span style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  <span style={{ width:16, height:2, background:'#0F172A', borderRadius:2, display:'block' }}></span>
+                  <span style={{ width:16, height:2, background:'#0F172A', borderRadius:2, display:'block' }}></span>
+                  <span style={{ width:16, height:2, background:'#0F172A', borderRadius:2, display:'block' }}></span>
+                </span>
+                {pendingCount > 0 && (
+                  <span className="absolute text-white text-[9px] font-bold rounded-full text-center"
+                    style={{ top: -5, right: -5, minWidth: 17, padding: '1px 4px', background: '#B45309' }}>{pendingCount}</span>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => { if (activeView !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
+                title={activeView !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
+                className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
+                style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
+                <ArrowRight size={17} className="rotate-180" />
+              </button>
+            )}
+            <div className="min-w-0">
+              <h1 className="font-bold text-slate-800">
+                {isManager ? (navItems.find(i => i.id === activeView)?.label || 'KUUHOO') : 'KUUHOO'}
+              </h1>
+              <p className="text-xs text-slate-500 truncate">
+                {isManager ? `ผู้จัดการ • ${currentUser.name}` : `พนักงาน • ${currentUser.name} • ${FEATURE_LABEL[feature] || feature}`}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -802,21 +822,80 @@ export default function CombinedApp() {
         </div>
       )}
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: 'calc(76px + env(safe-area-inset-bottom))' }}>
+      {isManager && menuOpen && (
+        <div className="fixed inset-0 z-50 flex" onClick={() => setMenuOpen(false)}>
+          <div className="bg-white h-full flex flex-col" style={{ width: 268, maxWidth: '84vw', boxShadow: '2px 0 16px rgba(15,23,42,.18)' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-4 border-b flex items-center gap-3" style={{ borderColor: '#E4E6EA', background: '#F6F7F8' }}>
+              <span className="rounded-full flex items-center justify-center text-[15px] font-bold text-white shrink-0"
+                style={{ width: 42, height: 42, background: '#0F172A' }}>{(currentUser.name || '?').charAt(0)}</span>
+              <div className="min-w-0">
+                <div className="text-[14px] font-bold text-slate-800 truncate">{currentUser.name}</div>
+                <div className="text-[11px] text-slate-500">ผู้จัดการ</div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-2">
+              <div className="px-4 py-2 text-[10px] font-bold tracking-wide text-slate-400">งานประจำวัน</div>
+              {navItems.map(item => {
+                const Icon = item.icon; const on = activeView === item.id;
+                return (
+                  <button key={item.id} onClick={() => { setView(item.id); setMenuOpen(false); }}
+                    className="w-full flex items-center gap-3 px-4 text-left"
+                    style={{ minHeight: 52, background: on ? '#F6F7F8' : '#fff',
+                             borderLeft: on ? '3px solid #0F172A' : '3px solid transparent' }}>
+                    <Icon size={18} style={{ color: on ? '#0F172A' : '#64748B' }} className="shrink-0" />
+                    <span className="flex-1 text-[14px] font-semibold" style={{ color: on ? '#0F172A' : '#334155' }}>{item.label}</span>
+                    {item.badge > 0 && (
+                      <span className="text-white text-[10px] font-bold rounded-full text-center shrink-0"
+                        style={{ minWidth: 20, padding: '2px 6px', background: '#B45309' }}>{item.badge}</span>
+                    )}
+                  </button>
+                );
+              })}
+
+              <div className="px-4 py-2 mt-2 text-[10px] font-bold tracking-wide text-slate-400">เครื่องมือ</div>
+              {[{ id: 'staff', label: 'จัดการพนักงาน', icon: Users },
+                { id: 'report', label: 'รายงาน', icon: FileSpreadsheet },
+                { id: 'settings', label: 'ตั้งค่าเซิร์ฟเวอร์', icon: Cloud }].map(p => {
+                const Icon = p.icon;
+                return (
+                  <button key={p.id} onClick={() => { setMenuOpen(false); setPublicPage(p.id); }}
+                    className="w-full flex items-center gap-3 px-4 text-left hover:bg-[#F6F7F8]"
+                    style={{ minHeight: 52, borderLeft: '3px solid transparent' }}>
+                    <Icon size={18} className="shrink-0 text-slate-500" />
+                    <span className="flex-1 text-[14px] font-semibold text-slate-700">{p.label}</span>
+                    <ArrowRight size={14} className="text-slate-300 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="border-t p-3" style={{ borderColor: '#E4E6EA' }}>
+              <button onClick={() => { setMenuOpen(false); handleLogout(); }}
+                className="w-full flex items-center justify-center gap-2 rounded-xl font-bold text-[13.5px] border"
+                style={{ minHeight: 46, borderColor: '#E4E6EA', color: '#475569', background: '#fff' }}>
+                <LogOut size={15} />ออกจากระบบ
+              </button>
+            </div>
+          </div>
+          <div className="flex-1" style={{ background: 'rgba(15,23,42,.45)' }}></div>
+        </div>
+      )}
+
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
-        {!isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
         {/* Manager */}
-        {isManager && activeView === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+                {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
-      {navItems.length > 1 && (
+      {!isManager && navItems.length > 1 && (
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
@@ -1461,6 +1540,16 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
               <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{submitted.docNo}</div>
             </div>
           )}
+          {submitted.startedAt && (
+            <div className="rounded-xl px-3 py-2.5" style={{ background: '#EAF0F4' }}>
+              <div className="text-[10px] font-bold" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
+              <div className="text-[12px] tabular-nums mt-0.5" style={{ color: '#255771' }}>
+                {new Date(submitted.startedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {' → '}
+                {new Date(submitted.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1 rounded-xl px-2.5 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
               <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
@@ -1652,6 +1741,15 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
 
                 <div className="p-3 space-y-2.5">
                   {s.docNo && <div className="text-[13.5px] font-bold text-slate-800 tabular-nums">{s.docNo}</div>}
+
+                  <div className="rounded-lg px-2.5 py-2" style={{ background: '#EAF0F4' }}>
+                    <div className="text-[10px] font-bold" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
+                    <div className="text-[11.5px] tabular-nums mt-0.5" style={{ color: '#255771' }}>
+                      {s.startedAt ? new Date(s.startedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {' → '}
+                      {new Date(s.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
                       <div className="text-[10px] text-slate-500">บาร์โค้ด</div>

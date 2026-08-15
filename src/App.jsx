@@ -513,9 +513,13 @@ export default function CombinedApp() {
   if (!loaded) return <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
     // พนักงาน + รายงาน เปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
   if (publicPage) {
-    const P = publicPage === 'staff'
-      ? { icon: Users, title: 'พนักงาน', sub: 'จัดการรายชื่อและสิทธิ์ — ไม่ต้องเข้าสู่ระบบ', body: <StaffAdminView /> }
-      : { icon: FileSpreadsheet, title: 'รายงาน', sub: 'ดึงข้อมูลและส่งออกไฟล์ — ไม่ต้องเข้าสู่ระบบ', body: <ReportView /> };
+    const PAGES = {
+      staff:    { icon: Users,           title: 'จัดการพนักงาน', sub: 'รายชื่อ สิทธิ์ ปิดการใช้งาน', body: <StaffAdminView /> },
+      report:   { icon: FileSpreadsheet, title: 'รายงาน',        sub: 'ดึงข้อมูลและส่งออกไฟล์',      body: <ReportView /> },
+      settings: { icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง',
+                  body: <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} /> },
+    };
+    const P = PAGES[publicPage] || PAGES.report;
     const PIcon = P.icon;
     return (
       <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
@@ -540,7 +544,7 @@ export default function CombinedApp() {
     );
   }
 
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenPage={setPublicPage} />;
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenPage={setPublicPage} serverReady={isSupabaseReady} productCount={products.length} />;
 
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
@@ -647,7 +651,7 @@ export default function CombinedApp() {
   );
 }
 
-function LoginScreen({ onLogin, onOpenPage }) {
+function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   const [role, setRole] = useState(null);
   const [feature, setFeature] = useState(null);
   const [name, setName] = useState('');
@@ -705,49 +709,93 @@ function LoginScreen({ onLogin, onOpenPage }) {
   const btnColor = role === 'manager' ? accentClass('indigo','btn') : selectedFeature ? accentClass(selectedFeature.accent,'btn') : 'bg-slate-600 hover:bg-slate-700';
 
   return (
-    <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-        <div className="text-center">
-          <div className="bg-[#0F172A] text-white p-3 rounded-2xl inline-block mb-3"><Package size={28}/></div>
-          <h1 className="text-2xl font-bold text-slate-800">KUUHOO</h1>
-          <p className="text-sm text-slate-500">เข้าสู่ระบบ</p>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#F6F7F8' }}>
+      {!role ? (
+      <div className="w-full" style={{ maxWidth: 460 }}>
+        {/* หัวเรื่อง */}
+        <div className="flex items-center gap-3 mb-5">
+          <div className="text-white rounded-2xl flex items-center justify-center shrink-0"
+            style={{ width: 52, height: 52, background: '#0F172A' }}><Package size={26} /></div>
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-bold text-slate-800 leading-none">KUUHOO</h1>
+            <p className="text-[12.5px] text-slate-500 mt-1">ระบบนับสต็อกและคีย์บิลหน้าร้าน</p>
+          </div>
         </div>
 
-        {/* Step 1: Role */}
-        {!role && (
-          <div className="space-y-3">
-            <div className="text-sm font-semibold text-slate-700">เลือกบทบาท</div>
-            <button onClick={() => setRole('counter')} className="w-full p-4 border-2 border-[#E4E6EA] hover:border-[#35706A] hover:bg-[#EAF1F0] rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-[#EAF1F0] text-[#2A5A55] p-3 rounded-lg"><User size={24}/></div>
-              <div><div className="font-semibold text-slate-800">พนักงาน</div><div className="text-xs text-slate-500">นับสต็อก / สแกนบิล</div></div>
-            </button>
-            <button onClick={() => setRole('manager')} className="w-full p-4 border-2 border-[#E4E6EA] hover:border-[#0F172A] hover:bg-[#F6F7F8] rounded-xl transition-colors text-left flex items-center gap-3">
-              <div className="bg-[#F6F7F8] text-[#0F172A] p-3 rounded-lg"><Shield size={24}/></div>
-              <div><div className="font-semibold text-slate-800">ผู้จัดการ</div><div className="text-xs text-slate-500">รีวิวและอนุมัติผลการนับ</div></div>
-            </button>
-          <div className="pt-1 space-y-2">
-          <div className="text-[11px] font-bold tracking-wide text-slate-400">เปิดได้เลย ไม่ต้องเลือกชื่อ</div>
+        {/* สถานะเซิร์ฟเวอร์ — กดเข้าไปตั้งค่าได้ทันที */}
+        <button onClick={() => onOpenPage('settings')}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-5 text-left"
+          style={serverReady
+            ? { background: '#EAF1F0', borderColor: '#B6D0CC' }
+            : { background: '#FFFBEB', borderColor: '#FDE68A' }}>
+          <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: serverReady ? '#35706A' : '#B45309' }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.5px] font-bold" style={{ color: serverReady ? '#2A5A55' : '#B45309' }}>
+              {serverReady ? 'เชื่อมต่อเซิร์ฟเวอร์แล้ว' : 'ยังไม่ได้ตั้งค่าเซิร์ฟเวอร์'}
+            </div>
+            <div className="text-[11px] mt-0.5 truncate" style={{ color: serverReady ? '#2A5A55' : '#B45309' }}>
+              {serverReady ? `สินค้าในเครื่อง ${productCount.toLocaleString('th-TH')} รายการ` : 'ต้องใส่ URL และ Anon Key ก่อนเริ่มนับ'}
+            </div>
+          </div>
+          <ArrowRight size={15} className="shrink-0" style={{ color: serverReady ? '#2A5A55' : '#B45309' }} />
+        </button>
+
+        {/* เริ่มทำงาน */}
+        <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
+        <div className="grid grid-cols-2 gap-2.5 mb-5">
+          <button onClick={() => setRole('counter')}
+            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#35706A]"
+            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
+            <div className="rounded-xl flex items-center justify-center shrink-0"
+              style={{ width: 42, height: 42, background: '#EAF1F0', color: '#2A5A55' }}><User size={21} /></div>
+            <div className="mt-auto">
+              <div className="text-[15px] font-bold text-slate-800">พนักงาน</div>
+              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">นับสต็อก หรือคีย์บิลซื้อ</div>
+            </div>
+          </button>
+          <button onClick={() => setRole('manager')}
+            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#0F172A]"
+            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
+            <div className="rounded-xl flex items-center justify-center shrink-0"
+              style={{ width: 42, height: 42, background: '#F6F7F8', color: '#0F172A' }}><Shield size={21} /></div>
+            <div className="mt-auto">
+              <div className="text-[15px] font-bold text-slate-800">ผู้จัดการ</div>
+              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">รีวิว อนุมัติ เทียบยอด</div>
+            </div>
+          </button>
+        </div>
+
+        {/* เครื่องมือ — เปิดได้เลย */}
+        <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เครื่องมือ · เปิดได้เลย ไม่ต้องเลือกชื่อ</div>
+        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
           {[
-            { id: 'staff',  icon: Users,           title: 'พนักงาน', sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
-            { id: 'report', icon: FileSpreadsheet, title: 'รายงาน',  sub: 'ดึงข้อมูลและส่งออกไฟล์' },
-          ].map(p => {
+            { id: 'staff',    icon: Users,           title: 'จัดการพนักงาน',    sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
+            { id: 'report',   icon: FileSpreadsheet, title: 'รายงาน',           sub: 'ดึงข้อมูลและส่งออก Excel / CSV' },
+            { id: 'settings', icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง' },
+          ].map((p, i) => {
             const PIcon = p.icon;
             return (
               <button key={p.id} onClick={() => onOpenPage(p.id)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] text-left">
-                <div className="p-2 rounded-lg bg-[#F6F7F8] text-[#0F172A] shrink-0"><PIcon size={18} /></div>
+                className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
+                style={{ minHeight: 62, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
+                <div className="rounded-lg flex items-center justify-center shrink-0"
+                  style={{ width: 36, height: 36, background: '#F6F7F8', color: '#0F172A' }}><PIcon size={17} /></div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-slate-800">{p.title}</div>
-                  <div className="text-[11.5px] text-slate-500 truncate">{p.sub}</div>
+                  <div className="text-[13.5px] font-bold text-slate-800">{p.title}</div>
+                  <div className="text-[11px] text-slate-500 truncate">{p.sub}</div>
                 </div>
-                <ArrowRight size={16} className="text-slate-400 shrink-0" />
+                <ArrowRight size={15} className="text-slate-300 shrink-0" />
               </button>
             );
           })}
         </div>
-          </div>
-        )}
 
+        <div className="text-[10.5px] text-slate-400 text-center mt-5 leading-relaxed">
+          เครื่องรวมหลายคนใช้ร่วมกัน — เลือกชื่อทุกครั้งก่อนเริ่มนับ
+        </div>
+      </div>
+      ) : (
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
         {/* Step 2: Feature */}
         {role && !feature && (
           <div className="space-y-3">
@@ -806,6 +854,7 @@ function LoginScreen({ onLogin, onOpenPage }) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

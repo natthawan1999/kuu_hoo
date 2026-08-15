@@ -381,6 +381,7 @@ async function generateDocNo(prefix = 'RC') {
 }
 
 function defaultViewFor(user) {
+  if (user?.role === 'manager') return 'staff';
   if (!user) return 'count';
   if (user.role === 'manager') return 'dashboard';
   if (user.feature === 'invoice') return 'invoice';
@@ -553,8 +554,8 @@ export default function CombinedApp() {
   // Nav per role+feature
   const navItems = isManager
     ? feature === 'stock_compare'
-      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'staff',label:'พนักงาน',icon:Users },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
-      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'staff',label:'พนักงาน',icon:Users },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      ? [{ id:'staff',label:'พนักงาน',icon:Users },{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      : [{ id:'staff',label:'พนักงาน',icon:Users },{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'สแกนบิล',icon:Receipt }]
       : feature === 'stock_compare'
@@ -565,8 +566,16 @@ export default function CombinedApp() {
     <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
       <header className="bg-white border-b border-[#E4E6EA] px-4 py-3 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="text-white p-2 rounded-lg" style={{ background: C.main }}><Package size={20} /></div>
+          <div className="flex items-center gap-2 min-w-0">
+            {view !== navItems[0]?.id ? (
+              <button onClick={() => setView(navItems[0].id)} title="กลับหน้าแรก"
+                className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
+                style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
+                <ArrowRight size={17} className="rotate-180" />
+              </button>
+            ) : (
+              <div className="text-white p-2 rounded-lg shrink-0" style={{ background: C.main }}><Package size={20} /></div>
+            )}
             <div>
               <h1 className="font-bold text-slate-800">KUUHOO</h1>
               <p className="text-xs text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'} • {currentUser.name} • {FEATURE_LABEL[feature] || feature}</p>
@@ -594,7 +603,7 @@ export default function CombinedApp() {
         </div>
       )}
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 pb-24">
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && view === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
         {!isManager && feature !== 'invoice' && view === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
@@ -611,17 +620,20 @@ export default function CombinedApp() {
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] shadow-lg">
-        <div className="max-w-6xl mx-auto flex">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
             const Icon = item.icon; const active = view === item.id;
             return (
-              <button key={item.id} onClick={() => setView(item.id)} style={{ flex: 1 }}
-                className="relative flex flex-col items-center gap-0.5 py-2.5 transition-colors text-[10px]"
-                style={active ? { color: C.main, background: C.soft } : { color: '#64748B' }}>
+              <button key={item.id} onClick={() => setView(item.id)}
+                className="relative flex flex-col items-center justify-center gap-1 text-[10px] leading-none"
+                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8, ...(active ? { color: C.main, background: C.soft } : { color: '#64748B', background: '#fff' }) }}>
                 <Icon size={18} />
-                <span className="font-medium">{item.label}</span>
-                {item.badge > 0 && <span className="absolute top-1.5 right-1/2 translate-x-4 bg-[#B91C1C] text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] text-center">{item.badge}</span>}
+                <span className="font-semibold text-center px-0.5" style={{ fontSize: navItems.length > 4 ? 9.5 : 10.5 }}>{item.label}</span>
+                {item.badge > 0 && (
+                  <span className="absolute text-white text-[9px] font-bold rounded-full text-center"
+                    style={{ top: 6, left: '50%', marginLeft: 6, minWidth: 15, padding: '0 3px', background: '#B91C1C' }}>{item.badge}</span>
+                )}
               </button>
             );
           })}

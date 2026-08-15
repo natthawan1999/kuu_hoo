@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#35706A" />
     <title>KUUHOO — Stock Counting</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,6 +16,23 @@
       input, textarea, select, button { font-family: inherit; }
       /* ปุ่มบนมือถือกดง่าย — พื้นที่กดขั้นต่ำ 44px ตามที่ออกแบบไว้ */
       button { touch-action: manipulation; }
+
+      /* auto fit ทุกขนาดจอ */
+      html { -webkit-text-size-adjust: 100%; }
+      body { margin: 0; overflow-x: hidden; overscroll-behavior-y: contain; }
+      *, *::before, *::after { box-sizing: border-box; }
+      /* ข้อความยาว/รหัสยาว ตัดบรรทัดแทนดันจอกว้าง */
+      body, p, div, span, td, th, li, h1, h2, h3 { overflow-wrap: anywhere; word-break: break-word; }
+      img, svg, video, canvas, table { max-width: 100%; }
+      /* iOS ซูมจอเองเวลาแตะช่องกรอกที่ตัวอักษรเล็กกว่า 16px — กันด้วยการบังคับ 16px บนจอเล็ก */
+      @media (max-width: 480px) {
+        input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
+      }
+      /* จอสูงจริงบนมือถือ (แถบเบราว์เซอร์ซ่อน/โผล่) */
+      @supports (height: 100dvh) {
+        .h-screen { height: 100dvh; }
+        .min-h-screen { min-height: 100dvh; }
+      }
     </style>
   </head>
   <body>

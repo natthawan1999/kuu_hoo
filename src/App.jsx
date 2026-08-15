@@ -385,7 +385,7 @@ const NAV_TONE = {
   count:          { main: '#35706A', soft: '#EAF1F0' },
   review:         { main: '#B45309', soft: '#FFFBEB' },
   my_submissions: { main: '#2F6E90', soft: '#EAF0F4' },
-  compare:        { main: '#7658C9', soft: '#F2EFFA' },
+  compare:        { main: '#7C4DFF', soft: '#F3EDFF' },
   invoice:        { main: '#2F6E90', soft: '#EAF0F4' },
   dashboard:      { main: '#0F172A', soft: '#F6F7F8' },
   inbox:          { main: '#B45309', soft: '#FFFBEB' },
@@ -759,14 +759,14 @@ export default function CombinedApp() {
   // ผู้จัดการใช้สีของฟีเจอร์ที่กำลังดูอยู่ (ตามกติกา "หนึ่งหน้าจอเห็นสีฟีเจอร์ได้สีเดียว")
   const FEAT = {
     recorder:      { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' },
-    stock_compare: { main: '#7658C9', deep: '#5F45A8', soft: '#F2EFFA', line: '#D5CAEE' },
+    stock_compare: { main: '#7C4DFF', deep: '#5B21B6', soft: '#F3EDFF', line: '#D6C6FF' },
     invoice:       { main: '#2F6E90', deep: '#255771', soft: '#EAF0F4', line: '#B9CFDC' },
   };
   // ผู้จัดการใช้สีกลาง (หมึก) — สีฟีเจอร์ไปอยู่บนป้ายของแต่ละใบ
   // ฟีเจอร์ที่พนักงานคนนี้มีสิทธิ์ — ใช้ในลิ้นชักสลับฟีเจอร์
   const ALL_FEATURES = [
     { id: 'recorder',      key: 'allow_recorder', label: 'นับสินค้า',   icon: ScanLine,       main: '#35706A', soft: '#EAF1F0', ink: '#2A5A55' },
-    { id: 'stock_compare', key: 'allow_compare',  label: 'นับเทียบยอด', icon: ArrowLeftRight, main: '#7658C9', soft: '#F2EFFA', ink: '#5F45A8' },
+    { id: 'stock_compare', key: 'allow_compare',  label: 'นับเทียบยอด', icon: ArrowLeftRight, main: '#7C4DFF', soft: '#F3EDFF', ink: '#5B21B6' },
     { id: 'invoice',       key: 'allow_invoice',  label: 'บันทึกบิล',   icon: Receipt,        main: '#2F6E90', soft: '#EAF0F4', ink: '#255771' },
   ];
   const myFeatures = ALL_FEATURES
@@ -869,10 +869,10 @@ export default function CombinedApp() {
                     return (
                       <button key={f.id} onClick={() => switchFeature(f.id)}
                         className="w-full flex items-center gap-3 px-4 text-left"
-                        style={{ minHeight: 52, background: on ? f.soft : '#fff',
-                                 borderLeft: on ? `3px solid ${f.main}` : '3px solid transparent' }}>
-                        <FIcon size={18} style={{ color: on ? f.ink : '#64748B' }} className="shrink-0" />
-                        <span className="flex-1 text-[14px] font-semibold" style={{ color: on ? f.ink : '#334155' }}>{f.label}</span>
+                        style={{ minHeight: 52, background: on ? '#F6F7F8' : '#fff',
+                                 borderLeft: on ? '3px solid #0F172A' : '3px solid transparent' }}>
+                        <FIcon size={18} style={{ color: on ? f.main : '#64748B' }} className="shrink-0" />
+                        <span className="flex-1 text-[14px] font-semibold" style={{ color: on ? '#0F172A' : '#334155' }}>{f.label}</span>
                         {f.pending > 0 && (
                           <span className="text-[10px] font-bold rounded-full text-center shrink-0"
                             style={{ minWidth: 20, padding: '2px 6px', background: f.soft, color: f.ink }}>{f.pending}</span>
@@ -882,8 +882,10 @@ export default function CombinedApp() {
                   })}
                 </>
               )}
-              <div className="px-4 py-2 mt-1 text-[10px] font-bold tracking-wide text-slate-400">{isManager ? 'งานประจำวัน' : `งานใน${FEATURE_LABEL[feature] || ''}`}</div>
-              {navItems.map(item => {
+              {isManager && (
+                <>
+                  <div className="px-4 py-2 mt-1 text-[10px] font-bold tracking-wide text-slate-400">งานประจำวัน</div>
+                  {navItems.map(item => {
                 const Icon = item.icon; const on = activeView === item.id;
                 return (
                   <button key={item.id} onClick={() => { setView(item.id); setMenuOpen(false); }}
@@ -898,8 +900,9 @@ export default function CombinedApp() {
                     )}
                   </button>
                 );
-              })}
-
+                  })}
+                </>
+              )}
             </div>
 
             <div className="border-t p-3" style={{ borderColor: '#E4E6EA' }}>
@@ -969,7 +972,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   // โทนสีของแต่ละฟีเจอร์ ใช้กับป้ายบอกฟีเจอร์ที่เลือก
   const FEAT_TONE = {
     recorder: { soft: '#EAF1F0', ink: '#2A5A55' },
-    compare:  { soft: '#F2EFFA', ink: '#5F45A8' },
+    compare:  { soft: '#F3EDFF', ink: '#5B21B6' },
     invoice:  { soft: '#EAF0F4', ink: '#255771' },
     indigo:   { soft: '#F6F7F8', ink: '#0F172A' },
   };
@@ -1010,7 +1013,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   const accentClass = (a, type) => {
     const map = {
       recorder: { border: 'hover:border-[#35706A] hover:bg-[#EAF1F0]', icon: 'bg-[#EAF1F0] text-[#2A5A55]', btn: 'bg-[#35706A] hover:bg-[#2A5A55]' },
-      compare:  { border: 'hover:border-[#7658C9] hover:bg-[#F2EFFA]', icon: 'bg-[#F2EFFA] text-[#5F45A8]', btn: 'bg-[#7658C9] hover:bg-[#5F45A8]' },
+      compare:  { border: 'hover:border-[#7C4DFF] hover:bg-[#F3EDFF]', icon: 'bg-[#F3EDFF] text-[#5B21B6]', btn: 'bg-[#7C4DFF] hover:bg-[#5B21B6]' },
       invoice:  { border: 'hover:border-[#2F6E90] hover:bg-[#EAF0F4]', icon: 'bg-[#EAF0F4] text-[#255771]', btn: 'bg-[#2F6E90] hover:bg-[#255771]' },
       indigo:   { border: 'hover:border-[#0F172A] hover:bg-[#F6F7F8]', icon: 'bg-[#F6F7F8] text-[#0F172A]', btn: 'bg-[#0F172A] hover:bg-[#0F172A]' },
     };
@@ -1067,7 +1070,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
             style={{ width: 52, height: 52, background: '#0F172A' }}><Package size={26} /></div>
           <div className="min-w-0">
             <h1 className="text-[26px] font-bold text-slate-800 leading-none">KUUHOO</h1>
-            <p className="text-[12.5px] text-slate-500 mt-1">เลือกชื่อของคุณเพื่อเริ่มงาน</p>
+            <p className="text-[12.5px] text-slate-500 mt-1">ระบบนับสต็อกและคีย์บิลหน้าร้าน</p>
           </div>
         </div>
 
@@ -1086,77 +1089,44 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         </div>
 
-        {staffLoading || staffList === undefined ? (
-          <div className="bg-white rounded-2xl border px-4 py-9 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2"
-            style={{ borderColor: '#E4E6EA' }}>
-            <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
-          </div>
-        ) : staffList === null ? (
-          <div className="space-y-2.5">
-            <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
-              <div className="font-bold">โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้</div>
-              {staffErr && <div className="mt-1.5 font-mono text-[10.5px] break-all" style={{ opacity: .85 }}>{staffErr}</div>}
+        <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button onClick={() => setRole('counter')}
+            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#35706A]"
+            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
+            <div className="rounded-xl flex items-center justify-center shrink-0"
+              style={{ width: 42, height: 42, background: '#EAF1F0', color: '#2A5A55' }}><User size={21} /></div>
+            <div className="mt-auto">
+              <div className="text-[15px] font-bold text-slate-800">พนักงาน</div>
+              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">เลือกชื่อแล้วเริ่มงาน</div>
             </div>
-            <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="ชื่อของคุณ"
-              className="w-full px-3 py-3 border rounded-xl outline-none focus:border-[#35706A] text-[15px]" style={{ borderColor: '#E2E8F0' }} />
-            <button onClick={() => handleLogin()} disabled={!name.trim()}
-              className="w-full text-white font-bold text-[15px] rounded-xl disabled:opacity-40"
-              style={{ minHeight: 52, background: '#35706A' }}>เริ่มงาน</button>
-          </div>
-        ) : staffList.length === 0 ? (
-          <div className="bg-white rounded-2xl border px-4 py-8 text-center" style={{ borderColor: '#E4E6EA' }}>
-            <User className="mx-auto text-[#E4E6EA] mb-2" size={32} />
-            <div className="text-[13px] text-slate-500">ยังไม่มีพนักงานในรายชื่อ</div>
-            <button onClick={() => onOpenPage('staff')}
-              className="mt-3 text-white px-4 rounded-xl text-[13px] font-bold" style={{ minHeight: 44, background: '#0F172A' }}>ไปเพิ่มพนักงาน</button>
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
-            {staffList.map((s, i) => {
-              const tags = [
-                s.allow_recorder && { label: 'นับสินค้า', soft: '#EAF1F0', ink: '#2A5A55' },
-                s.allow_compare && { label: 'นับเทียบยอด', soft: '#F2EFFA', ink: '#5F45A8' },
-                s.allow_invoice && { label: 'บันทึกบิล', soft: '#EAF0F4', ink: '#255771' },
-              ].filter(Boolean);
-              return (
-                <button key={s.id} onClick={() => handleLogin(s)}
-                  className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
-                  style={{ minHeight: 68, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
-                  <span className="rounded-full flex items-center justify-center text-[16px] font-bold text-white shrink-0"
-                    style={{ width: 44, height: 44, background: '#35706A' }}>
-                    {s.initial || (s.name || '?').charAt(0)}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[15px] font-bold text-slate-800 truncate">{s.name}</div>
-                    <div className="flex items-center gap-1 mt-1 flex-wrap">
-                      {tags.map(t => (
-                        <span key={t.label} className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full"
-                          style={{ background: t.soft, color: t.ink }}>{t.label}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <ArrowRight size={15} className="text-slate-300 shrink-0" />
-                </button>
-              );
-            })}
-          </div>
-        )}
+          </button>
+          <button onClick={() => { setRole('manager'); setFeature('all'); }}
+            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#0F172A]"
+            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
+            <div className="rounded-xl flex items-center justify-center shrink-0"
+              style={{ width: 42, height: 42, background: '#F6F7F8', color: '#0F172A' }}><Shield size={21} /></div>
+            <div className="mt-auto">
+              <div className="text-[15px] font-bold text-slate-800">ผู้จัดการ</div>
+              <div className="text-[11.5px] text-slate-500 mt-0.5 leading-snug">รีวิว อนุมัติ เทียบยอด</div>
+            </div>
+          </button>
+        </div>
 
         {error && (
           <div className="mt-2.5 rounded-xl px-3 py-2.5 text-[12px] border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>{error}</div>
         )}
 
-        <div className="text-[11px] font-bold tracking-wide text-slate-400 mt-5 mb-2">สำหรับผู้จัดการและเครื่องมือ</div>
+        <div className="text-[11px] font-bold tracking-wide text-slate-400 mt-5 mb-2">เครื่องมือ · เปิดได้เลย</div>
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
           {[
-            { id: '__manager', icon: Shield,          title: 'เข้าเป็นผู้จัดการ',  sub: 'รีวิว อนุมัติ เทียบยอด — ใส่ PIN' },
             { id: 'staff',     icon: Users,           title: 'จัดการพนักงาน',    sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
             { id: 'report',    icon: FileSpreadsheet, title: 'รายงาน',           sub: 'ดึงข้อมูลและส่งออก Excel / CSV' },
             { id: 'settings',  icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง' },
           ].map((p, i) => {
             const PIcon = p.icon;
             return (
-              <button key={p.id} onClick={() => { if (p.id === '__manager') { setRole('manager'); setFeature('all'); } else onOpenPage(p.id); }}
+              <button key={p.id} onClick={() => onOpenPage(p.id)}
                 className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
                 style={{ minHeight: 62, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
                 <div className="rounded-lg flex items-center justify-center shrink-0"
@@ -1198,7 +1168,74 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
         )}
 
         {/* Step 3: เลือกชื่อจากรายชื่อ (พนักงาน) · ชื่อ+PIN (ผู้จัดการ) */}
-        {role && feature && (
+        {/* พนักงาน — เลือกชื่อ */}
+        {role === 'counter' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setRole(null); setError(''); setName(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <div className="text-sm font-semibold text-slate-700">เลือกชื่อของคุณ</div>
+            </div>
+
+            {staffLoading || staffList === undefined ? (
+              <div className="py-8 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2">
+                <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
+              </div>
+            ) : staffList === null ? (
+              <div className="space-y-2.5">
+                <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
+                  <div className="font-bold">โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้</div>
+                  {staffErr && <div className="mt-1.5 font-mono text-[10.5px] break-all" style={{ opacity: .85 }}>{staffErr}</div>}
+                </div>
+                <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="ชื่อของคุณ"
+                  className="w-full px-3 py-3 border rounded-xl outline-none focus:border-[#35706A] text-[15px]" style={{ borderColor: '#E2E8F0' }} />
+                <button onClick={() => handleLogin()} disabled={!name.trim()}
+                  className="w-full text-white font-bold text-[15px] rounded-xl disabled:opacity-40"
+                  style={{ minHeight: 52, background: '#35706A' }}>เริ่มงาน</button>
+              </div>
+            ) : staffList.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <User className="mx-auto text-[#E4E6EA] mb-2" size={32} />
+                <div className="text-[13px] text-slate-500">ยังไม่มีพนักงานในรายชื่อ</div>
+                <button onClick={() => onOpenPage('staff')}
+                  className="mt-3 text-white px-4 rounded-xl text-[13px] font-bold" style={{ minHeight: 44, background: '#0F172A' }}>ไปเพิ่มพนักงาน</button>
+              </div>
+            ) : (
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                {staffList.map((s, i) => {
+                  const tags = [
+                    s.allow_recorder && { label: 'นับสินค้า', soft: '#EAF1F0', ink: '#2A5A55' },
+                    s.allow_compare && { label: 'นับเทียบยอด', soft: '#F3EDFF', ink: '#5B21B6' },
+                    s.allow_invoice && { label: 'บันทึกบิล', soft: '#EAF0F4', ink: '#255771' },
+                  ].filter(Boolean);
+                  return (
+                    <button key={s.id} onClick={() => handleLogin(s)}
+                      className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
+                      style={{ minHeight: 68, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
+                      <span className="rounded-full flex items-center justify-center text-[16px] font-bold text-white shrink-0"
+                        style={{ width: 44, height: 44, background: '#35706A' }}>
+                        {s.initial || (s.name || '?').charAt(0)}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[15px] font-bold text-slate-800 truncate">{s.name}</div>
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {tags.map(t => (
+                            <span key={t.label} className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full"
+                              style={{ background: t.soft, color: t.ink }}>{t.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <ArrowRight size={15} className="text-slate-300 shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {error && <div className="rounded-lg px-3 py-2 text-[12px] border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>{error}</div>}
+          </div>
+        )}
+
+        {role === 'manager' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <button onClick={() => { setError(''); setPin(''); setName(''); if (role === 'manager') { setRole(null); setFeature(null); } else setFeature(null); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
@@ -1397,7 +1434,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
             onChange={e => { setBarcode(e.target.value); setCheckResult(null); setError(''); }}
             onKeyDown={e => e.key === 'Enter' && handleCheck()}
             placeholder="8850999320014"
-            className="flex-1 px-3 py-2.5 border rounded-lg outline-none focus:border-[#7658C9] text-[15px]"
+            className="flex-1 px-3 py-2.5 border rounded-lg outline-none focus:border-[#7C4DFF] text-[15px]"
             style={{ borderColor: '#e2e8f0', fontFamily: "'IBM Plex Mono', monospace" }} />
           <button onClick={() => handleCheck()} disabled={!barcode.trim() || checking}
             className="px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 flex items-center gap-1"
@@ -1408,7 +1445,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
         <div>
           <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-1"><MapPin size={11} />ตำแหน่ง</div>
           <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="A-1"
-            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#7658C9] text-[13px]"
+            className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#7C4DFF] text-[13px]"
             style={{ borderColor: '#e2e8f0' }} />
         </div>
       </div>
@@ -1908,7 +1945,7 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
   // ป้ายบอกที่มาของใบ
   const KIND = {
     recorder:      { label: 'นับสินค้า',  soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55' },
-    stock_compare: { label: 'นับเทียบยอด', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8' },
+    stock_compare: { label: 'นับเทียบยอด', soft: '#F3EDFF', line: '#D6C6FF', ink: '#5B21B6' },
     invoice:       { label: 'บันทึกบิล',   soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771' },
   };
 
@@ -3034,7 +3071,7 @@ function StaffAdminView() {
 
   const FEAT_META = [
     { key: 'allow_recorder', label: 'นับสินค้า', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
-    { key: 'allow_compare',  label: 'นับเทียบยอด', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
+    { key: 'allow_compare',  label: 'นับเทียบยอด', soft: '#F3EDFF', line: '#D6C6FF', ink: '#5B21B6', main: '#7C4DFF' },
     { key: 'allow_invoice',  label: 'บันทึกบิล', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
   ];
   const DEPTS = ['คลังสินค้า', 'หน้าร้าน', 'บัญชี'];

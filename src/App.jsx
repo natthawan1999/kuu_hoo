@@ -703,8 +703,8 @@ export default function CombinedApp() {
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
   const pendingCount = submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
 
-  const FEATURE_LABEL = { recorder: 'Recorder', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };
-  // ระบบสีตาม Color System.dc.html — Recorder เขียว · นับ+เปรียบเทียบ ม่วง · สแกนบิล ฟ้า
+  const FEATURE_LABEL = { recorder: 'นับสินค้า', stock_compare: 'นับเทียบยอด', invoice: 'บันทึกบิล' };
+  // ระบบสีตาม Color System.dc.html — นับสินค้า เขียว · นับเทียบยอด ม่วง · บันทึกบิล ฟ้า
   // ผู้จัดการใช้สีของฟีเจอร์ที่กำลังดูอยู่ (ตามกติกา "หนึ่งหน้าจอเห็นสีฟีเจอร์ได้สีเดียว")
   const FEAT = {
     recorder:      { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' },
@@ -720,7 +720,7 @@ export default function CombinedApp() {
       ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
       : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount }]
     : feature === 'invoice'
-      ? [{ id:'invoice',label:'สแกนบิล',icon:Receipt }]
+      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : feature === 'stock_compare'
         ? [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
         : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
@@ -778,6 +778,7 @@ export default function CombinedApp() {
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
+      {navItems.length > 1 && (
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
@@ -800,6 +801,7 @@ export default function CombinedApp() {
           })}
         </div>
       </nav>
+      )}
     </div>
   );
 }
@@ -843,13 +845,13 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   }, [role, feature]);
 
   const COUNTER_FEATURES = [
-    { id: 'recorder',      label: 'Recorder',            desc: 'บันทึกและส่งข้อมูลให้ผู้จัดการ',              icon: ScanLine,      accent: 'recorder' },
-    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'นับสต็อกและเปรียบเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'compare'    },
-    { id: 'invoice',       label: 'สแกนบิล AI',          desc: 'สแกนใบกำกับภาษีด้วย Claude AI',            icon: Receipt,       accent: 'invoice'  },
+    { id: 'recorder',      label: 'นับสินค้า',            desc: 'นับแล้วส่งให้ผู้จัดการตรวจ',              icon: ScanLine,      accent: 'recorder' },
+    { id: 'stock_compare', label: 'นับเทียบยอด',        desc: 'นับแล้วเทียบกับยอดในระบบ',       icon: ArrowLeftRight, accent: 'compare'    },
+    { id: 'invoice',       label: 'บันทึกบิล',            desc: 'ถ่ายบิลซื้อ ไม่ต้องพิมพ์เอง',            icon: Receipt,       accent: 'invoice'  },
   ];
   const MANAGER_FEATURES = [
-    { id: 'recorder',      label: 'Recorder',            desc: 'รีวิว อนุมัติ และจัดการผลการบันทึก',        icon: ScanLine,      accent: 'indigo'  },
-    { id: 'stock_compare', label: 'นับ + เปรียบเทียบ',  desc: 'รีวิว อนุมัติ และเปรียบเทียบสต็อก',        icon: ArrowLeftRight, accent: 'indigo'  },
+    { id: 'recorder',      label: 'นับสินค้า',            desc: 'ตรวจและอนุมัติใบนับ',        icon: ScanLine,      accent: 'indigo'  },
+    { id: 'stock_compare', label: 'นับเทียบยอด',        desc: 'ตรวจใบนับและดูส่วนต่าง',        icon: ArrowLeftRight, accent: 'indigo'  },
   ];
 
   const accentClass = (a, type) => {
@@ -2587,9 +2589,9 @@ function StaffAdminView() {
   const [saving, setSaving] = useState(false);
 
   const FEAT_META = [
-    { key: 'allow_recorder', label: 'Recorder', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
-    { key: 'allow_compare',  label: 'นับ+เปรียบเทียบ', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
-    { key: 'allow_invoice',  label: 'สแกนบิล', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
+    { key: 'allow_recorder', label: 'นับสินค้า', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
+    { key: 'allow_compare',  label: 'นับเทียบยอด', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
+    { key: 'allow_invoice',  label: 'บันทึกบิล', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
   ];
   const DEPTS = ['คลังสินค้า', 'หน้าร้าน', 'บัญชี'];
 
@@ -2951,21 +2953,31 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   );
 }
 
-function StepBar({ current }) {
+function StepBar({ current, onGo, maxStep }) {
   return (
-    <div className="flex items-center justify-between mb-6">
-      {STEPS.map((label, i) => {
-        const n = i+1, done = current > n, active = current === n;
-        return (
-          <React.Fragment key={n}>
-            <div className="flex flex-col items-center gap-1">
-              <div className={`rounded-full flex items-center justify-center text-sm font-bold border-2 ${done?'bg-[#2F6E90] border-[#2F6E90] text-white':active?'bg-white border-[#2F6E90] text-[#255771]':'bg-white border-[#E4E6EA] text-slate-400'}`} style={{ width: 32, height: 32 }}>{done?'✓':n}</div>
-              <span className={`text-[10px] whitespace-nowrap ${active?'text-[#255771] font-bold':'text-slate-400'}`}>{label}</span>
-            </div>
-            {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-1 mt-[-12px] ${current > n?'bg-[#2F6E90]':'bg-[#E4E6EA]'}`}/>}
-          </React.Fragment>
-        );
-      })}
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
+        {STEPS.map((label, i) => {
+          const n = i+1, done = current > n, active = current === n, reachable = n <= (maxStep ?? current);
+          return (
+            <button key={n} onClick={() => reachable && onGo && onGo(n)} disabled={!reachable}
+              className="flex flex-col items-center justify-center gap-1 leading-none"
+              style={{ minHeight: 58, paddingTop: 8, paddingBottom: 8,
+                       borderTop: active ? '3px solid #2F6E90' : '3px solid transparent',
+                       background: active ? '#EAF0F4' : '#fff',
+                       color: active ? '#255771' : done ? '#2F6E90' : '#94A3B8',
+                       opacity: reachable ? 1 : 0.5, cursor: reachable ? 'pointer' : 'default' }}>
+              <span className="rounded-full flex items-center justify-center text-[11px] font-bold"
+                style={{ width: 22, height: 22,
+                         background: done ? '#2F6E90' : active ? '#fff' : '#F6F7F8',
+                         border: active ? '2px solid #2F6E90' : done ? 'none' : '1px solid #E4E6EA',
+                         color: done ? '#fff' : active ? '#255771' : '#94A3B8' }}>{done ? '✓' : n}</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">{label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3003,6 +3015,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
+  const [maxStep, setMaxStep] = useState(1);     // ขั้นสูงสุดที่เคยไปถึง — กดแถบล่างข้ามไปได้
   const w = useWinWidth(), mob = w < 600;
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
@@ -3342,11 +3355,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const grandTotal = allProds.reduce((s,p)=>s+(+p.amount||0),0);
   const allVs = vatSummary(allProds);
 
+  useEffect(() => { setMaxStep(m => Math.max(m, step)); }, [step]);
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0 }}>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0, paddingBottom: 'calc(78px + env(safe-area-inset-bottom))' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
-        <h2 style={{ fontWeight:700, fontSize:20, color:'#0f172a', margin:0 }}>สแกนใบกำกับภาษี</h2>
+        <h2 style={{ fontWeight:700, fontSize:20, color:'#0f172a', margin:0 }}>บันทึกบิลซื้อ</h2>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
@@ -3382,7 +3397,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
         </div>
       )}
 
-      <StepBar current={step}/>
+
 
       {step===1&&(
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -3537,10 +3552,12 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             </div>
           )}
 
-          <button onClick={()=>setStep(3)}
-            style={{ width:'100%', minHeight:52, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:'pointer' }}>ตรวจสอบข้อมูล →</button>
-          <button onClick={()=>setStep(1)}
-            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontWeight:600, fontSize:13.5, fontFamily:'inherit', cursor:'pointer' }}>← กลับไปหน้าอัปโหลด</button>
+          <div style={{ display:'grid', gridTemplateColumns:'auto minmax(0,1fr)', gap:8, alignItems:'stretch' }}>
+            <button onClick={()=>setStep(1)} aria-label="ย้อนกลับ"
+              style={{ minWidth:56, minHeight:54, borderRadius:12, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontSize:20, fontWeight:700, cursor:'pointer' }}>‹</button>
+            <button onClick={()=>setStep(3)}
+              style={{ minHeight:54, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:'pointer', boxShadow:'0 2px 0 #255771', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>ตรวจสอบข้อมูล<span style={{ fontSize:18 }}>›</span></button>
+          </div>
         </div>
       )}
 
@@ -3714,13 +3731,15 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             );
           })}
 
-          <button onClick={()=>setStep(4)} disabled={doneInvs.length===0}
-            style={{ width:'100%', minHeight:54, borderRadius:12, border:'none', fontFamily:'inherit', fontSize:15.5, fontWeight:700, color:'#fff',
-                     background: doneInvs.length===0?'#94a3b8':'#2f6e90',
-                     boxShadow: doneInvs.length===0?'none':'0 2px 0 #255771',
-                     cursor: doneInvs.length===0?'not-allowed':'pointer' }}>สรุปและบันทึก →</button>
-          <button onClick={()=>setStep(2)}
-            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13.5, cursor:'pointer' }}>← กลับไปจับคู่บาร์โค้ด</button>
+          <div style={{ display:'grid', gridTemplateColumns:'auto minmax(0,1fr)', gap:8, alignItems:'stretch' }}>
+            <button onClick={()=>setStep(2)} aria-label="ย้อนกลับ"
+              style={{ minWidth:56, minHeight:54, borderRadius:12, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontSize:20, fontWeight:700, cursor:'pointer' }}>‹</button>
+            <button onClick={()=>setStep(4)} disabled={doneInvs.length===0}
+              style={{ minHeight:54, borderRadius:12, border:'none', fontFamily:'inherit', fontSize:15.5, fontWeight:700, color:'#fff',
+                       background: doneInvs.length===0?'#94a3b8':'#2f6e90',
+                       boxShadow: doneInvs.length===0?'none':'0 2px 0 #255771',
+                       cursor: doneInvs.length===0?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>สรุปและบันทึก<span style={{ fontSize:18 }}>›</span></button>
+          </div>
         </div>
       )}
 
@@ -3845,9 +3864,10 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
           </div>
 
           <button onClick={()=>setStep(3)}
-            style={{ width:'100%', minHeight:46, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13.5, cursor:'pointer' }}>← กลับไปแก้ข้อมูล</button>
+            style={{ alignSelf:'flex-start', minHeight:44, padding:'0 14px', borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13, cursor:'pointer' }}>‹ กลับไปแก้ข้อมูล</button>
         </div>
       )}
+      <StepBar current={step} maxStep={maxStep} onGo={setStep}/>
     </div>
   );
 }

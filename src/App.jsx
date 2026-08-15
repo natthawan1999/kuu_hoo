@@ -380,6 +380,17 @@ async function generateDocNo(prefix = 'RC') {
   return `${prefix}-${dateStr}${String(seq).padStart(4,'0')}`;
 }
 
+// สีประจำแต่ละหน้าในเมนูล่าง — แตะแล้วเห็นชัดว่าเปลี่ยนหน้าแล้ว
+const NAV_TONE = {
+  count:          { main: '#35706A', soft: '#EAF1F0' },
+  review:         { main: '#B45309', soft: '#FFFBEB' },
+  my_submissions: { main: '#2F6E90', soft: '#EAF0F4' },
+  compare:        { main: '#7658C9', soft: '#F2EFFA' },
+  invoice:        { main: '#2F6E90', soft: '#EAF0F4' },
+  dashboard:      { main: '#0F172A', soft: '#F6F7F8' },
+  inbox:          { main: '#B45309', soft: '#FFFBEB' },
+};
+
 function defaultViewFor(user) {
   if (user?.role === 'manager') return 'staff';
   if (!user) return 'count';
@@ -771,10 +782,13 @@ export default function CombinedApp() {
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
             const Icon = item.icon; const active = activeView === item.id;
+            const tone = NAV_TONE[item.id] || { main: C.main, soft: C.soft };
             return (
               <button key={item.id} onClick={() => setView(item.id)}
                 className="relative flex flex-col items-center justify-center gap-1 text-[10px] leading-none"
-                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8, ...(active ? { color: C.main, background: C.soft } : { color: '#64748B', background: '#fff' }) }}>
+                style={{ minHeight: 56, paddingTop: 8, paddingBottom: 8,
+                         borderTop: active ? `3px solid ${tone.main}` : '3px solid transparent',
+                         ...(active ? { color: tone.main, background: tone.soft } : { color: '#64748B', background: '#fff' }) }}>
                 <Icon size={18} />
                 <span className="font-semibold text-center px-0.5" style={{ fontSize: navItems.length > 4 ? 9.5 : 10.5 }}>{item.label}</span>
                 {item.badge > 0 && (
@@ -1368,6 +1382,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   const [submitted, setSubmitted] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);      // กดส่งซ้ำระหว่างกำลังส่ง = ได้ 2 ใบ
+  const [foundOpen, setFoundOpen] = useState(false);  // รายการที่พบในระบบ เริ่มต้นพับไว้
   const [qtyOverrides, setQtyOverrides] = useState({});
   const editQty = (barcode, newQty) => setQtyOverrides(prev => ({ ...prev, [barcode]: newQty }));
   const grouped = useMemo(() => {
@@ -1454,14 +1469,18 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
 
       {found.length > 0 && (
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
-          <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ background: '#EAF1F0', borderColor: '#D5E5E2' }}>
+          <button onClick={() => setFoundOpen(o => !o)}
+            className="w-full text-left px-3 py-2.5 border-b flex items-center gap-2"
+            style={{ background: '#EAF1F0', borderColor: '#D5E5E2', minHeight: 48 }}>
             <CheckCircle2 size={13} style={{ color: '#2A5A55' }} className="shrink-0" />
             <span className="text-[11.5px] font-bold" style={{ color: '#2A5A55' }}>พบในระบบ · {found.length} รายการ</span>
-            <button onClick={() => setView('count')} className="ml-auto text-[11px] font-semibold shrink-0" style={{ color: '#35706A' }}>← กลับไปนับ</button>
-          </div>
-          <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: '#F6F7F8' }}>
-            {found.map(g => <GroupedRow key={g.barcode} g={g} onEditQty={editQty} />)}
-          </div>
+            <span className="ml-auto text-[10.5px] font-semibold shrink-0" style={{ color: '#35706A' }}>{foundOpen ? 'ซ่อน' : 'ดูรายการ'}</span>
+          </button>
+          {foundOpen && (
+            <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: '#F6F7F8' }}>
+              {found.map(g => <GroupedRow key={g.barcode} g={g} onEditQty={editQty} />)}
+            </div>
+          )}
         </div>
       )}
 
@@ -2014,6 +2033,7 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
 }
 
 function CompareStockView({ submissions, supabaseConfig, compareState, setCompareState }) {
+  const [cmpOpen, setCmpOpen] = useState({});   // การ์ดเปรียบเทียบ เริ่มต้นพับไว้
   const { selectedSub, compareData, loading, loadProgress, error, driveSaving, driveResult } = compareState;
   const set = (patch) => setCompareState(prev => ({ ...prev, ...patch }));
   const approvedSubs = submissions.filter(s => s.status === 'approved');
@@ -2152,16 +2172,16 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
 
   if (!sbUrl || !sbKey) return (
     <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2></div>
-      <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-4"><AlertCircle className="text-[#B45309] mb-2" size={24}/><div className="font-semibold text-[#B45309]">ยังไม่ได้ตั้งค่า Supabase</div><p className="text-sm text-[#B45309] mt-1">ไปที่ ตั้งค่า เพื่อใส่ URL และ Anon Key ก่อน</p></div>
+      <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-4"><AlertCircle className="text-[#B45309] mb-2" size={24}/><div className="font-semibold text-[#B45309]">ยังไม่ได้เชื่อมต่อฐานข้อมูล</div></div>
     </div>
   );
 
   return (
     <div className="space-y-4">
-      <div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2><p className="text-sm text-slate-500">เปรียบเทียบยอดนับกับ Supabase ผ่าน REST API</p></div>
+      <div><h2 className="text-2xl font-bold text-slate-800">เปรียบเทียบสต็อก</h2></div>
       {approvedSubs.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><ArrowLeftRight className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500">ยังไม่มีรายการที่อนุมัติแล้ว</div></div> : (
         <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-2">
-          <div className="text-sm font-semibold text-slate-700 mb-2">เลือก submission ที่จะเปรียบเทียบ:</div>
+          <div className="text-sm font-semibold text-slate-700 mb-2">เลือกใบที่จะเปรียบเทียบ</div>
           {approvedSubs.map(s => (
             <button key={s.id} onClick={() => fetchAndCompare(s)} disabled={loading} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedSub?.id===s.id?'border-[#94A3B8] bg-[#F6F7F8]':'border-[#E4E6EA] hover:border-[#E4E6EA] hover:bg-[#F6F7F8]'} disabled:opacity-50`}>
               <div className="flex items-center gap-2"><span className="font-mono text-xs font-bold text-[#0F172A] bg-[#F6F7F8] px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
@@ -2180,21 +2200,20 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       {compareData.length > 0 && (
         <div className="space-y-3">
           {selectedSub && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-              <div className="font-semibold text-blue-900 mb-1">📅 Reconcile Window</div>
-              <div className="font-mono text-blue-800">
+            <div className="rounded-xl p-3 text-xs" style={{ background: '#EAF0F4', border: '1px solid #B9CFDC' }}>
+              <div className="font-semibold mb-1" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
+              <div className="font-mono" style={{ color: '#255771' }}>
                 {selectedSub.startedAt ? new Date(selectedSub.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'}
                 {' → '}
                 {new Date(selectedSub.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}
               </div>
-              <div className="text-blue-700 mt-1 text-[10px]">ดึง sale/purchase ของช่วงนี้มาคำนวณ adjusted_count</div>
             </div>
           )}
           {compareState.debugInfo && null}
           <div className="flex flex-wrap gap-2">
-            <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-[#F6F7F8] hover:bg-[#F6F7F8] text-[#0F172A] rounded-lg text-sm font-medium"><Download size={14}/>CSV เต็ม</button>
+            <button onClick={downloadCompareCSV} className="flex items-center gap-1 px-3 py-2 bg-[#F6F7F8] hover:bg-[#F6F7F8] text-[#0F172A] rounded-lg text-sm font-medium"><Download size={14}/>CSV</button>
             <button onClick={downloadCompareExcel} className="flex items-center gap-1 px-3 py-2 bg-[#EAF0F4] hover:bg-[#EAF0F4] text-[#255771] rounded-lg text-sm font-medium"><FileSpreadsheet size={14}/>Excel</button>
-            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-[#EAF1F0] hover:bg-[#EAF1F0] text-[#2A5A55] rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}Drive (รหัส,ผลต่าง)</button>
+            <button onClick={saveToDrive} disabled={driveSaving} className="flex items-center gap-1 px-3 py-2 bg-[#EAF1F0] hover:bg-[#EAF1F0] text-[#2A5A55] rounded-lg text-sm font-medium disabled:opacity-60">{driveSaving?<RefreshCw size={14} className="animate-spin"/>:<Upload size={14}/>}ขึ้น Drive</button>
             {driveResult?.ok && <span className="flex items-center gap-1 text-xs text-[#15803D]"><CheckCircle2 size={12}/>อัพโหลดแล้ว{driveResult.link&&<a href={driveResult.link} target="_blank" rel="noopener noreferrer" className="underline ml-1">เปิด</a>}</span>}
             {driveResult?.err && <span className="text-xs text-[#B91C1C]">Error: {driveResult.err}</span>}
           </div>
@@ -2205,6 +2224,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
           </div>
           <div className="space-y-2">
             {compareData.map((d,i) => {
+              const openRow = !!cmpOpen[i];
               const zero = d.adjustStock === 0;
               const na = d.adjustStock === null;
               const tone = na
@@ -2216,22 +2236,27 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
                     : { soft:'#FEF2F2', line:'#FECACA', ink:'#B91C1C', label:'นับได้น้อยกว่า' };
               return (
                 <div key={i} className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: d.notFound ? '#FDE68A' : tone.line }}>
-                  <div className="px-3 py-2 flex items-center gap-2 border-b"
-                    style={{ background: d.notFound ? '#FFFBEB' : tone.soft, borderColor: d.notFound ? '#FDE68A' : tone.line }}>
-                    <span className="text-[11.5px] font-bold tabular-nums" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
-                      {d.notFound ? 'ไม่พบในระบบ' : tone.label}
-                    </span>
-                    <span className="ml-auto text-[13px] font-bold tabular-nums shrink-0" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
-                      {na ? '—' : (d.adjustStock > 0 ? '+' : '') + d.adjustStock}
-                    </span>
-                  </div>
-
-                  <div className="p-3 space-y-2.5">
-                    <div>
-                      <div className="text-[13.5px] font-semibold text-slate-800">{d.productName}</div>
-                      <div className="text-[10.5px] text-slate-400 tabular-nums mt-0.5" style={{ overflowWrap: 'anywhere' }}>
-                        {d.barcode}{d.locations?.length > 0 ? ' · ' + d.locations.join(', ') : ''}
+                  <button onClick={() => setCmpOpen(prev => ({ ...prev, [i]: !prev[i] }))}
+                    className="w-full text-left px-3 py-2.5 flex items-center gap-2.5"
+                    style={{ background: d.notFound ? '#FFFBEB' : tone.soft, minHeight: 56 }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13.5px] font-semibold text-slate-800 truncate">{d.productName}</div>
+                      <div className="text-[10px] font-bold mt-0.5" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
+                        {d.notFound ? 'ไม่พบในระบบ' : tone.label}
                       </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[15px] font-bold tabular-nums" style={{ color: d.notFound ? '#B45309' : tone.ink }}>
+                        {na ? '—' : (d.adjustStock > 0 ? '+' : '') + d.adjustStock}
+                      </div>
+                      <div className="text-[9.5px] text-slate-400">{openRow ? 'ซ่อน' : 'ดูรายละเอียด'}</div>
+                    </div>
+                  </button>
+
+                  {openRow && (
+                  <div className="p-3 space-y-2.5 border-t" style={{ borderColor: d.notFound ? '#FDE68A' : tone.line }}>
+                    <div className="text-[10.5px] text-slate-400 tabular-nums" style={{ overflowWrap: 'anywhere' }}>
+                      {d.barcode}{d.locations?.length > 0 ? ' · ' + d.locations.join(', ') : ''}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
@@ -2254,6 +2279,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
                       ))}
                     </div>
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -2275,7 +2301,7 @@ const REPORT_TOPICS = [
 // หัวคอลัมน์ภาษาไทย — คีย์ตรงกับที่ /api/report ส่งกลับมา
 const COL_LABEL = {
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
-  barcode: 'รหัสสินค้า', product_code: 'รหัสสินค้า (POS)', name: 'ชื่อสินค้า', unit: 'หน่วย',
+  product_code: 'รหัสสินค้า', barcode: 'บาร์โค้ด', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',
@@ -2975,7 +3001,8 @@ function Spinner({ size = 16 }) {
 
 function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
-  const [invOpen, setInvOpen] = useState({});   // พับ/กางรายการสินค้าต่อใบ
+  const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
+  const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
   const w = useWinWidth(), mob = w < 600;
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
@@ -3525,7 +3552,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             const d=inv.data, vs=vatSummary(d.products||[]);
             const upd = (patch) => updateData(gi, {...d, ...patch});
             const updP = (pi, patch) => { const prods=[...d.products]; prods[pi]=recalc({...prods[pi],...patch,_pt:d.price_type??'incl'}); updateData(gi,{...d,products:prods}); };
-            const open = invOpen[gi] ?? true;
+            const open = invOpen[gi] ?? false;   // เริ่มต้นพับไว้
             const F = ({ label, k, wide, tag }) => (
               <div style={{ gridColumn: wide ? '1 / -1' : 'auto', minWidth:0 }}>
                 <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3, display:'flex', alignItems:'center', gap:4 }}>{label}{tag}</div>
@@ -3609,13 +3636,30 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                           style={{ width:'100%', minHeight:40, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 6px', textAlign:'center', fontSize:13, boxSizing:'border-box' }}/>
                       </div>
                     );
+                    const pKey = gi + '_' + pi;
+                    const pOpen = !!prodOpen[pKey];
                     return (
-                      <div key={pi} style={{ border:'1px solid #e4e6ea', borderRadius:11, padding:10, display:'flex', flexDirection:'column', gap:8, background: bc ? '#fff' : '#fffbeb' }}>
-                        <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
-                          <span style={{ flex:'none', fontSize:11, fontWeight:700, color:'#94a3b8', fontFamily:"'IBM Plex Mono', monospace", paddingTop:11 }}>{p.no??pi+1}</span>
+                      <div key={pi} style={{ border:'1px solid #e4e6ea', borderRadius:11, display:'flex', flexDirection:'column', background: bc ? '#fff' : '#fffbeb', overflow:'hidden' }}>
+                        <button onClick={()=>setProdOpen(prev=>({ ...prev, [pKey]: !prev[pKey] }))}
+                          style={{ width:'100%', textAlign:'left', minHeight:56, padding:'8px 10px', display:'flex', alignItems:'center', gap:9, background:'transparent', border:'none', cursor:'pointer', fontFamily:'inherit' }}>
+                          <span style={{ flex:'none', fontSize:11, fontWeight:700, color:'#94a3b8', fontFamily:"'IBM Plex Mono', monospace" }}>{p.no??pi+1}</span>
+                          <span style={{ flex:1, minWidth:0 }}>
+                            <span style={{ display:'block', fontSize:13.5, fontWeight:600, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.description||'(ไม่มีชื่อ)'}</span>
+                            <span style={{ display:'block', fontSize:10, color: bc?'#94a3b8':'#b45309', marginTop:2, fontFamily:"'IBM Plex Mono', monospace" }}>{bc || 'ยังไม่มีบาร์โค้ด'}</span>
+                          </span>
+                          <span style={{ flex:'none', textAlign:'right' }}>
+                            <span style={{ display:'block', fontSize:14, fontWeight:700, color:'#15803d', fontFamily:"'IBM Plex Mono', monospace" }}>{p.total!=null?Number(p.total).toLocaleString():'—'}</span>
+                            <span style={{ display:'block', fontSize:9.5, color:'#94a3b8' }}>{pOpen?'ซ่อน':'แตะแก้'}</span>
+                          </span>
+                        </button>
+
+                        {pOpen && (
+                        <div style={{ padding:'0 10px 10px', display:'flex', flexDirection:'column', gap:8 }}>
+                        <div>
+                          <div style={{ fontSize:9.5, color:'#94a3b8', marginBottom:2 }}>ชื่อสินค้าบนบิล</div>
                           <input value={p.description??''} placeholder="ชื่อสินค้าบนบิล"
                             onChange={e=>{const prods=[...d.products];prods[pi]={...prods[pi],description:e.target.value};updateData(gi,{...d,products:prods});}}
-                            style={{ flex:1, minWidth:0, minHeight:42, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px', fontSize:13.5, fontWeight:600, color:'#0f172a' }}/>
+                            style={{ width:'100%', minHeight:42, border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px', fontSize:13.5, fontWeight:600, color:'#0f172a', boxSizing:'border-box' }}/>
                         </div>
 
                         <div>
@@ -3660,6 +3704,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                             </select>
                           </div>
                         </div>
+                        </div>
+                        )}
                       </div>
                     );
                   })}

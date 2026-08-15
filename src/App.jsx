@@ -812,10 +812,10 @@ export default function CombinedApp() {
               <button onClick={() => setMenuOpen(true)} title="เมนู"
                 className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
                 style={{ width: 40, height: 40, borderColor: '#E4E6EA' }}>
-                <span style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
-                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
-                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
+                <span style={{ display:'flex', flexDirection:'column', gap:3.5, alignItems:'stretch', width:17 }}>
+                  <span style={{ height:2, background:C.main, borderRadius:2 }}></span>
+                  <span style={{ height:2, background:C.main, borderRadius:2 }}></span>
+                  <span style={{ height:2, background:C.main, borderRadius:2 }}></span>
                 </span>
               </button>
             )}
@@ -824,27 +824,16 @@ export default function CombinedApp() {
                 {navItems.find(i => i.id === activeView)?.label || 'KUUHOO'}
               </h1>
               <p className="text-xs text-slate-500 truncate">
-                {isManager ? `ผู้จัดการ • ${currentUser.name}` : `${FEATURE_LABEL[feature] || feature} • ${currentUser.name}`}
+                {isManager ? 'ผู้จัดการ' : (FEATURE_LABEL[feature] || feature)}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isSupabaseReady && <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${connectionStatus === 'ok' ? 'bg-[#EAF1F0] text-[#2A5A55]' : connectionStatus === 'error' ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#F6F7F8] text-slate-500'}`}><Cloud size={10} />Supabase</div>}
             <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>
           </div>
         </div>
       </header>
 
-      {!isManager && (
-        <div className="px-4 py-2 border-b" style={{ background: C.soft, borderColor: C.line }}>
-          <div className="max-w-6xl mx-auto flex items-center gap-2 text-xs">
-            <span className="font-bold" style={{ color: C.deep }}>
-              กำลังทำงานในชื่อ
-            </span>
-            <span className="font-bold text-slate-800">{currentUser.name}</span>
-          </div>
-        </div>
-      )}
 
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex" onClick={() => setMenuOpen(false)}>
@@ -919,8 +908,8 @@ export default function CombinedApp() {
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
-        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} />}
-        {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
+        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} />}
+        {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
@@ -1144,30 +1133,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
       ) : (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
         {/* Step 2: Feature */}
-        {role === 'counter' && !feature && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <button onClick={() => { setRole(null); setError(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
-              <div className="text-sm font-semibold text-slate-700">เลือก Feature</div>
-            </div>
-            <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-medium ${role === 'manager' ? 'bg-[#F6F7F8] text-[#0F172A]' : 'bg-[#EAF1F0] text-[#2A5A55]'}`}>
-              {role === 'manager' ? <Shield size={13}/> : <User size={13}/>}
-              {role === 'manager' ? 'ผู้จัดการ' : 'พนักงาน'}
-            </div>
-            {features.map(f => {
-              const Icon = f.icon;
-              return (
-                <button key={f.id} onClick={() => setFeature(f.id)}
-                  className={`w-full p-4 border-2 border-[#E4E6EA] ${accentClass(f.accent,'border')} rounded-xl transition-colors text-left flex items-center gap-3`}>
-                  <div className={`${accentClass(f.accent,'icon')} p-3 rounded-lg`}><Icon size={22}/></div>
-                  <div><div className="font-semibold text-slate-800">{f.label}</div><div className="text-xs text-slate-500">{f.desc}</div></div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Step 3: เลือกชื่อจากรายชื่อ (พนักงาน) · ชื่อ+PIN (ผู้จัดการ) */}
         {/* พนักงาน — เลือกชื่อ */}
         {role === 'counter' && (
           <div className="space-y-3">
@@ -1357,7 +1322,8 @@ function EntryRow({ e, deleteEntry, highlight }) {
   );
 }
 
-function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {} }) {
+function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {}, tone }) {
+  const T = tone || { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' };
   const [location, setLocation] = useState('');
   const [checking, setChecking] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -1400,13 +1366,15 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
       <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#e4e6ea' }}>
         <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor: '#eef0f3' }}>
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-bold tracking-wide" style={{ color: '#35706a' }}>รอบนับ</div>
+            <div className="text-[10px] font-bold tracking-wide" style={{ color: T.main }}>รอบนับ</div>
             <input type="date" value={countDate} onChange={e => setCountDate(e.target.value)}
               className="mt-0.5 text-sm font-bold text-slate-800 bg-transparent outline-none" style={{ fontFamily: "'IBM Plex Mono', monospace" }} />
           </div>
-          <div className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md ${!isSupabaseReady ? 'bg-[#FEF2F2] text-[#B91C1C]' : connectionStatus === 'error' ? 'bg-[#FFFBEB] text-[#B45309]' : 'bg-[#F6F7F8] text-slate-500'}`}>
-            {!isSupabaseReady ? 'ยังไม่ตั้งค่าเซิร์ฟเวอร์' : connectionStatus === 'error' ? 'ต่อเซิร์ฟเวอร์ไม่ได้' : 'เซิร์ฟเวอร์พร้อม'}
-          </div>
+          {(!isSupabaseReady || connectionStatus === 'error') && (
+            <div className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md ${!isSupabaseReady ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#FFFBEB] text-[#B45309]'}`}>
+              {!isSupabaseReady ? 'ยังไม่ตั้งค่าเซิร์ฟเวอร์' : 'ต่อเซิร์ฟเวอร์ไม่ได้'}
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-2 divide-x" style={{ borderColor: '#eef0f3' }}>
           <div className="px-3 py-2.5">
@@ -1423,7 +1391,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
       {/* ปุ่มสแกน */}
       <button onClick={() => setScanMode(true)}
         className="w-full text-white font-bold text-base flex items-center justify-center gap-2 rounded-xl"
-        style={{ minHeight: 54, background: '#35706a', boxShadow: '0 2px 0 #2a5a55' }}>
+        style={{ minHeight: 54, background: T.main, boxShadow: `0 2px 0 ${T.deep}` }}>
         <Camera size={19} />{entries.length ? 'สแกนชิ้นต่อไป' : 'สแกนบาร์โค้ด'}
       </button>
 
@@ -1453,8 +1421,8 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
       {/* การ์ดสินค้าที่พบ */}
       {checkResult && (
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1.5px solid #b6d0cc' }}>
-          <div className="px-3 py-2.5 border-b" style={{ background: '#eaf1f0', borderColor: '#d5e5e2' }}>
-            <div className="text-[10.5px] font-semibold" style={{ color: '#2a5a55' }}>พบสินค้าในฐานข้อมูล</div>
+          <div className="px-3 py-2.5 border-b" style={{ background: T.soft, borderColor: '#d5e5e2' }}>
+            <div className="text-[10.5px] font-semibold" style={{ color: T.deep }}>พบสินค้าในฐานข้อมูล</div>
             <div className="text-[15px] font-bold text-slate-800 mt-0.5">{checkResult.name}</div>
             <div className="flex gap-2.5 mt-1 text-[11px] text-slate-500">
               <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{checkResult.productCode}</span>
@@ -1476,7 +1444,7 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
                   style={{ fontSize: 30, fontFamily: "'IBM Plex Mono', monospace" }} />
                 <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
                   className="rounded-xl border flex items-center justify-center text-2xl"
-                  style={{ width: 52, height: 52, borderColor: '#b6d0cc', background: '#eaf1f0', color: '#2a5a55' }}>+</button>
+                  style={{ width: 52, height: 52, borderColor: T.line, background: T.soft, color: T.deep }}>+</button>
               </div>
             </div>
             <button onClick={handleAdd} disabled={!qty || parseInt(qty) <= 0}
@@ -1522,16 +1490,16 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
           <div className="grid grid-cols-2 gap-2">
             <button onClick={pushDraft} disabled={!!draftSync.busy || entries.length === 0}
               className="rounded-xl font-bold text-[12.5px] text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
-              style={{ minHeight: 46, background: '#35706a' }}>
+              style={{ minHeight: 46, background: T.main }}>
               {draftSync.busy === 'up' ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}บันทึกขึ้นเซิร์ฟเวอร์
             </button>
             <button onClick={pullDraft} disabled={!!draftSync.busy}
               className="rounded-xl font-bold text-[12.5px] border flex items-center justify-center gap-1.5 disabled:opacity-40"
-              style={{ minHeight: 46, borderColor: '#b6d0cc', background: '#eaf1f0', color: '#2a5a55' }}>
+              style={{ minHeight: 46, borderColor: T.line, background: T.soft, color: T.deep }}>
               {draftSync.busy === 'down' ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}ดึงร่างจากเซิร์ฟเวอร์
             </button>
           </div>
-          {draftSync.msg && <div className="text-[11px] font-semibold" style={{ color: '#2a5a55' }}>{draftSync.msg}</div>}
+          {draftSync.msg && <div className="text-[11px] font-semibold" style={{ color: T.deep }}>{draftSync.msg}</div>}
           {draftSync.err && <div className="text-[11px] font-semibold" style={{ color: '#B91C1C' }}>{draftSync.err}</div>}
         </div>
       )}
@@ -1616,7 +1584,8 @@ function GroupedRow({ g, highlight, onEditQty }) {
   );
 }
 
-function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser, pickedAt }) {
+function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser, pickedAt, tone }) {
+  const T = tone || { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' };
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -1645,10 +1614,10 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   };
   if (submitted) return (
     <div className="space-y-3">
-      <div className="bg-white rounded-2xl overflow-hidden border" style={{ borderColor: '#B6D0CC' }}>
-        <div className="px-4 py-5 text-center" style={{ background: '#EAF1F0' }}>
-          <div className="text-white p-3 rounded-full inline-block mb-2" style={{ background: '#35706A' }}><Send size={26} /></div>
-          <h2 className="text-lg font-bold" style={{ color: '#2A5A55' }}>ส่งเรียบร้อยแล้ว</h2>
+      <div className="bg-white rounded-2xl overflow-hidden border" style={{ borderColor: T.line }}>
+        <div className="px-4 py-5 text-center" style={{ background: T.soft }}>
+          <div className="text-white p-3 rounded-full inline-block mb-2" style={{ background: T.main }}><Send size={26} /></div>
+          <h2 className="text-lg font-bold" style={{ color: T.deep }}>ส่งเรียบร้อยแล้ว</h2>
         </div>
         <div className="p-3 space-y-2.5">
           {submitted.docNo && (
@@ -1681,7 +1650,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
       </div>
       <button onClick={() => setView('count')}
         className="w-full text-white font-bold text-[15px] rounded-xl flex items-center justify-center gap-2"
-        style={{ minHeight: 52, background: '#35706A', boxShadow: '0 2px 0 #2A5A55' }}><ScanLine size={18} />เริ่มนับรอบใหม่</button>
+        style={{ minHeight: 52, background: T.main, boxShadow: `0 2px 0 ${T.deep}` }}><ScanLine size={18} />เริ่มนับรอบใหม่</button>
       <button onClick={() => setView('my_submissions')}
         className="w-full border bg-white hover:bg-[#F6F7F8] rounded-xl font-semibold text-slate-700 text-[13.5px]"
         style={{ minHeight: 46, borderColor: '#E4E6EA' }}>ดูสถานะใบที่ส่งแล้ว →</button>
@@ -1694,7 +1663,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         <ClipboardCheck className="mx-auto text-[#E4E6EA] mb-2" size={38} />
         <div className="text-[13px] text-slate-500 mb-3">ยังไม่ได้นับสินค้า</div>
         <button onClick={() => setView('count')}
-          className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#35706A' }}>ไปหน้านับสต็อก</button>
+          className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: T.main }}>ไปหน้านับสต็อก</button>
       </div>
     </div>
   );
@@ -1712,7 +1681,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         </div>
         <div className="px-3 py-2.5" style={{ borderColor: '#EEF0F3' }}>
           <div className="text-[10.5px] text-slate-500">รวมจำนวน</div>
-          <div className="text-xl font-bold tabular-nums" style={{ color: '#35706A' }}>{totalQty.toLocaleString('th-TH')}</div>
+          <div className="text-xl font-bold tabular-nums" style={{ color: T.main }}>{totalQty.toLocaleString('th-TH')}</div>
         </div>
       </div>
 
@@ -1720,10 +1689,10 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
           <button onClick={() => setFoundOpen(o => !o)}
             className="w-full text-left px-3 py-2.5 border-b flex items-center gap-2"
-            style={{ background: '#EAF1F0', borderColor: '#D5E5E2', minHeight: 48 }}>
-            <CheckCircle2 size={13} style={{ color: '#2A5A55' }} className="shrink-0" />
-            <span className="text-[11.5px] font-bold" style={{ color: '#2A5A55' }}>พบในระบบ · {found.length} รายการ</span>
-            <span className="ml-auto text-[10.5px] font-semibold shrink-0" style={{ color: '#35706A' }}>{foundOpen ? 'ซ่อน' : 'ดูรายการ'}</span>
+            style={{ background: T.soft, borderColor: '#D5E5E2', minHeight: 48 }}>
+            <CheckCircle2 size={13} style={{ color: T.deep }} className="shrink-0" />
+            <span className="text-[11.5px] font-bold" style={{ color: T.deep }}>พบในระบบ · {found.length} รายการ</span>
+            <span className="ml-auto text-[10.5px] font-semibold shrink-0" style={{ color: T.main }}>{foundOpen ? 'ซ่อน' : 'ดูรายการ'}</span>
           </button>
           {foundOpen && (
             <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: '#F6F7F8' }}>
@@ -1749,14 +1718,14 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
         <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">หมายเหตุถึงผู้จัดการ</label>
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
           placeholder=""
-          className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#35706A] text-[13px] resize-none"
+          className="w-full px-3 py-2 border rounded-lg outline-none  text-[13px] resize-none"
           style={{ borderColor: '#E2E8F0' }} />
       </div>
 
       {!confirming ? (
         <button onClick={handleSubmit} disabled={sending}
           className="w-full text-white font-bold text-[15.5px] rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
-          style={{ minHeight: 54, background: '#35706A', boxShadow: '0 2px 0 #2A5A55' }}><Send size={19} />ส่งให้ผู้จัดการรีวิว</button>
+          style={{ minHeight: 54, background: T.main, boxShadow: `0 2px 0 ${T.deep}` }}><Send size={19} />ส่งให้ผู้จัดการรีวิว</button>
       ) : (
         <div className="space-y-3">
           <div className="text-[11px] font-bold tracking-wide text-[#B45309]">ยืนยันก่อนส่ง</div>
@@ -1765,7 +1734,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
           </div>
           <div className="bg-white border-2 border-[#FDE68A] rounded-2xl p-4">
             <div className="flex items-center gap-3">
-              <span className="w-11 h-11 shrink-0 rounded-full bg-[#EAF1F0] text-[#2A5A55] flex items-center justify-center text-lg font-bold">
+              <span className="w-11 h-11 shrink-0 rounded-full   flex items-center justify-center text-lg font-bold">
                 {(currentUser?.name || '?').trim().charAt(0)}
               </span>
               <div className="min-w-0 flex-1">
@@ -1787,7 +1756,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
               </div>
             </div>
           </div>
-          <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+          <button onClick={handleSubmit} className="w-full   text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
           </button>
           <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] rounded-xl font-medium text-sm text-slate-600">

@@ -658,6 +658,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
   const [loading, setLoading] = useState(false);
   const [staffList, setStaffList] = useState(undefined);   // undefined = ยังไม่โหลด · null = โหลดไม่ได้
   const [staffLoading, setStaffLoading] = useState(false);
+  const [staffErr, setStaffErr] = useState('');            // เหตุผลจริงที่โหลดไม่ได้
 
   // โทนสีของแต่ละฟีเจอร์ ใช้กับป้ายบอกฟีเจอร์ที่เลือก
   const FEAT_TONE = {
@@ -672,11 +673,16 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
     if (role !== 'counter' || !feature) { setStaffList(undefined); return; }
     const apiFeature = feature === 'stock_compare' ? 'compare' : feature;
     let alive = true;
-    setStaffLoading(true);
+    setStaffLoading(true); setStaffErr('');
     fetch('/api/staff?feature=' + apiFeature)
-      .then(r => r.json())
+      .then(async r => {
+        const text = await r.text();
+        let j; try { j = JSON.parse(text); } catch { throw new Error('เซิร์ฟเวอร์ตอบไม่ใช่ JSON (' + r.status + '): ' + text.slice(0, 120)); }
+        if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      })
       .then(j => { if (alive) setStaffList(Array.isArray(j.staff) ? j.staff : null); })
-      .catch(() => { if (alive) setStaffList(null); })
+      .catch(e => { if (alive) { setStaffList(null); setStaffErr(e.message || 'ไม่ทราบสาเหตุ'); } })
       .finally(() => { if (alive) setStaffLoading(false); });
     return () => { alive = false; };
   }, [role, feature]);
@@ -891,7 +897,8 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
                   </div>
                 ) : staffList === null ? (
                   <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
-                    โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้
+                    <div className="font-bold">โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้</div>
+                    {staffErr && <div className="mt-1.5 font-mono text-[10.5px] break-all" style={{ opacity: .85 }}>{staffErr}</div>}
                   </div>
                 ) : staffList.length === 0 ? (
                   <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
@@ -2378,8 +2385,10 @@ function StaffAdminView() {
     setLoading(true); setErr('');
     try {
       const res = await fetch('/api/staff');
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || 'โหลดรายชื่อไม่สำเร็จ');
+      const text = await res.text();
+      let j; try { j = JSON.parse(text); }
+      catch { throw new Error(`เซิร์ฟเวอร์ตอบไม่ใช่ JSON (HTTP ${res.status}) — ฟังก์ชัน /api/staff พัง ดู Logs บน Vercel · ${text.slice(0, 100)}`); }
+      if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
       setStaff(j.staff || []);
     } catch (e) { setErr(e.message); } finally { setLoading(false); }
   };
@@ -2389,8 +2398,10 @@ function StaffAdminView() {
     setSaving(true); setErr('');
     try {
       const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || 'บันทึกไม่สำเร็จ');
+      const text = await res.text();
+      let j; try { j = JSON.parse(text); }
+      catch { throw new Error(`เซิร์ฟเวอร์ตอบไม่ใช่ JSON (HTTP ${res.status}) · ${text.slice(0, 100)}`); }
+      if (!res.ok || j.error) throw new Error(j.error || 'บันทึกไม่สำเร็จ');
       await load();
       return true;
     } catch (e) { setErr(e.message); return false; } finally { setSaving(false); }

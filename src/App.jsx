@@ -621,6 +621,7 @@ export default function CombinedApp() {
 
   // ดึงใบจากเซิร์ฟเวอร์ — ผู้จัดการ/พนักงานเปิดเครื่องไหนก็เห็นของเดียวกัน
   const [subSync, setSubSync] = useState({ busy: false, at: null, err: '' });
+  const [invSubs, setInvSubs] = useState([]);   // บิลรออนุมัติ
   const pullSubmissions = useCallback(async (feat) => {
     setSubSync(s => ({ ...s, busy: true, err: '' }));
     try {
@@ -637,10 +638,44 @@ export default function CombinedApp() {
     } catch (e) { setSubSync({ busy: false, at: null, err: e.message }); }
   }, []);
 
+  // บิลรออนุมัติ — ผู้จัดการเห็นในกล่องขาเข้าเดียวกัน
+  const pullInvSubs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/invoice-submission');
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      setInvSubs(j.submissions || []);
+    } catch (e) { setInvSubs([]); }
+  }, []);
+
+  const reviewInvoice = async (id, status, note, patch = {}) => {
+    const res = await fetch('/api/invoice-submission', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status, review_note: note || '', reviewed_by: currentUser?.name || 'ผู้จัดการ', ...patch }),
+    });
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+    setInvSubs(prev => prev.map(s => s.id === id ? j.submission : s));
+    return j.submission;
+  };
+
+  const deleteInvoiceSub = (id) => {
+    setInvSubs(prev => prev.filter(s => s.id !== id));
+    fetch('/api/invoice-submission?id=' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
+  };
+
   // เข้าชื่อ/สลับฟีเจอร์ → ดึงใบล่าสุดจากเซิร์ฟเวอร์
   useEffect(() => {
-    if (currentUser) pullSubmissions(currentUser.feature || 'recorder');
-  }, [currentUser, pullSubmissions]);
+    if (!currentUser) return;
+    if (currentUser.role === 'manager') {
+      // ผู้จัดการเห็นทุกฟีเจอร์ในหน้าเดียว
+      pullSubmissions('recorder');
+      pullSubmissions('stock_compare');
+      pullInvSubs();
+    } else {
+      pullSubmissions(currentUser.feature || 'recorder');
+    }
+  }, [currentUser, pullSubmissions, pullInvSubs]);
 
   const saveSupabaseConfig = async (cfg) => {
     setSupabaseConfig(cfg);
@@ -701,7 +736,9 @@ export default function CombinedApp() {
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
-  const pendingCount = submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
+  const pendingCount = isManager
+    ? submissions.filter(s => s.status === 'pending').length + invSubs.filter(s => s.status === 'pending').length
+    : submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
 
   const FEATURE_LABEL = { recorder: 'นับสินค้า', stock_compare: 'นับเทียบยอด', invoice: 'บันทึกบิล' };
   // ระบบสีตาม Color System.dc.html — นับสินค้า เขียว · นับเทียบยอด ม่วง · บันทึกบิล ฟ้า
@@ -711,14 +748,15 @@ export default function CombinedApp() {
     stock_compare: { main: '#7658C9', deep: '#5F45A8', soft: '#F2EFFA', line: '#D5CAEE' },
     invoice:       { main: '#2F6E90', deep: '#255771', soft: '#EAF0F4', line: '#B9CFDC' },
   };
-  const C = FEAT[feature] || FEAT.recorder;
+  // ผู้จัดการใช้สีกลาง (หมึก) — สีฟีเจอร์ไปอยู่บนป้ายของแต่ละใบ
+  const C = isManager
+    ? { main: '#0F172A', deep: '#0F172A', soft: '#F6F7F8', line: '#E4E6EA' }
+    : (FEAT[feature] || FEAT.recorder);
   
 
   // Nav per role+feature
   const navItems = isManager
-    ? feature === 'stock_compare'
-      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight }]
-      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount }]
+    ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : feature === 'stock_compare'
@@ -771,10 +809,10 @@ export default function CombinedApp() {
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {!isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
-        {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} />}
+        {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
         {/* Manager */}
         {isManager && activeView === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && activeView === 'inbox' && <ManagerInboxView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+        {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
@@ -863,6 +901,9 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
     };
     return map[a]?.[type] || map.indigo[type];
   };
+
+  // ผู้จัดการไม่ต้องเลือกฟีเจอร์ — งานคือรีวิวทุกฟีเจอร์ในหน้าเดียว
+  useEffect(() => { if (role === 'manager' && !feature) setFeature('all'); }, [role, feature]);
 
   const handleLogin = async (picked) => {
     const useName = picked?.name || name.trim();
@@ -974,7 +1015,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
       ) : (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
         {/* Step 2: Feature */}
-        {role && !feature && (
+        {role === 'counter' && !feature && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <button onClick={() => { setRole(null); setError(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
@@ -1001,7 +1042,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
         {role && feature && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <button onClick={() => { setFeature(null); setError(''); setPin(''); setName(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <button onClick={() => { setError(''); setPin(''); setName(''); if (role === 'manager') { setRole(null); setFeature(null); } else setFeature(null); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
               <div className="text-sm font-semibold text-slate-700">{role === 'manager' ? 'ข้อมูลผู้ใช้' : 'เลือกชื่อของคุณ'}</div>
             </div>
 
@@ -1671,7 +1712,7 @@ function PDFDownloadButton({ sub }) {
   return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#FEF2F2] hover:bg-[#FECACA] rounded text-[#B91C1C] font-medium"><Download size={12}/>PDF</button>;
 }
 
-function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh, subSync = {} }) {
+function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh, subSync = {}, invSubs = [], onReviewInvoice, onDeleteInvoice }) {
   const [selected, setSelected] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [tab, setTab] = useState('pending');
@@ -1680,6 +1721,32 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
   const [expandedId, setExpandedId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [rejectError, setRejectError] = useState('');
+  const [featFilter, setFeatFilter] = useState('all');
+  const [invSel, setInvSel] = useState(null);
+  const [invNote, setInvNote] = useState('');
+  const [invBusy, setInvBusy] = useState(false);
+  const [invErr, setInvErr] = useState('');
+  const [invOpenId, setInvOpenId] = useState(null);
+
+  // ป้ายบอกที่มาของใบ
+  const KIND = {
+    recorder:      { label: 'นับสินค้า',  soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55' },
+    stock_compare: { label: 'นับเทียบยอด', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8' },
+    invoice:       { label: 'บันทึกบิล',   soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771' },
+  };
+
+  // รวมใบนับ + บิล เรียงตามเวลาส่ง
+  const items = [
+    ...submissions.map(s => ({ kind: s.featureType || 'recorder', at: s.submittedAt, status: s.status, s })),
+    ...invSubs.map(s => ({ kind: 'invoice', at: s.submittedAt, status: s.status, s })),
+  ].filter(it => it.status === tab && (featFilter === 'all' || it.kind === featFilter))
+   .sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  const counts = (st) => [
+    ...submissions.filter(s => s.status === st),
+    ...invSubs.filter(s => s.status === st),
+  ].filter(s => featFilter === 'all' || (s.featureType || (s.lines ? 'invoice' : 'recorder')) === featFilter).length;
+
   const filtered = submissions.filter(s => s.status === tab);
   const DRIVE_FOLDER = feature === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
   const handleApprove = () => { onReview(selected.id,'approved',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
@@ -1730,9 +1797,24 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
       </div>
       {subSync.err && <div className="text-[11px] font-semibold" style={{ color: '#B91C1C' }}>ดึงใบไม่สำเร็จ: {subSync.err}</div>}
 
+      <div className="flex gap-1.5 flex-wrap">
+        {[['all','ทุกฟีเจอร์'],['recorder','นับสินค้า'],['stock_compare','นับเทียบยอด'],['invoice','บันทึกบิล']].map(([k,label]) => {
+          const on = featFilter === k;
+          const tone = KIND[k];
+          return (
+            <button key={k} onClick={() => setFeatFilter(k)}
+              className="rounded-full text-[11.5px] font-bold px-3 border"
+              style={{ minHeight: 36,
+                       background: on ? (tone?.soft || '#0F172A') : '#fff',
+                       borderColor: on ? (tone?.line || '#0F172A') : '#E4E6EA',
+                       color: on ? (tone?.ink || '#fff') : '#64748B' }}>{label}</button>
+          );
+        })}
+      </div>
+
       <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
         {['pending', 'approved', 'rejected'].map(k => {
-          const cnt = submissions.filter(s => s.status === k).length, on = tab === k;
+          const cnt = counts(k), on = tab === k;
           return (
             <button key={k} onClick={() => setTab(k)} className="flex-1 py-2.5 text-[12px] font-bold border-b-2"
               style={on ? { color: STAT[k].ink, background: STAT[k].soft, borderColor: STAT[k].ink }
@@ -1743,19 +1825,115 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
         })}
       </div>
 
-      {filtered.length === 0 ? (
+      {items.length === 0 ? (
         <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
           <Inbox className="mx-auto text-[#E4E6EA] mb-2" size={34} />
           <div className="text-[13px] text-slate-500">ไม่มีใบ{STAT[tab].label}</div>
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(s => {
+          {items.map(it => {
+            const s = it.s;
+            const kd = KIND[it.kind] || KIND.recorder;
             const st = STAT[s.status] || STAT.pending;
+
+            // ── บิลรออนุมัติ ────────────────────────────────
+            if (it.kind === 'invoice') {
+              const open = invOpenId === s.id;
+              return (
+                <div key={s.id} className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: st.line }}>
+                  <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: st.soft, borderColor: st.line }}>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                      style={{ background: kd.soft, color: kd.ink }}>{kd.label}</span>
+                    <span className="text-[11.5px] font-bold tabular-nums" style={{ color: st.ink }}>{s.docNo}</span>
+                    <span className="ml-auto text-[11px] font-semibold text-slate-700 truncate">{s.keyedBy}</span>
+                  </div>
+
+                  <div className="p-3 space-y-2.5">
+                    <div>
+                      <div className="text-[13.5px] font-bold text-slate-800">{s.vendorName || '(ไม่ระบุผู้ขาย)'}</div>
+                      <div className="text-[10.5px] text-slate-400 tabular-nums mt-0.5">
+                        บิลเลขที่ {s.invoiceNo || '—'} · {s.invoiceDate || '—'}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                        <div className="text-[10px] text-slate-500">รายการ</div>
+                        <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount}</div>
+                      </div>
+                      <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#EAF0F4' }}>
+                        <div className="text-[10px]" style={{ color: '#255771' }}>ยอดสุทธิ</div>
+                        <div className="text-base font-bold tabular-nums" style={{ color: '#255771' }}>฿{Number(s.netTotal||0).toLocaleString()}</div>
+                      </div>
+                    </div>
+
+                    {s.status !== 'pending' && s.reviewNote && (
+                      <div className="rounded-lg p-2.5 border" style={{ background: st.soft, borderColor: st.line }}>
+                        <div className="text-[10px] font-bold" style={{ color: st.ink }}>หมายเหตุที่คุณเขียน</div>
+                        <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: st.ink }}>{s.reviewNote}</div>
+                      </div>
+                    )}
+                    {s.status === 'approved' && s.postedAt && (
+                      <div className="text-[11px] font-semibold" style={{ color: '#15803D' }}>บันทึกเข้าระบบแล้ว</div>
+                    )}
+
+                    {s.status === 'pending' && (
+                      <button onClick={() => { setInvSel(s); setInvNote(''); setInvErr(''); }}
+                        className="w-full text-white font-bold text-[14px] rounded-xl"
+                        style={{ minHeight: 46, background: '#0F172A' }}>เปิดรีวิว →</button>
+                    )}
+
+                    <div className="flex flex-wrap gap-1.5 pt-2 border-t" style={{ borderColor: '#F6F7F8' }}>
+                      <button onClick={() => setInvOpenId(open ? null : s.id)}
+                        className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-semibold text-slate-600"
+                        style={{ minHeight: 40, background: '#F6F7F8' }}>
+                        <FileSpreadsheet size={12} />{open ? 'ซ่อนรายการ' : `รายการ (${s.lines?.length || 0})`}
+                      </button>
+                      {onDeleteInvoice && (
+                        confirmDelete === s.id ? (
+                          <div className="flex items-center gap-1 ml-auto">
+                            <span className="text-[10.5px] font-semibold" style={{ color: '#B91C1C' }}>ลบใบนี้?</span>
+                            <button onClick={() => { onDeleteInvoice(s.id); setConfirmDelete(null); }}
+                              className="px-2.5 rounded-lg text-[10.5px] font-bold text-white" style={{ minHeight: 40, background: '#B91C1C' }}>ลบ</button>
+                            <button onClick={() => setConfirmDelete(null)}
+                              className="px-2.5 rounded-lg text-[10.5px] font-semibold text-slate-600" style={{ minHeight: 40, background: '#F6F7F8' }}>ยกเลิก</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmDelete(s.id)} title="ลบใบนี้"
+                            className="ml-auto rounded-lg flex items-center justify-center"
+                            style={{ width: 40, height: 40, background: '#FEF2F2', color: '#B91C1C' }}><Trash2 size={14} /></button>
+                        )
+                      )}
+                    </div>
+
+                    {open && (
+                      <div className="rounded-lg divide-y max-h-56 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
+                        {(s.lines || []).map((d, i) => (
+                          <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-semibold text-slate-800 truncate">{d.description || '(ไม่มีชื่อ)'}</div>
+                              <div className="text-[10px] text-slate-400 tabular-nums truncate">{d.barcode || 'ไม่มีบาร์โค้ด'}</div>
+                            </div>
+                            <div className="text-[13px] font-bold text-slate-800 tabular-nums shrink-0">
+                              {d.qty ?? '—'}<span className="text-[10px] font-normal text-slate-400 ml-1">×{Number(d.price_ea||0).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // ── ใบนับ ────────────────────────────────────────
             const open = expandedId === s.id;
             return (
               <div key={s.id} className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: st.line }}>
                 <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: st.soft, borderColor: st.line }}>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                    style={{ background: kd.soft, color: kd.ink }}>{kd.label}</span>
                   <span className="text-[11.5px] font-bold tabular-nums" style={{ color: st.ink }}>{s.docNo || '—'}</span>
                   <span className="ml-auto text-[11px] font-semibold text-slate-700 truncate">{s.counter}</span>
                 </div>
@@ -1856,6 +2034,108 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
               </div>
             );
           })}
+        </div>
+      )}
+
+      {invSel && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92dvh] overflow-y-auto">
+            <div className="px-4 py-3 border-b flex justify-between items-start gap-2 sticky top-0 bg-white" style={{ borderColor: '#E4E6EA' }}>
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px]">รีวิวบิลซื้อ</h3>
+                <p className="text-[11px] text-slate-500 truncate">{invSel.docNo} · {invSel.keyedBy}</p>
+              </div>
+              <button onClick={() => setInvSel(null)} className="shrink-0 rounded-lg flex items-center justify-center text-slate-500"
+                style={{ width: 40, height: 40, background: '#F6F7F8' }}><X size={17} /></button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="rounded-xl p-3" style={{ background: '#F6F7F8' }}>
+                <div className="text-[13.5px] font-bold text-slate-800">{invSel.vendorName || '(ไม่ระบุผู้ขาย)'}</div>
+                <div className="text-[11px] text-slate-500 tabular-nums mt-1">บิลเลขที่ {invSel.invoiceNo || '—'} · {invSel.invoiceDate || '—'}</div>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1 rounded-xl px-3 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
+                  <div className="text-[10px] text-slate-500">รายการ</div>
+                  <div className="text-xl font-bold text-slate-800 tabular-nums">{invSel.itemCount}</div>
+                </div>
+                <div className="flex-1 rounded-xl px-3 py-2.5 text-center" style={{ background: '#EAF0F4' }}>
+                  <div className="text-[10px]" style={{ color: '#255771' }}>ยอดสุทธิ</div>
+                  <div className="text-xl font-bold tabular-nums" style={{ color: '#255771' }}>฿{Number(invSel.netTotal||0).toLocaleString()}</div>
+                </div>
+              </div>
+
+              {(() => {
+                const miss = (invSel.lines||[]).filter(d => !d.barcode).length;
+                if (!miss) return null;
+                return (
+                  <div className="rounded-xl p-3 border text-[11.5px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
+                    {miss} รายการยังไม่มีบาร์โค้ด — อนุมัติได้ แต่ช่องบาร์โค้ดจะว่างในระบบ
+                  </div>
+                );
+              })()}
+
+              <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                <div className="px-3 py-2 border-b text-[11.5px] font-bold text-slate-600" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>
+                  รายการในบิล · {(invSel.lines||[]).length}
+                </div>
+                <div className="max-h-56 overflow-y-auto divide-y" style={{ borderColor: '#F6F7F8' }}>
+                  {(invSel.lines||[]).map((d,i) => (
+                    <div key={i} className="px-3 py-2 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-semibold text-slate-800 truncate">{d.description || '(ไม่มีชื่อ)'}</div>
+                        <div className="text-[10px] tabular-nums truncate" style={{ color: d.barcode ? '#94A3B8' : '#B45309' }}>{d.barcode || 'ไม่มีบาร์โค้ด'}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-[13px] font-bold text-slate-800 tabular-nums">{d.qty ?? '—'}</div>
+                        <div className="text-[10px] text-slate-400 tabular-nums">฿{Number(d.total||d.amount||0).toLocaleString()}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">
+                  หมายเหตุถึงพนักงาน <span style={{ color: '#B91C1C' }}>(บังคับถ้าส่งกลับ)</span>
+                </label>
+                <textarea value={invNote} onChange={e => { setInvNote(e.target.value); setInvErr(''); }} rows={2}
+                  className="w-full px-3 py-2 border rounded-lg outline-none text-[13px] resize-none"
+                  style={invErr ? { borderColor: '#B91C1C', background: '#FEF2F2' } : { borderColor: '#E2E8F0' }} />
+                {invErr && (
+                  <div className="text-[11px] mt-1 flex items-center gap-1" style={{ color: '#B91C1C' }}>
+                    <XCircle size={12} />{invErr}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button disabled={invBusy}
+                  onClick={async () => {
+                    if (!invNote.trim()) { setInvErr('กรุณาใส่เหตุผลก่อนส่งกลับ'); return; }
+                    setInvBusy(true);
+                    try { await onReviewInvoice(invSel.id, 'rejected', invNote); setInvSel(null); setInvNote(''); }
+                    catch (e) { setInvErr(e.message); }
+                    setInvBusy(false);
+                  }}
+                  className="flex-1 text-white rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  style={{ minHeight: 50, background: '#B91C1C' }}><ThumbsDown size={16} />ส่งกลับแก้</button>
+                <button disabled={invBusy}
+                  onClick={async () => {
+                    setInvBusy(true);
+                    try { await onReviewInvoice(invSel.id, 'approved', invNote); setInvSel(null); setInvNote(''); }
+                    catch (e) { setInvErr(e.message); }
+                    setInvBusy(false);
+                  }}
+                  className="flex-1 text-white rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  style={{ minHeight: 50, background: '#15803D' }}>
+                  {invBusy ? <RefreshCw size={16} className="animate-spin" /> : <ThumbsUp size={16} />}อนุมัติ + บันทึก
+                </button>
+              </div>
+              <div className="text-[10.5px] text-slate-400 text-center leading-relaxed">อนุมัติแล้วระบบจะเขียนลง bill_header และ imp_data ให้ทันที</div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3011,11 +3291,65 @@ function Spinner({ size = 16 }) {
   return <span style={{ display:'inline-block', width:size, height:size, borderRadius:'50%', border:'2px solid #e5e7eb', borderTopColor:'#111', animation:'spin 0.7s linear infinite', flexShrink:0 }}/>;
 }
 
+class ErrorBox extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div style={{ padding: 16 }}>
+        <div style={{ background:'#fff', border:'1px solid #fecaca', borderRadius:12, padding:14, display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ fontSize:14.5, fontWeight:700, color:'#b91c1c' }}>หน้านี้แสดงไม่ได้</div>
+          <div style={{ fontSize:11.5, color:'#b91c1c', fontFamily:"'IBM Plex Mono', monospace", wordBreak:'break-word', lineHeight:1.5 }}>
+            {String(this.state.err?.message || this.state.err)}
+          </div>
+          <button onClick={() => this.setState({ err: null })}
+            style={{ minHeight:46, borderRadius:11, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>ลองแสดงอีกครั้ง</button>
+          <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.5 }}>ข้อมูลที่คีย์ไว้ยังอยู่ — กดปุ่มด้านบน หรือถ่ายภาพข้อความนี้ส่งให้ผู้ดูแล</div>
+        </div>
+      </div>
+    );
+  }
+}
+
 function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
   const [maxStep, setMaxStep] = useState(1);     // ขั้นสูงสุดที่เคยไปถึง — กดแถบล่างข้ามไปได้
+  const [sendSt, setSendSt] = useState({ busy:false, done:null, err:'' });   // ส่งบิลให้ผู้จัดการ
+
+  // พนักงานไม่บันทึกลงระบบเอง — ส่งให้ผู้จัดการอนุมัติก่อน
+  const sendInvoicesForReview = async () => {
+    if (!currentUser) return setSendSt({ busy:false, done:null, err:'ยังไม่ได้เลือกชื่อ' });
+    const ready = doneInvs.filter(inv => (inv.data?.products||[]).length > 0);
+    if (!ready.length) return setSendSt({ busy:false, done:null, err:'ไม่มีใบที่อ่านสำเร็จ' });
+    setSendSt({ busy:true, done:null, err:'' });
+    const sent = [];
+    try {
+      for (const inv of ready) {
+        const d = inv.data;
+        const vs = vatSummary(d.products||[]);
+        const res = await fetch('/api/invoice-submission', {
+          method:'POST', headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ submission: {
+            keyedById: currentUser.id, keyedBy: currentUser.name,
+            deviceId: safeGet('deviceId','') || null,
+            invoiceNo: d.invoice_no || null, invoiceDate: d.invoice_date || null,
+            vendorName: d.vendor_name || null,
+            fileName: fileName || d.invoice_no || null,
+            header: d, lines: d.products || [], netTotal: vs.netTotal,
+          }}),
+        });
+        const j = await res.json();
+        if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
+        sent.push(j.submission?.docNo || '');
+      }
+      // ส่งแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย
+      try { await fetch('/api/invoice-draft?keyed_by_id=' + encodeURIComponent(currentUser.id), { method:'DELETE' }); } catch {}
+      setSendSt({ busy:false, done:sent, err:'' });
+    } catch (e) { setSendSt({ busy:false, done:null, err:e.message }); }
+  };
   const w = useWinWidth(), mob = w < 600;
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
@@ -3073,7 +3407,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
       const list = j.invoices || [];
-      if (list.length) { setInvoices(list); setStep(3); }
+      if (list.length) { setInvoices(list); setStep(2); }
       setInvDraft({ busy: '', msg: list.length ? `ดึงร่างมา ${list.length} ใบ` : 'ไม่มีร่างบนเซิร์ฟเวอร์', err: '' });
     } catch (e) { setInvDraft({ busy: '', msg: '', err: e.message }); }
   };
@@ -3399,6 +3733,14 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
 
 
 
+      {step>1 && invoices.length===0 && (
+        <div style={{ background:'#fff', border:'1px dashed #cbd5e1', borderRadius:12, padding:'30px 16px', textAlign:'center', display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ fontSize:13, color:'#64748b' }}>ยังไม่มีบิลในขั้นนี้</div>
+          <button onClick={()=>setStep(1)}
+            style={{ minHeight:48, borderRadius:11, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:14.5, fontWeight:700, cursor:'pointer' }}>กลับไปถ่ายรูปบิล</button>
+        </div>
+      )}
+
       {step===1&&(
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>ถ่ายบิลทีละหน้า หลายหน้าที่เป็นใบเดียวกันให้อยู่กลุ่มเดียวกัน — AI จะอ่านต่อกันเป็นใบเดียว</div>
@@ -3565,6 +3907,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>AI อ่านมาให้แล้ว — ตรวจทีละรายการ แตะแก้ตัวเลขที่ผิดได้เลย ยอดสุทธิคิดใหม่ให้ทันที</div>
 
+          {doneInvs.length===0 && invoices.length>0 && (
+            <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:12, padding:14, display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ fontSize:12.5, color:'#b45309', lineHeight:1.6 }}>ยังไม่มีใบที่อ่านสำเร็จ — กลับไปกด “อ่านด้วย AI” ก่อน</div>
+              <button onClick={()=>setStep(1)}
+                style={{ minHeight:46, borderRadius:11, border:'1px solid #fde68a', background:'#fff', color:'#b45309', fontFamily:'inherit', fontSize:13.5, fontWeight:700, cursor:'pointer' }}>กลับไปหน้าอัปโหลด</button>
+            </div>
+          )}
           {doneInvs.map((inv,gi)=>{
             const d=inv.data, vs=vatSummary(d.products||[]);
             const upd = (patch) => updateData(gi, {...d, ...patch});
@@ -3806,29 +4155,33 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             </div>
           </div>
 
-          {/* บันทึกลงระบบ — งานหลักของขั้นนี้ */}
+          {/* ส่งให้ผู้จัดการอนุมัติ — งานหลักของขั้นนี้ */}
           <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12, display:'flex', flexDirection:'column', gap:9 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>บันทึกเข้าระบบ</div>
-            {!sbUrl||!sbKey ? (
-              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:10, fontSize:11.5, color:'#b45309', lineHeight:1.5 }}>
-                ยังไม่ได้เชื่อมต่อฐานข้อมูล — เปิดหน้า “ตั้งค่าเซิร์ฟเวอร์” จากหน้าแรกก่อน
+            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>ส่งให้ผู้จัดการอนุมัติ</div>
+            {sendSt.done ? (
+              <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:12, display:'flex', flexDirection:'column', gap:7 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'#15803d' }}>ส่งเรียบร้อย {sendSt.done.length} ใบ</div>
+                {sendSt.done.filter(Boolean).map(no => (
+                  <div key={no} style={{ fontSize:12, fontWeight:700, color:'#15803d', fontFamily:"'IBM Plex Mono', monospace" }}>{no}</div>
+                ))}
+                <div style={{ fontSize:11, color:'#15803d', lineHeight:1.5 }}>ผู้จัดการจะตรวจแล้วบันทึกเข้าระบบให้ · ถ้ามีจุดผิดจะส่งกลับมา</div>
+                <button onClick={reset}
+                  style={{ minHeight:46, borderRadius:11, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>เริ่มบิลใบใหม่</button>
               </div>
             ) : (
               <>
-                <button onClick={saveToSupabase} disabled={sbSt==='saving'||nameStatus==='duplicate'}
+                <button onClick={sendInvoicesForReview} disabled={sendSt.busy||doneInvs.length===0}
                   style={{ width:'100%', minHeight:54, borderRadius:12, border:'none', fontFamily:'inherit', fontSize:15.5, fontWeight:700, color:'#fff',
-                           background: (sbSt==='saving'||nameStatus==='duplicate')?'#94a3b8':'#2f6e90',
-                           boxShadow: (sbSt==='saving'||nameStatus==='duplicate')?'none':'0 2px 0 #255771',
-                           cursor:(sbSt==='saving'||nameStatus==='duplicate')?'not-allowed':'pointer',
+                           background: (sendSt.busy||doneInvs.length===0)?'#94a3b8':'#2f6e90',
+                           boxShadow: (sendSt.busy||doneInvs.length===0)?'none':'0 2px 0 #255771',
+                           cursor:(sendSt.busy||doneInvs.length===0)?'not-allowed':'pointer',
                            display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                  {sbSt==='saving'?<><Spinner size={18}/>กำลังบันทึก…</>:'บันทึกบิลเข้าระบบ'}
+                  {sendSt.busy?<><Spinner size={18}/>กำลังส่ง…</>:`ส่งให้ผู้จัดการ (${doneInvs.length} ใบ)`}
                 </button>
-                {sbSt==='done'&&(
-                  <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:10, fontSize:11.5, fontWeight:700, color:'#15803d' }}>✓ บันทึกแล้ว — ร่างบนเซิร์ฟเวอร์ถูกล้างเรียบร้อย</div>
+                {sendSt.err&&(
+                  <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:10, fontSize:11.5, color:'#b91c1c', lineHeight:1.5 }}>{sendSt.err}</div>
                 )}
-                {sbSt==='error'&&sbErr&&(
-                  <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:10, fontSize:11.5, color:'#b91c1c', lineHeight:1.5 }}>{sbErr}</div>
-                )}
+                <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.5 }}>ส่งแล้วแก้ไม่ได้ — ผู้จัดการเป็นคนบันทึกเข้าระบบ</div>
               </>
             )}
           </div>

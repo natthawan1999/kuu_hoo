@@ -511,7 +511,9 @@ export default function CombinedApp() {
 
 
   if (!loaded) return <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#E4E6EA] border-t-[#0F172A] rounded-full animate-spin" /></div>;
-    // พนักงาน + รายงาน เปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
+  const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
+
+  // พนักงาน + รายงาน + ตั้งค่า เปิดดูได้เลย ไม่ต้องเลือกชื่อ/ไม่ต้องเป็นผู้จัดการ
   if (publicPage) {
     const PAGES = {
       staff:    { icon: Users,           title: 'จัดการพนักงาน', sub: 'รายชื่อ สิทธิ์ ปิดการใช้งาน', body: <StaffAdminView /> },
@@ -549,7 +551,6 @@ export default function CombinedApp() {
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
   const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
-  const isSupabaseReady = !!(supabaseConfig.url && supabaseConfig.anonKey);
   const pendingCount = submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
 
   const FEATURE_LABEL = { recorder: 'Recorder', stock_compare: 'นับ+เปรียบเทียบ', invoice: 'สแกนบิล AI' };

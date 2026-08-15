@@ -487,6 +487,10 @@ export default function CombinedApp() {
     } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
   };
 
+  useEffect(() => {
+    if (currentUser) pullSubmissions(currentUser.feature || 'recorder');
+  }, [currentUser, pullSubmissions]);
+
   const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => {
     setCurrentUser(null);
@@ -554,15 +558,68 @@ export default function CombinedApp() {
       itemCount: grouped.length, totalQty: grouped.reduce((s, g) => s + g.qty, 0), data: grouped,
     };
     setSubmissions(prev => [sub, ...prev]);
+
+    // ขึ้นเซิร์ฟเวอร์ — ผู้จัดการเปิดจากเครื่องไหนก็เห็น
+    let saved = sub;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch('/api/submission', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submission: { ...saved, deviceId: safeGet('deviceId', '') || null } }),
+        });
+        const j = await res.json();
+        if (res.status === 409 && j.duplicate && attempt === 0) {
+          saved = { ...saved, docNo: await generateDocNo(prefix) };   // เลขซ้ำ ขอใหม่
+          continue;
+        }
+        if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+        // ใช้แถวจากเซิร์ฟเวอร์เป็นตัวจริง (id ตรงกันทุกเครื่อง)
+        setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...j.submission, synced: true } : s));
+        saved = j.submission;
+        break;
+      } catch (e) {
+        setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...s, syncError: e.message } : s));
+        break;
+      }
+    }
+
     // ส่งเป็นใบแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย ไม่ให้เครื่องอื่นดึงของเก่ากลับมา
     try {
       await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}`, { method: 'DELETE' });
     } catch {}
-    return sub;
+    return saved;
   };
 
-  const reviewSubmission = (id, status, reviewNote) => setSubmissions(prev => prev.map(s => s.id === id ? { ...s, status, reviewNote: reviewNote || '', reviewedAt: new Date().toISOString(), reviewedBy: currentUser?.name || 'ผู้จัดการ' } : s));
-  const deleteSubmission = (id) => setSubmissions(prev => prev.filter(s => s.id !== id));
+  const reviewSubmission = (id, status, reviewNote) => {
+    setSubmissions(prev => prev.map(s => s.id === id ? { ...s, status, reviewNote: reviewNote || '', reviewedAt: new Date().toISOString(), reviewedBy: currentUser?.name || 'ผู้จัดการ' } : s));
+    fetch('/api/submission', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status, review_note: reviewNote || '', reviewed_by: currentUser?.name || 'ผู้จัดการ' }),
+    }).catch(() => {});
+  };
+
+  const deleteSubmission = (id) => {
+    setSubmissions(prev => prev.filter(s => s.id !== id));
+    fetch('/api/submission?id=' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
+  };
+
+  // ดึงใบจากเซิร์ฟเวอร์ — ผู้จัดการ/พนักงานเปิดเครื่องไหนก็เห็นของเดียวกัน
+  const [subSync, setSubSync] = useState({ busy: false, at: null, err: '' });
+  const pullSubmissions = useCallback(async (feat) => {
+    setSubSync(s => ({ ...s, busy: true, err: '' }));
+    try {
+      const res = await fetch('/api/submission?feature=' + encodeURIComponent(feat || 'recorder'));
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      const server = j.submissions || [];
+      // ใบจากเซิร์ฟเวอร์ชนะ ใบในเครื่องที่ยังไม่ขึ้นเก็บไว้ต่อ
+      setSubmissions(prev => {
+        const docs = new Set(server.map(s => s.docNo));
+        return [...server, ...prev.filter(s => !docs.has(s.docNo))];
+      });
+      setSubSync({ busy: false, at: new Date().toISOString(), err: '' });
+    } catch (e) { setSubSync({ busy: false, at: null, err: e.message }); }
+  }, []);
 
   const saveSupabaseConfig = async (cfg) => {
     setSupabaseConfig(cfg);
@@ -690,13 +747,13 @@ export default function CombinedApp() {
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
-        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
+        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {!isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {/* Counter - invoice */}
-        {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} />}
+        {!isManager && feature === 'invoice' && <InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} />}
         {/* Manager */}
         {isManager && activeView === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
-        {isManager && activeView === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+        {isManager && activeView === 'inbox' && <ManagerInboxView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
@@ -1454,7 +1511,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   );
 }
 
-function MySubmissionsView({ submissions, setView }) {
+function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
   const [expanded, setExpanded] = useState(null);
   const CFG = {
     pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
@@ -1466,10 +1523,17 @@ function MySubmissionsView({ submissions, setView }) {
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
+        <h2 className="text-xl font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-[11.5px] text-slate-400">{submissions.length} ใบ</div>
+          {onRefresh && (
+            <button onClick={onRefresh} disabled={subSync.busy} title="ดึงสถานะล่าสุดจากเซิร์ฟเวอร์"
+              className="rounded-lg flex items-center justify-center border bg-white text-slate-500"
+              style={{ width: 34, height: 34, borderColor: '#E4E6EA' }}>
+              <RefreshCw size={14} className={subSync.busy ? 'animate-spin' : ''} />
+            </button>
+          )}
         </div>
-        <div className="text-[11.5px] text-slate-400 shrink-0">{submissions.length} ใบ</div>
       </div>
 
       {submissions.length > 0 && (
@@ -1566,7 +1630,7 @@ function PDFDownloadButton({ sub }) {
   return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#FEF2F2] hover:bg-[#FECACA] rounded text-[#B91C1C] font-medium"><Download size={12}/>PDF</button>;
 }
 
-function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
+function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh, subSync = {} }) {
   const [selected, setSelected] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [tab, setTab] = useState('pending');
@@ -1613,9 +1677,17 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
 
   return (
     <div className="space-y-3">
-      <div>
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-xl font-bold text-slate-800">กล่องขาเข้า</h2>
+        {onRefresh && (
+          <button onClick={onRefresh} disabled={subSync.busy} title="ดึงใบล่าสุดจากเซิร์ฟเวอร์"
+            className="shrink-0 rounded-lg flex items-center justify-center border bg-white text-slate-500"
+            style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}>
+            <RefreshCw size={15} className={subSync.busy ? 'animate-spin' : ''} />
+          </button>
+        )}
       </div>
+      {subSync.err && <div className="text-[11px] font-semibold" style={{ color: '#B91C1C' }}>ดึงใบไม่สำเร็จ: {subSync.err}</div>}
 
       <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
         {['pending', 'approved', 'rejected'].map(k => {
@@ -2847,7 +2919,8 @@ function Spinner({ size = 16 }) {
   return <span style={{ display:'inline-block', width:size, height:size, borderRadius:'50%', border:'2px solid #e5e7eb', borderTopColor:'#111', animation:'spin 0.7s linear infinite', flexShrink:0 }}/>;
 }
 
-function InvoiceScannerModule({ supabaseConfig }) {
+function InvoiceScannerModule({ supabaseConfig, currentUser }) {
+  const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const w = useWinWidth(), mob = w < 600;
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [step, setStep] = useState(1);
@@ -2878,6 +2951,37 @@ function InvoiceScannerModule({ supabaseConfig }) {
     const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.onload = () => setGReady(true); document.head.appendChild(s);
     return () => { try { document.head.removeChild(s); } catch {} };
   }, []);
+
+  // ร่างบิลขึ้นเซิร์ฟเวอร์ — คีย์ค้างที่เครื่องหนึ่ง ไปต่อเครื่องอื่นได้ (เก็บผลที่อ่านได้ ไม่เก็บรูป)
+  const pushInvDraft = async () => {
+    if (!currentUser) return;
+    setInvDraft({ busy: 'up', msg: '', err: '' });
+    try {
+      const res = await fetch('/api/invoice-draft', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyed_by_id: currentUser.id, keyed_by: currentUser.name,
+          device_id: safeGet('deviceId', '') || null, invoices,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      setInvDraft({ busy: '', msg: `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} ใบ`, err: '' });
+    } catch (e) { setInvDraft({ busy: '', msg: '', err: e.message }); }
+  };
+
+  const pullInvDraft = async () => {
+    if (!currentUser) return;
+    setInvDraft({ busy: 'down', msg: '', err: '' });
+    try {
+      const res = await fetch('/api/invoice-draft?keyed_by_id=' + encodeURIComponent(currentUser.id));
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      const list = j.invoices || [];
+      if (list.length) { setInvoices(list); setStep(3); }
+      setInvDraft({ busy: '', msg: list.length ? `ดึงร่างมา ${list.length} ใบ` : 'ไม่มีร่างบนเซิร์ฟเวอร์', err: '' });
+    } catch (e) { setInvDraft({ busy: '', msg: '', err: e.message }); }
+  };
 
   const connectGoogle = () => {
     if (!gClientId) { alert('กรุณาใส่ Google Client ID ก่อน'); setShowInvCfg(true); return; }
@@ -3116,6 +3220,10 @@ function InvoiceScannerModule({ supabaseConfig }) {
         }
       }
       setSbSt('done');
+      // บันทึกเป็นบิลจริงแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย
+      if (currentUser?.id) {
+        try { await fetch('/api/invoice-draft?keyed_by_id=' + encodeURIComponent(currentUser.id), { method: 'DELETE' }); } catch {}
+      }
     } catch(e) { setSbErr(e.message); setSbSt('error'); }
   };
 
@@ -3172,6 +3280,23 @@ function InvoiceScannerModule({ supabaseConfig }) {
           <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
           <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:6, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
           <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:6, background:'#0f172a', color:'#fff', border:'none', cursor:'pointer' }}>บันทึก</button>
+        </div>
+      )}
+
+      {currentUser && (
+        <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:10, marginBottom:12, display:'flex', flexDirection:'column', gap:8 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <button onClick={pushInvDraft} disabled={!!invDraft.busy || invoices.length===0}
+              style={{ minHeight:44, borderRadius:10, border:'none', background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:12.5, fontFamily:'inherit', cursor:'pointer', opacity:(!!invDraft.busy||invoices.length===0)?0.4:1 }}>
+              {invDraft.busy==='up' ? 'กำลังบันทึก…' : 'บันทึกร่างขึ้นเซิร์ฟเวอร์'}
+            </button>
+            <button onClick={pullInvDraft} disabled={!!invDraft.busy}
+              style={{ minHeight:44, borderRadius:10, border:'1px solid #b9cfdc', background:'#eaf0f4', color:'#255771', fontWeight:700, fontSize:12.5, fontFamily:'inherit', cursor:'pointer', opacity:invDraft.busy?0.4:1 }}>
+              {invDraft.busy==='down' ? 'กำลังดึง…' : 'ดึงร่างจากเซิร์ฟเวอร์'}
+            </button>
+          </div>
+          {invDraft.msg && <div style={{ fontSize:11, fontWeight:600, color:'#255771' }}>{invDraft.msg}</div>}
+          {invDraft.err && <div style={{ fontSize:11, fontWeight:600, color:'#B91C1C' }}>{invDraft.err}</div>}
         </div>
       )}
 

@@ -6,7 +6,7 @@ import {
   Shield, Eye, EyeOff, ClipboardCheck, Lock, LogOut, Database, Cloud,
   RefreshCw, Settings as SettingsIcon, CheckCircle2, XCircle, Layers,
   FileSpreadsheet, ArrowRight, FileCheck, WifiOff, Zap, Send, Clock,
-  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin,
+  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin, Users,
 } from 'lucide-react';
 
 const INVOICE_API = "/api/claude";
@@ -553,8 +553,8 @@ export default function CombinedApp() {
   // Nav per role+feature
   const navItems = isManager
     ? feature === 'stock_compare'
-      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
-      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      ? [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'compare',label:'เปรียบเทียบ',icon:ArrowLeftRight },{ id:'staff',label:'พนักงาน',icon:Users },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
+      : [{ id:'dashboard',label:'แดชบอร์ด',icon:Home },{ id:'inbox',label:'รีวิว',icon:Inbox,badge:pendingCount },{ id:'staff',label:'พนักงาน',icon:Users },{ id:'report',label:'รายงาน',icon:FileSpreadsheet },{ id:'settings',label:'ตั้งค่า',icon:SettingsIcon }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'สแกนบิล',icon:Receipt }]
       : feature === 'stock_compare'
@@ -606,6 +606,7 @@ export default function CombinedApp() {
         {isManager && view === 'dashboard' && <Dashboard submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} products={products} setView={setView} isSupabaseReady={isSupabaseReady} lastSyncAt={lastSyncAt} pendingCount={pendingCount} />}
         {isManager && view === 'inbox' && <ManagerInboxView submissions={submissions.filter(s=>(s.featureType||'recorder')===feature)} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
         {isManager && feature === 'stock_compare' && view === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && view === 'staff' && <StaffAdminView />}
         {isManager && view === 'report' && <ReportView />}
         {isManager && view === 'settings' && <SettingsView config={supabaseConfig} onSave={saveSupabaseConfig} onTestConnection={testConnection} dataSource={dataSource} lastSyncAt={lastSyncAt} productCount={products.length} />}
       </main>
@@ -1013,25 +1014,37 @@ function GroupedRow({ g, highlight, onEditQty }) {
   const [editVal, setEditVal] = useState(String(g.qty));
   const confirmEdit = () => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onEditQty && onEditQty(g.barcode, v); setEditing(false); };
   return (
-    <div className={`p-3 flex items-center gap-3 ${highlight ? 'bg-[#FFFBEB]/40' : ''}`}>
+    <div className="px-3 py-2.5 flex items-center gap-2.5" style={highlight ? { background: '#FFFBEB' } : undefined}>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-mono text-sm text-slate-800">{g.barcode}</span>
-          {g.notFound && <span className="text-[9px] bg-[#B45309] text-white px-1.5 py-0.5 rounded-full">ไม่มีในระบบ</span>}
-          {g.location && <span className="text-[9px] bg-[#E4E6EA] text-slate-600 px-1.5 py-0.5 rounded-full">{g.location}</span>}
+        <div className="text-[13.5px] font-semibold text-slate-800 truncate">{g.productName}</div>
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <span className="text-[10.5px] text-slate-400 tabular-nums">{g.barcode}</span>
+          {g.location && <span className="text-[9.5px] px-1.5 py-0.5 rounded-full text-slate-600" style={{ background: '#F6F7F8' }}>{g.location}</span>}
+          {g.scans > 1 && <span className="text-[9.5px] px-1.5 py-0.5 rounded-full text-slate-500" style={{ background: '#F6F7F8' }}>ยิง {g.scans} ครั้ง</span>}
+          {g.overridden && <span className="text-[9.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: '#FFFBEB', color: '#B45309' }}>แก้จำนวนแล้ว</span>}
         </div>
-        <div className="text-xs text-slate-500 truncate">{g.productName}</div>
       </div>
       {onEditQty && editing ? (
-        <div className="flex items-center gap-1">
-          <input autoFocus type="number" value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')confirmEdit();if(e.key==='Escape')setEditing(false);}} className="w-16 h-8 text-center font-bold border border-[#94A3B8] rounded-lg outline-none focus:ring-2 focus:ring-[#94A3B8] text-sm"/>
-          <button onClick={confirmEdit} className="p-1 bg-[#0F172A] text-white rounded"><Check size={14}/></button>
-          <button onClick={()=>setEditing(false)} className="p-1 bg-[#E4E6EA] text-slate-600 rounded"><X size={14}/></button>
+        <div className="flex items-center gap-1 shrink-0">
+          <input autoFocus type="number" inputMode="numeric" value={editVal}
+            onChange={e => setEditVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') confirmEdit(); if (e.key === 'Escape') setEditing(false); }}
+            className="w-16 text-center font-bold border rounded-lg outline-none text-[15px] tabular-nums"
+            style={{ height: 40, borderColor: '#35706A' }} />
+          <button onClick={confirmEdit} className="rounded-lg text-white flex items-center justify-center"
+            style={{ width: 40, height: 40, background: '#35706A' }}><Check size={16} /></button>
+          <button onClick={() => setEditing(false)} className="rounded-lg text-slate-600 flex items-center justify-center"
+            style={{ width: 40, height: 40, background: '#F6F7F8' }}><X size={16} /></button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <div className="text-right"><div className={`text-lg font-bold ${highlight?'text-[#B45309]':'text-[#35706A]'}`}>{g.qty}</div>{g.scans>1&&<div className="text-xs text-slate-400">{g.scans} ครั้ง</div>}</div>
-          {onEditQty && <button onClick={()=>{setEditVal(String(g.qty));setEditing(true);}} className="p-1.5 hover:bg-[#F6F7F8] text-slate-400 hover:text-[#0F172A] rounded"><Edit3 size={14}/></button>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="text-lg font-bold tabular-nums" style={{ color: highlight ? '#B45309' : '#0F172A' }}>{g.qty}</div>
+          {g.unit && <div className="text-[10.5px] text-slate-400">{g.unit}</div>}
+          {onEditQty && (
+            <button onClick={() => { setEditVal(String(g.qty)); setEditing(true); }}
+              className="rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700"
+              style={{ width: 36, height: 36, background: '#F6F7F8' }}><Edit3 size={14} /></button>
+          )}
         </div>
       )}
     </div>
@@ -1055,29 +1068,111 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   const totalItems = grouped.length, totalQty = grouped.reduce((s, g) => s + g.qty, 0);
   const handleSubmit = async () => { if (!confirming) { setConfirming(true); return; } const sub = await submitForReview(grouped, note); clearMyEntries(); setSubmitted(sub); };
   if (submitted) return (
-    <div className="space-y-4">
-      <div className="bg-[#EAF1F0] border-2 border-[#B6D0CC] rounded-2xl p-6 text-center"><div className="bg-[#35706A] text-white p-3 rounded-full inline-block mb-3"><Send size={32}/></div><h2 className="text-xl font-bold text-[#2A5A55]">ส่งเรียบร้อยแล้ว!</h2><p className="text-sm text-[#2A5A55] mt-1">รายการถูกส่งให้ผู้จัดการรีวิวแล้ว</p>{submitted.docNo&&<div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5 inline-block"><span className="text-xs text-[#35706A]">เลขที่เอกสาร </span><span className="font-bold font-mono text-[#2A5A55]">{submitted.docNo}</span></div>}<div className="bg-white rounded-lg p-3 mt-4 grid grid-cols-2 gap-2"><div><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="font-bold text-slate-800">{submitted.itemCount}</div></div><div><div className="text-xs text-slate-500">จำนวนรวม</div><div className="font-bold text-slate-800">{submitted.totalQty.toLocaleString()}</div></div></div></div>
-      <button onClick={() => setView('count')} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><ScanLine size={18}/>เริ่มนับรอบใหม่</button>
-      <button onClick={() => setView('my_submissions')} className="w-full border border-[#E4E6EA] hover:bg-[#F6F7F8] py-3 rounded-xl font-medium text-slate-700 text-sm">ดูสถานะที่ส่งแล้ว →</button>
+    <div className="space-y-3">
+      <div className="bg-white rounded-2xl overflow-hidden border" style={{ borderColor: '#B6D0CC' }}>
+        <div className="px-4 py-5 text-center" style={{ background: '#EAF1F0' }}>
+          <div className="text-white p-3 rounded-full inline-block mb-2" style={{ background: '#35706A' }}><Send size={26} /></div>
+          <h2 className="text-lg font-bold" style={{ color: '#2A5A55' }}>ส่งเรียบร้อยแล้ว</h2>
+          <p className="text-[12px] mt-1" style={{ color: '#2A5A55' }}>ผู้จัดการจะรีวิวและแจ้งผลกลับ</p>
+        </div>
+        <div className="p-3 space-y-2.5">
+          {submitted.docNo && (
+            <div className="rounded-xl px-3 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
+              <div className="text-[10px] text-slate-500">เลขที่เอกสาร</div>
+              <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{submitted.docNo}</div>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="flex-1 rounded-xl px-2.5 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
+              <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+              <div className="text-lg font-bold text-slate-800 tabular-nums">{submitted.itemCount}</div>
+            </div>
+            <div className="flex-1 rounded-xl px-2.5 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
+              <div className="text-[10px] text-slate-500">รวมจำนวน</div>
+              <div className="text-lg font-bold text-slate-800 tabular-nums">{submitted.totalQty.toLocaleString('th-TH')}</div>
+            </div>
+          </div>
+          <div className="text-[11px] text-slate-500 leading-relaxed text-center">ใบนี้แก้ไม่ได้แล้ว — ถ้ามีจุดผิดผู้จัดการจะส่งกลับมาให้นับใหม่</div>
+        </div>
+      </div>
+      <button onClick={() => setView('count')}
+        className="w-full text-white font-bold text-[15px] rounded-xl flex items-center justify-center gap-2"
+        style={{ minHeight: 52, background: '#35706A', boxShadow: '0 2px 0 #2A5A55' }}><ScanLine size={18} />เริ่มนับรอบใหม่</button>
+      <button onClick={() => setView('my_submissions')}
+        className="w-full border bg-white hover:bg-[#F6F7F8] rounded-xl font-semibold text-slate-700 text-[13.5px]"
+        style={{ minHeight: 46, borderColor: '#E4E6EA' }}>ดูสถานะใบที่ส่งแล้ว →</button>
     </div>
   );
   if (entries.length === 0) return (
-    <div className="space-y-4"><div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบ</h2></div>
-      <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><ClipboardCheck className="mx-auto text-[#E4E6EA] mb-2" size={48}/><div className="text-slate-500 mb-4">ยังไม่ได้นับสินค้า</div><button onClick={() => setView('count')} className="bg-[#35706A] hover:bg-[#2A5A55] text-white px-4 py-2 rounded-lg text-sm font-medium">ไปหน้านับสต็อก</button></div>
+    <div className="space-y-3">
+      <h2 className="text-xl font-bold text-slate-800">ตรวจสอบและส่ง</h2>
+      <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
+        <ClipboardCheck className="mx-auto text-[#E4E6EA] mb-2" size={38} />
+        <div className="text-[13px] text-slate-500 mb-3">ยังไม่ได้นับสินค้า</div>
+        <button onClick={() => setView('count')}
+          className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#35706A' }}>ไปหน้านับสต็อก</button>
+      </div>
     </div>
   );
+  const found = grouped.filter(g => !g.notFound), missing = grouped.filter(g => g.notFound);
   return (
-    <div className="space-y-4">
-      <div><h2 className="text-2xl font-bold text-slate-800">ตรวจสอบและส่ง</h2><p className="text-sm text-slate-500">รวมบาร์โค้ดซ้ำ ตรวจก่อนส่งผู้จัดการ</p></div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-2xl font-bold text-slate-800">{totalItems}</div></div>
-        <div className="bg-white border border-[#E4E6EA] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-2xl font-bold text-[#35706A]">{totalQty.toLocaleString()}</div></div>
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">ตรวจสอบและส่ง</h2>
+        <p className="text-[12px] text-slate-500 mt-0.5">บาร์โค้ดเดียวกันรวมเป็นบรรทัดเดียว — แก้จำนวนได้ที่นี่</p>
       </div>
-      {grouped.filter(g=>!g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden"><div className="px-4 py-3 border-b border-[#E4E6EA] bg-[#F6F7F8] flex justify-between items-center"><div className="flex items-center gap-2"><CheckCircle2 size={14} className="text-[#35706A]"/><h3 className="font-semibold text-slate-800 text-sm">พบในระบบ ({grouped.filter(g=>!g.notFound).length} รายการ)</h3></div><button onClick={()=>setView('count')} className="text-xs text-[#35706A] hover:underline">← แก้ไข</button></div><div className="divide-y divide-[#F6F7F8] max-h-56 overflow-y-auto">{grouped.filter(g=>!g.notFound).map(g=><GroupedRow key={g.barcode} g={g} onEditQty={editQty}/>)}</div></div>}
-      {grouped.filter(g=>g.notFound).length>0&&<div className="bg-white rounded-xl border border-[#FDE68A] overflow-hidden"><div className="px-4 py-3 border-b border-[#FDE68A] bg-[#FFFBEB] flex items-center gap-2"><AlertCircle size={14} className="text-[#B45309]"/><h3 className="font-semibold text-[#B45309] text-sm">ไม่พบในระบบ ({grouped.filter(g=>g.notFound).length} รายการ)</h3></div><div className="divide-y divide-[#FFFBEB] max-h-56 overflow-y-auto">{grouped.filter(g=>g.notFound).map(g=><GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty}/>)}</div></div>}
-      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4"><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว..." rows={2} className="w-full px-3 py-2 border border-[#E4E6EA] rounded-lg outline-none focus:ring-2 focus:ring-[#35706A] text-sm resize-none"/></div>
+
+      <div className="bg-white border rounded-xl grid grid-cols-2 divide-x" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3 py-2.5">
+          <div className="text-[10.5px] text-slate-500">บาร์โค้ด</div>
+          <div className="text-xl font-bold text-slate-800 tabular-nums">{totalItems}</div>
+        </div>
+        <div className="px-3 py-2.5" style={{ borderColor: '#EEF0F3' }}>
+          <div className="text-[10.5px] text-slate-500">รวมจำนวน</div>
+          <div className="text-xl font-bold tabular-nums" style={{ color: '#35706A' }}>{totalQty.toLocaleString('th-TH')}</div>
+        </div>
+      </div>
+
+      {found.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+          <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ background: '#EAF1F0', borderColor: '#D5E5E2' }}>
+            <CheckCircle2 size={13} style={{ color: '#2A5A55' }} className="shrink-0" />
+            <span className="text-[11.5px] font-bold" style={{ color: '#2A5A55' }}>พบในระบบ · {found.length} รายการ</span>
+            <button onClick={() => setView('count')} className="ml-auto text-[11px] font-semibold shrink-0" style={{ color: '#35706A' }}>← กลับไปนับ</button>
+          </div>
+          <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: '#F6F7F8' }}>
+            {found.map(g => <GroupedRow key={g.barcode} g={g} onEditQty={editQty} />)}
+          </div>
+        </div>
+      )}
+
+      {missing.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#FDE68A' }}>
+          <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <AlertCircle size={13} style={{ color: '#B45309' }} className="shrink-0" />
+            <span className="text-[11.5px] font-bold" style={{ color: '#B45309' }}>ไม่พบในระบบ · {missing.length} รายการ</span>
+          </div>
+          <div className="divide-y max-h-56 overflow-y-auto" style={{ borderColor: '#FFFBEB' }}>
+            {missing.map(g => <GroupedRow key={g.barcode} g={g} highlight onEditQty={editQty} />)}
+          </div>
+          <div className="px-3 py-2 text-[10.5px] leading-relaxed" style={{ background: '#FFFBEB', color: '#B45309' }}>
+            ส่งไปได้ — ผู้จัดการจะเป็นคนจับคู่รหัสสินค้าให้
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border p-3" style={{ borderColor: '#E4E6EA' }}>
+        <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">หมายเหตุถึงผู้จัดการ (ไม่บังคับ)</label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="เช่น นับโซน A ชั้น 1-3 เสร็จแล้ว"
+          className="w-full px-3 py-2 border rounded-lg outline-none focus:border-[#35706A] text-[13px] resize-none"
+          style={{ borderColor: '#E2E8F0' }} />
+      </div>
+
       {!confirming ? (
-        <button onClick={handleSubmit} className="w-full bg-[#35706A] hover:bg-[#2A5A55] text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg"><Send size={20}/>ส่งให้ผู้จัดการรีวิว</button>
+        <button onClick={handleSubmit}
+          className="w-full text-white font-bold text-[15.5px] rounded-xl flex items-center justify-center gap-2"
+          style={{ minHeight: 54, background: '#35706A', boxShadow: '0 2px 0 #2A5A55' }}><Send size={19} />ส่งให้ผู้จัดการรีวิว</button>
       ) : (
         <div className="space-y-3">
           <div className="text-[11px] font-bold tracking-wide text-[#B45309]">ยืนยันก่อนส่ง</div>
@@ -1125,28 +1220,103 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
 
 function MySubmissionsView({ submissions, setView }) {
   const [expanded, setExpanded] = useState(null);
-  const statusConfig = { pending:{label:'รอรีวิว',color:'bg-[#FFFBEB] text-[#B45309]',icon:Clock}, approved:{label:'อนุมัติแล้ว',color:'bg-[#F0FDF4] text-[#15803D]',icon:ThumbsUp}, rejected:{label:'ส่งกลับแก้ไข',color:'bg-[#FEF2F2] text-[#B91C1C]',icon:ThumbsDown} };
+  const CFG = {
+    pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
+    approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
+    rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
+  };
+  const counts = submissions.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
+
   return (
-    <div className="space-y-4">
-      <div><h2 className="text-2xl font-bold text-slate-800">รายการที่ส่งแล้ว</h2><p className="text-sm text-slate-500">ติดตามสถานะการรีวิว</p></div>
-      {submissions.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><Send className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500 mb-3">ยังไม่มีรายการที่ส่ง</div><button onClick={()=>setView('count')} className="bg-[#35706A] hover:bg-[#2A5A55] text-white px-4 py-2 rounded-lg text-sm font-medium">ไปนับสต็อก</button></div> : (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
+          <p className="text-[12px] text-slate-500 mt-0.5">ส่งแล้วแก้ไม่ได้ — ถ้าผิดผู้จัดการจะส่งกลับมา</p>
+        </div>
+        <div className="text-[11.5px] text-slate-400 shrink-0">{submissions.length} ใบ</div>
+      </div>
+
+      {submissions.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {['pending', 'approved', 'rejected'].map(k => (
+            <div key={k} className="rounded-xl px-2.5 py-2 border" style={{ background: CFG[k].soft, borderColor: CFG[k].line }}>
+              <div className="text-[10px] font-semibold leading-tight" style={{ color: CFG[k].ink }}>{CFG[k].label}</div>
+              <div className="text-lg font-bold tabular-nums mt-0.5" style={{ color: CFG[k].ink }}>{counts[k] || 0}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {submissions.length === 0 ? (
+        <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
+          <Send className="mx-auto text-[#E4E6EA] mb-2" size={34} />
+          <div className="text-[13px] text-slate-500 mb-3">ยังไม่มีใบที่ส่ง</div>
+          <button onClick={() => setView('count')}
+            className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#35706A' }}>ไปนับสต็อก</button>
+        </div>
+      ) : (
         <div className="space-y-2">
           {submissions.map(s => {
-            const cfg = statusConfig[s.status]||statusConfig.pending; const Icon = cfg.icon;
+            const cfg = CFG[s.status] || CFG.pending; const Icon = cfg.icon; const open = expanded === s.id;
             return (
-              <div key={s.id} className="bg-white rounded-xl border border-[#E4E6EA] overflow-hidden">
-                <div className="p-3">
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${cfg.color}`}><Icon size={18}/></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.label}</span><span className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</span></div>
-                      <div className="flex gap-4 mt-1 text-xs text-slate-600"><span><strong>{s.itemCount}</strong> บาร์โค้ด</span><span><strong>{s.totalQty.toLocaleString()}</strong> ชิ้น</span></div>
-                      {s.note&&<div className="text-xs text-slate-500 mt-1 italic">"{s.note}"</div>}
-                      {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>{s.reviewedBy}:</strong> {s.reviewNote}</div>}
+              <div key={s.id} className="bg-white rounded-xl overflow-hidden border" style={{ borderColor: cfg.line }}>
+                <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: cfg.soft, borderColor: cfg.line }}>
+                  <Icon size={14} style={{ color: cfg.ink }} className="shrink-0" />
+                  <span className="text-[11.5px] font-bold" style={{ color: cfg.ink }}>{cfg.label}</span>
+                  <span className="ml-auto text-[10.5px] tabular-nums text-slate-500 shrink-0">
+                    {new Date(s.submittedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                </div>
+
+                <div className="p-3 space-y-2.5">
+                  {s.docNo && <div className="text-[13.5px] font-bold text-slate-800 tabular-nums">{s.docNo}</div>}
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                      <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount}</div>
+                    </div>
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                      <div className="text-[10px] text-slate-500">รวมจำนวน</div>
+                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.totalQty.toLocaleString('th-TH')}</div>
                     </div>
                   </div>
-                  <button onClick={()=>setExpanded(expanded===s.id?null:s.id)} className="w-full mt-2 pt-2 border-t border-[#F6F7F8] text-xs text-slate-500 hover:text-slate-700">{expanded===s.id?'▲ ซ่อนรายการ':'▼ ดูรายการ'}</button>
-                  {expanded===s.id&&<div className="mt-2 bg-[#F6F7F8] rounded-lg p-2 font-mono text-xs max-h-48 overflow-y-auto">{s.data.map((d,i)=><div key={i} className="text-slate-700">{d.barcode} — {d.productName} — <strong>{d.qty}</strong>{d.location?' ('+d.location+')':''}</div>)}</div>}
+
+                  {s.note && <div className="text-[11.5px] text-slate-500 leading-relaxed">หมายเหตุที่ส่งไป: “{s.note}”</div>}
+
+                  {s.status !== 'pending' && s.reviewNote && (
+                    <div className="rounded-lg p-2.5 border" style={{ background: cfg.soft, borderColor: cfg.line }}>
+                      <div className="text-[10px] font-bold" style={{ color: cfg.ink }}>{s.reviewedBy || 'ผู้จัดการ'}</div>
+                      <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: cfg.ink }}>{s.reviewNote}</div>
+                    </div>
+                  )}
+
+                  {s.status === 'rejected' && (
+                    <button onClick={() => setView('count')}
+                      className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
+                      นับใหม่ตามที่แจ้ง
+                    </button>
+                  )}
+
+                  <button onClick={() => setExpanded(open ? null : s.id)}
+                    className="w-full pt-2 border-t text-[11.5px] font-semibold text-slate-500 hover:text-slate-700"
+                    style={{ borderColor: '#F6F7F8' }}>
+                    {open ? 'ซ่อนรายการที่นับ' : `ดูรายการที่นับ (${s.data?.length || 0})`}
+                  </button>
+
+                  {open && (
+                    <div className="rounded-lg divide-y max-h-56 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
+                      {s.data.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-800 truncate">{d.productName}</div>
+                            <div className="text-[10px] text-slate-400 tabular-nums truncate">{d.barcode}{d.location ? ' · ' + d.location : ''}</div>
+                          </div>
+                          <div className="text-[13px] font-bold text-slate-800 tabular-nums shrink-0">{d.qty}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1158,7 +1328,7 @@ function MySubmissionsView({ submissions, setView }) {
 }
 
 function PDFDownloadButton({ sub }) {
-  return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-rose-50 hover:bg-rose-100 rounded text-rose-700 font-medium"><Download size={12}/>PDF</button>;
+  return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#FEF2F2] hover:bg-[#FECACA] rounded text-[#B91C1C] font-medium"><Download size={12}/>PDF</button>;
 }
 
 function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
@@ -1171,7 +1341,6 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [rejectError, setRejectError] = useState('');
   const filtered = submissions.filter(s => s.status === tab);
-  const statusConfig = { pending:{label:'รอรีวิว',color:'text-[#B45309]'}, approved:{label:'อนุมัติแล้ว',color:'text-[#15803D]'}, rejected:{label:'ส่งกลับ',color:'text-[#B91C1C]'} };
   const DRIVE_FOLDER = feature === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
   const handleApprove = () => { onReview(selected.id,'approved',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
   const handleReject = () => { if(!reviewNote.trim()){setRejectError('กรุณาใส่เหตุผลก่อนส่งกลับ');return;} onReview(selected.id,'rejected',reviewNote); setSelected(null); setReviewNote(''); setRejectError(''); };
@@ -1201,66 +1370,222 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
     setDriveSaving(null);
   };
 
+  const STAT = {
+    pending:  { label: 'รอรีวิว',    soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309' },
+    approved: { label: 'อนุมัติแล้ว', soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D' },
+    rejected: { label: 'ส่งกลับ',    soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C' },
+  };
+
   return (
-    <div className="space-y-4">
-      <div><h2 className="text-2xl font-bold text-slate-800">รีวิว Recorder</h2><p className="text-sm text-slate-500">ตรวจสอบและอนุมัติ / ส่งกลับ</p></div>
-      <div className="flex border-b border-[#E4E6EA]">
-        {['pending','approved','rejected'].map(t => { const cnt = submissions.filter(s=>s.status===t).length; return <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-2.5 text-sm font-medium ${tab===t?'text-[#0F172A] border-b-2 border-[#0F172A]':'text-slate-500'}`}>{statusConfig[t].label}{cnt>0&&<span className={`ml-1 text-xs font-bold ${statusConfig[t].color}`}>({cnt})</span>}</button>; })}
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">กล่องขาเข้า</h2>
+        <p className="text-[12px] text-slate-500 mt-0.5">อนุมัติหรือส่งกลับ — ส่งกลับต้องบอกเหตุผล</p>
       </div>
-      {filtered.length === 0 ? <div className="bg-white rounded-xl p-8 text-center border border-[#E4E6EA]"><Inbox className="mx-auto text-[#E4E6EA] mb-2" size={40}/><div className="text-slate-500">ไม่มีรายการ{statusConfig[tab].label}</div></div> : (
+
+      <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        {['pending', 'approved', 'rejected'].map(k => {
+          const cnt = submissions.filter(s => s.status === k).length, on = tab === k;
+          return (
+            <button key={k} onClick={() => setTab(k)} className="flex-1 py-2.5 text-[12px] font-bold border-b-2"
+              style={on ? { color: STAT[k].ink, background: STAT[k].soft, borderColor: STAT[k].ink }
+                        : { color: '#64748B', borderColor: 'transparent' }}>
+              {STAT[k].label}{cnt > 0 && <span className="tabular-nums"> {cnt}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
+          <Inbox className="mx-auto text-[#E4E6EA] mb-2" size={34} />
+          <div className="text-[13px] text-slate-500">ไม่มีใบ{STAT[tab].label}</div>
+        </div>
+      ) : (
         <div className="space-y-2">
-          {filtered.map(s => (
-            <div key={s.id} className="bg-white rounded-xl border border-[#E4E6EA] p-3">
-              <div className="flex items-center gap-2"><span className="text-xs font-mono font-bold text-[#0F172A] bg-[#F6F7F8] px-2 py-0.5 rounded">{s.docNo||'—'}</span><span className="font-semibold text-slate-800">{s.counter}</span></div>
-              <div className="grid grid-cols-2 gap-x-3 mt-1">
-                <div><div className="text-[10px] text-slate-400">เริ่มนับ (window start)</div><div className="text-xs font-mono text-blue-700 font-semibold">{s.startedAt?new Date(s.startedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'}</div></div>
-                <div><div className="text-[10px] text-slate-400">ส่งงาน (window end)</div><div className="text-xs font-mono text-slate-600 font-semibold">{new Date(s.submittedAt).toLocaleString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
-              </div>
-              <div className="flex gap-4 mt-1 text-sm"><span className="text-slate-700"><strong>{s.itemCount}</strong> บาร์โค้ด</span><span className="text-[#2A5A55] font-semibold">{s.totalQty.toLocaleString()} ชิ้น</span></div>
-              {s.note&&<div className="text-xs text-slate-500 mt-1 italic bg-[#F6F7F8] rounded p-1.5">"{s.note}"</div>}
-              {s.status!=='pending'&&s.reviewNote&&<div className={`mt-2 text-xs p-2 rounded-lg ${s.status==='approved'?'bg-[#F0FDF4] text-[#15803D]':'bg-[#FEF2F2] text-[#B91C1C]'}`}><strong>หมายเหตุ:</strong> {s.reviewNote}</div>}
-              <div className="flex flex-wrap gap-2 mt-3 pt-2 border-t border-[#F6F7F8]">
-                <button onClick={()=>setExpandedId(expandedId===s.id?null:s.id)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#F6F7F8] hover:bg-[#F6F7F8] rounded text-slate-600 font-medium"><FileSpreadsheet size={12}/>{expandedId===s.id?'ซ่อน':'ดูรายการ'}</button>
-                <PDFDownloadButton sub={s}/>
-                {s.status==='approved'&&(() => {
-                  const key = `${s.id}_csv`;
-                  const res = driveResult[key];
-                  const saving = driveSaving === key;
-                  return (
-                    <>
-                      <button onClick={()=>uploadToDrive(s,'csv')} disabled={saving} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 rounded text-blue-700 font-medium disabled:opacity-60">
-                        {saving?<RefreshCw size={12} className="animate-spin"/>:<Upload size={12}/>}
-                        {saving?'กำลังอัปโหลด...':(res?.ok?'✓ Drive':'☁️ Upload Drive')}
-                      </button>
-                      {res?.ok&&res.link&&<a href={res.link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 underline self-center">เปิด</a>}
-                      {res&&!res.ok&&<span className="text-[10px] text-[#B91C1C] self-center">✗ {res.err}</span>}
-                    </>
-                  );
-                })()}
-                {s.status==='pending'&&<button onClick={()=>{setSelected(s);setReviewNote('');}} className="flex-1 py-1.5 bg-[#0F172A] hover:bg-[#0F172A] text-white rounded text-xs font-semibold">รีวิว →</button>}
-                {confirmDelete===s.id?<div className="flex items-center gap-1"><span className="text-[10px] text-[#B91C1C] font-medium">ลบ?</span><button onClick={()=>{onDelete(s.id);setConfirmDelete(null);}} className="px-2 py-1 bg-[#B91C1C] text-white text-[10px] rounded font-bold">ใช่</button><button onClick={()=>setConfirmDelete(null)} className="px-2 py-1 bg-[#F6F7F8] text-slate-600 text-[10px] rounded">ยกเลิก</button></div>:<button onClick={()=>setConfirmDelete(s.id)} className="p-1.5 bg-[#FEF2F2] hover:bg-[#FEF2F2] text-[#B91C1C] rounded" title="ลบ"><Trash2 size={14}/></button>}
-              </div>
-              {expandedId===s.id&&(
-                <div className="mt-2 pt-2 border-t border-[#F6F7F8]">
-                  <div className="bg-[#F6F7F8] rounded-lg p-2 max-h-40 overflow-y-auto divide-y divide-[#F6F7F8]">
-                    {s.data.map((d,i)=><div key={i} className="py-1.5 px-1 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-700">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400">{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] ml-3 flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}
-                  </div>
+          {filtered.map(s => {
+            const st = STAT[s.status] || STAT.pending;
+            const open = expandedId === s.id;
+            return (
+              <div key={s.id} className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: st.line }}>
+                <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: st.soft, borderColor: st.line }}>
+                  <span className="text-[11.5px] font-bold tabular-nums" style={{ color: st.ink }}>{s.docNo || '—'}</span>
+                  <span className="ml-auto text-[11px] font-semibold text-slate-700 truncate">{s.counter}</span>
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div className="p-3 space-y-2.5">
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                      <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount}</div>
+                    </div>
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#EAF1F0' }}>
+                      <div className="text-[10px]" style={{ color: '#2A5A55' }}>รวมจำนวน</div>
+                      <div className="text-base font-bold tabular-nums" style={{ color: '#2A5A55' }}>{s.totalQty.toLocaleString('th-TH')}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 rounded-lg px-2.5 py-2" style={{ background: '#F6F7F8' }}>
+                    <div>
+                      <div className="text-[9.5px] text-slate-400">เริ่มนับ</div>
+                      <div className="text-[11px] font-semibold text-slate-700 tabular-nums">
+                        {s.startedAt ? new Date(s.startedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9.5px] text-slate-400">ส่งงาน</div>
+                      <div className="text-[11px] font-semibold text-slate-700 tabular-nums">
+                        {new Date(s.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {s.note && <div className="text-[11.5px] text-slate-500 leading-relaxed">พนักงานแจ้ง: “{s.note}”</div>}
+
+                  {s.status !== 'pending' && s.reviewNote && (
+                    <div className="rounded-lg p-2.5 border" style={{ background: st.soft, borderColor: st.line }}>
+                      <div className="text-[10px] font-bold" style={{ color: st.ink }}>หมายเหตุที่คุณเขียน</div>
+                      <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: st.ink }}>{s.reviewNote}</div>
+                    </div>
+                  )}
+
+                  {s.status === 'pending' && (
+                    <button onClick={() => { setSelected(s); setReviewNote(''); }}
+                      className="w-full text-white font-bold text-[14px] rounded-xl"
+                      style={{ minHeight: 46, background: '#0F172A' }}>เปิดรีวิว →</button>
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t" style={{ borderColor: '#F6F7F8' }}>
+                    <button onClick={() => setExpandedId(open ? null : s.id)}
+                      className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-semibold text-slate-600"
+                      style={{ minHeight: 36, background: '#F6F7F8' }}>
+                      <FileSpreadsheet size={12} />{open ? 'ซ่อนรายการ' : `รายการ (${s.data?.length || 0})`}
+                    </button>
+                    <PDFDownloadButton sub={s} />
+                    {s.status === 'approved' && (() => {
+                      const key = `${s.id}_csv`, res = driveResult[key], saving = driveSaving === key;
+                      return (
+                        <>
+                          <button onClick={() => uploadToDrive(s, 'csv')} disabled={saving}
+                            className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-semibold disabled:opacity-60"
+                            style={{ minHeight: 36, background: '#EAF0F4', color: '#255771' }}>
+                            {saving ? <RefreshCw size={12} className="animate-spin" /> : <Upload size={12} />}
+                            {saving ? 'กำลังอัปโหลด' : res?.ok ? 'ขึ้น Drive แล้ว' : 'ส่งขึ้น Drive'}
+                          </button>
+                          {res?.ok && res.link && <a href={res.link} target="_blank" rel="noopener noreferrer" className="text-[10.5px] font-semibold self-center underline" style={{ color: '#255771' }}>เปิด</a>}
+                          {res && !res.ok && <span className="text-[10px] self-center" style={{ color: '#B91C1C' }}>ไม่สำเร็จ: {res.err}</span>}
+                        </>
+                      );
+                    })()}
+                    {confirmDelete === s.id ? (
+                      <div className="flex items-center gap-1 ml-auto">
+                        <span className="text-[10.5px] font-semibold" style={{ color: '#B91C1C' }}>ลบใบนี้?</span>
+                        <button onClick={() => { onDelete(s.id); setConfirmDelete(null); }}
+                          className="px-2.5 rounded-lg text-[10.5px] font-bold text-white" style={{ minHeight: 32, background: '#B91C1C' }}>ลบ</button>
+                        <button onClick={() => setConfirmDelete(null)}
+                          className="px-2.5 rounded-lg text-[10.5px] font-semibold text-slate-600" style={{ minHeight: 32, background: '#F6F7F8' }}>ยกเลิก</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmDelete(s.id)} title="ลบใบนี้"
+                        className="ml-auto rounded-lg flex items-center justify-center"
+                        style={{ width: 36, height: 36, background: '#FEF2F2', color: '#B91C1C' }}><Trash2 size={14} /></button>
+                    )}
+                  </div>
+
+                  {open && (
+                    <div className="rounded-lg divide-y max-h-52 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
+                      {s.data.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-800 truncate">{d.productName}</div>
+                            <div className="text-[10px] text-slate-400 tabular-nums truncate">{d.barcode}{d.location ? ' · ' + d.location : ''}</div>
+                          </div>
+                          <div className="text-[13px] font-bold text-slate-800 tabular-nums shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-      {selected&&(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-[#E4E6EA] flex justify-between items-center sticky top-0 bg-white"><div><h3 className="font-semibold text-slate-800">รีวิว Recorder</h3><p className="text-xs text-slate-500">{selected.counter} • {new Date(selected.submittedAt).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}</p></div><button onClick={()=>setSelected(null)}><X size={20}/></button></div>
-            <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2"><div className="bg-[#F6F7F8] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">บาร์โค้ด</div><div className="text-xl font-bold text-slate-800">{selected.itemCount}</div></div><div className="bg-[#EAF1F0] rounded-lg p-3 text-center"><div className="text-xs text-slate-500">จำนวนรวม</div><div className="text-xl font-bold text-[#35706A]">{selected.totalQty.toLocaleString()}</div></div></div>
-              {selected.note&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800"><strong>หมายเหตุ:</strong> {selected.note}</div>}
-              <div className="bg-white border border-[#E4E6EA] rounded-xl overflow-hidden"><div className="px-3 py-2 bg-[#F6F7F8] border-b border-[#E4E6EA] text-xs font-semibold text-slate-600">รายการ ({selected.data.length})</div><div className="max-h-48 overflow-y-auto divide-y divide-[#F6F7F8]">{selected.data.map((d,i)=><div key={i} className="px-3 py-2 flex justify-between items-center"><div className="flex-1 min-w-0"><div className="font-mono text-xs text-slate-500">{d.barcode}</div><div className="text-xs font-semibold text-slate-800 truncate">{d.productName}</div>{d.location&&<div className="text-[10px] text-slate-400 flex items-center gap-1"><MapPin size={10}/>{d.location}</div>}</div><div className="text-sm font-bold text-[#35706A] flex-shrink-0">{d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span></div></div>)}</div></div>
-              <div><label className="text-sm font-medium text-slate-700 mb-1 block">หมายเหตุ / เหตุผล <span className="text-[#B91C1C] text-xs">(บังคับถ้าส่งกลับ)</span></label><textarea value={reviewNote} onChange={e=>{setReviewNote(e.target.value);setRejectError('');}} placeholder="เพิ่มหมายเหตุ..." rows={2} className={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-[#0F172A] text-sm resize-none ${rejectError?'border-red-400 bg-[#FEF2F2]':'border-[#E4E6EA]'}`}/>{rejectError&&<div className="text-xs text-[#B91C1C] mt-1 flex items-center gap-1"><XCircle size={12}/>{rejectError}</div>}</div>
-              <div className="flex gap-2"><button onClick={handleReject} className="flex-1 py-3 bg-[#B91C1C] hover:bg-[#B91C1C] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsDown size={16}/>ส่งกลับแก้ไข</button><button onClick={handleApprove} className="flex-1 py-3 bg-[#15803D] hover:bg-[#15803D] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"><ThumbsUp size={16}/>อนุมัติ</button></div>
+
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="px-4 py-3 border-b flex justify-between items-start gap-2 sticky top-0 bg-white" style={{ borderColor: '#E4E6EA' }}>
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px]">รีวิวใบนับ</h3>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {selected.docNo ? selected.docNo + ' · ' : ''}{selected.counter}
+                </p>
+              </div>
+              <button onClick={() => setSelected(null)} className="shrink-0 rounded-lg flex items-center justify-center text-slate-500"
+                style={{ width: 36, height: 36, background: '#F6F7F8' }}><X size={17} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex gap-2">
+                <div className="flex-1 rounded-xl px-3 py-2.5 text-center" style={{ background: '#F6F7F8' }}>
+                  <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+                  <div className="text-xl font-bold text-slate-800 tabular-nums">{selected.itemCount}</div>
+                </div>
+                <div className="flex-1 rounded-xl px-3 py-2.5 text-center" style={{ background: '#EAF1F0' }}>
+                  <div className="text-[10px]" style={{ color: '#2A5A55' }}>รวมจำนวน</div>
+                  <div className="text-xl font-bold tabular-nums" style={{ color: '#2A5A55' }}>{selected.totalQty.toLocaleString('th-TH')}</div>
+                </div>
+              </div>
+
+              {selected.note && (
+                <div className="rounded-xl p-3 border" style={{ background: '#EAF0F4', borderColor: '#B9CFDC' }}>
+                  <div className="text-[10px] font-bold" style={{ color: '#255771' }}>พนักงานแจ้ง</div>
+                  <div className="text-[12px] mt-0.5 leading-relaxed" style={{ color: '#255771' }}>{selected.note}</div>
+                </div>
+              )}
+
+              <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                <div className="px-3 py-2 border-b text-[11.5px] font-bold text-slate-600" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>
+                  รายการที่นับ · {selected.data.length}
+                </div>
+                <div className="max-h-52 overflow-y-auto divide-y" style={{ borderColor: '#F6F7F8' }}>
+                  {selected.data.map((d, i) => (
+                    <div key={i} className="px-3 py-2 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-semibold text-slate-800 truncate">{d.productName}</div>
+                        <div className="text-[10px] text-slate-400 tabular-nums truncate">
+                          {d.barcode}{d.location ? ' · ' + d.location : ''}
+                        </div>
+                      </div>
+                      <div className="text-[13.5px] font-bold text-slate-800 tabular-nums shrink-0">
+                        {d.qty}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{d.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[12px] font-semibold text-slate-700 mb-1.5 block">
+                  หมายเหตุถึงพนักงาน <span style={{ color: '#B91C1C' }}>(บังคับถ้าส่งกลับ)</span>
+                </label>
+                <textarea value={reviewNote} onChange={e => { setReviewNote(e.target.value); setRejectError(''); }} rows={2}
+                  placeholder="เช่น โซน A ยังไม่ครบ นับชั้นล่างด้วย"
+                  className="w-full px-3 py-2 border rounded-lg outline-none text-[13px] resize-none"
+                  style={rejectError ? { borderColor: '#B91C1C', background: '#FEF2F2' } : { borderColor: '#E2E8F0' }} />
+                {rejectError && (
+                  <div className="text-[11px] mt-1 flex items-center gap-1" style={{ color: '#B91C1C' }}>
+                    <XCircle size={12} />{rejectError}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={handleReject} className="flex-1 text-white rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-1.5"
+                  style={{ minHeight: 50, background: '#B91C1C' }}><ThumbsDown size={16} />ส่งกลับแก้</button>
+                <button onClick={handleApprove} className="flex-1 text-white rounded-xl font-bold text-[13.5px] flex items-center justify-center gap-1.5"
+                  style={{ minHeight: 50, background: '#15803D' }}><ThumbsUp size={16} />อนุมัติ</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1268,25 +1593,97 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature }) {
     </div>
   );
 }
-
 function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt, pendingCount }) {
-  const pending = submissions.filter(s=>s.status==='pending');
-  const approved = submissions.filter(s=>s.status==='approved');
+  const pending = submissions.filter(s => s.status === 'pending');
+  const approved = submissions.filter(s => s.status === 'approved');
+  const rejected = submissions.filter(s => s.status === 'rejected');
   const today = new Date().toDateString();
-  const todaySubmissions = submissions.filter(s=>new Date(s.submittedAt).toDateString()===today);
+  const todayCount = submissions.filter(s => new Date(s.submittedAt).toDateString() === today).length;
+  const STAT = {
+    pending:  { soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', label: 'รอรีวิว' },
+    approved: { soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', label: 'อนุมัติ' },
+    rejected: { soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', label: 'ส่งกลับ' },
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2"><div><h2 className="text-2xl font-bold text-slate-800">แดชบอร์ด</h2><p className="text-sm text-slate-500">ภาพรวมระบบ</p></div><button onClick={()=>setView('settings')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${isSupabaseReady?'bg-[#EAF1F0] border-[#B6D0CC] text-[#2A5A55]':'bg-[#FEF2F2] border-[#FECACA] text-[#B91C1C]'}`}><Cloud size={12}/>{isSupabaseReady?'Supabase':'ยังไม่ได้ตั้งค่า'}</button></div>
-      {pendingCount>0&&<button onClick={()=>setView('inbox')} className="w-full bg-[#FFFBEB] border-2 border-[#FDE68A] rounded-xl p-4 flex items-center gap-3 text-left hover:bg-[#FFFBEB] transition-colors"><div className="bg-[#B45309] text-white p-2 rounded-lg"><Inbox size={20}/></div><div className="flex-1"><div className="font-semibold text-[#B45309]">มี {pendingCount} รายการรอรีวิว</div><div className="text-xs text-[#B45309]">คลิกเพื่อตรวจสอบ</div></div><ArrowRight size={18} className="text-[#B45309]"/></button>}
-      <div className="grid grid-cols-2 gap-3">
-        {[{label:'รอรีวิว',value:pending.length,color:'amber'},{label:'อนุมัติแล้ว',value:approved.length,color:'green'},{label:'ส่งวันนี้',value:todaySubmissions.length,color:'indigo'},{label:'สินค้า cache',value:products.length.toLocaleString(),color:'slate'}].map(c=>(
-          <div key={c.label} className={`rounded-xl p-3 border ${c.color==='amber'?'bg-[#FFFBEB] text-[#B45309] border-[#FFFBEB]':c.color==='green'?'bg-[#F0FDF4] text-[#15803D] border-[#F0FDF4]':c.color==='indigo'?'bg-[#F6F7F8] text-[#0F172A] border-[#F6F7F8]':'bg-[#F6F7F8] text-slate-700 border-[#E4E6EA]'}`}><div className="text-xs opacity-75">{c.label}</div><div className="text-xl font-bold mt-1">{c.value}</div></div>
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">แดชบอร์ด</h2>
+          <p className="text-[12px] text-slate-500 mt-0.5">ภาพรวมใบนับที่พนักงานส่งเข้ามา</p>
+        </div>
+        <button onClick={() => setView('settings')}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold border shrink-0"
+          style={isSupabaseReady
+            ? { background: '#EAF1F0', borderColor: '#B6D0CC', color: '#2A5A55' }
+            : { background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+          <Cloud size={11} />{isSupabaseReady ? 'เซิร์ฟเวอร์พร้อม' : 'ยังไม่ตั้งค่า'}
+        </button>
+      </div>
+
+      {pendingCount > 0 && (
+        <button onClick={() => setView('inbox')}
+          className="w-full rounded-xl p-3.5 flex items-center gap-3 text-left border-2"
+          style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+          <div className="text-white p-2 rounded-lg shrink-0" style={{ background: '#B45309' }}><Inbox size={19} /></div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-bold" style={{ color: '#B45309' }}>{pendingCount} ใบรอคุณรีวิว</div>
+            <div className="text-[11.5px] mt-0.5" style={{ color: '#B45309' }}>พนักงานรอผลอยู่ — กดเพื่อเปิดกล่องขาเข้า</div>
+          </div>
+          <ArrowRight size={17} className="shrink-0" style={{ color: '#B45309' }} />
+        </button>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        {[['pending', pending.length], ['approved', approved.length], ['rejected', rejected.length]].map(([k, v]) => (
+          <div key={k} className="rounded-xl px-2.5 py-2.5 border" style={{ background: STAT[k].soft, borderColor: STAT[k].line }}>
+            <div className="text-[10px] font-semibold" style={{ color: STAT[k].ink }}>{STAT[k].label}</div>
+            <div className="text-xl font-bold tabular-nums mt-0.5" style={{ color: STAT[k].ink }}>{v}</div>
+          </div>
         ))}
       </div>
-      <div className="bg-white rounded-xl p-4 border border-[#E4E6EA]">
-        <div className="flex justify-between items-center mb-3"><h3 className="font-semibold text-slate-800">ส่งล่าสุด</h3>{submissions.length>0&&<button onClick={()=>setView('inbox')} className="text-xs text-[#0F172A] hover:underline">ดูทั้งหมด</button>}</div>
-        {submissions.length===0?<div className="text-center py-6 text-slate-400 text-sm">ยังไม่มีรายการ</div>:(
-          <div className="space-y-2">{submissions.slice(0,5).map(s=><div key={s.id} className="flex items-center gap-3 py-2 border-b border-[#F6F7F8] last:border-0"><div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status==='pending'?'bg-[#B45309]':s.status==='approved'?'bg-[#15803D]':'bg-[#B91C1C]'}`}/><div className="flex-1 min-w-0"><div className="text-sm font-medium text-slate-700">{s.counter}</div><div className="text-xs text-slate-400">{new Date(s.submittedAt).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</div></div><div className="text-right text-xs"><div className="font-semibold text-slate-700">{s.itemCount} • {s.totalQty}</div><div className={s.status==='pending'?'text-[#B45309]':s.status==='approved'?'text-[#15803D]':'text-[#B91C1C]'}>{s.status==='pending'?'รอรีวิว':s.status==='approved'?'อนุมัติ':'ส่งกลับ'}</div></div></div>)}</div>
+
+      <div className="bg-white border rounded-xl grid grid-cols-2 divide-x" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3 py-2.5">
+          <div className="text-[10.5px] text-slate-500">ส่งเข้ามาวันนี้</div>
+          <div className="text-lg font-bold text-slate-800 tabular-nums">{todayCount}</div>
+        </div>
+        <div className="px-3 py-2.5" style={{ borderColor: '#EEF0F3' }}>
+          <div className="text-[10.5px] text-slate-500">สินค้าในเครื่อง</div>
+          <div className="text-lg font-bold text-slate-800 tabular-nums">{products.length.toLocaleString('th-TH')}</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3 py-2.5 border-b flex items-center justify-between" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>
+          <span className="text-[12px] font-bold text-slate-700">ส่งล่าสุด</span>
+          {submissions.length > 0 && (
+            <button onClick={() => setView('inbox')} className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">ดูทั้งหมด →</button>
+          )}
+        </div>
+        {submissions.length === 0 ? (
+          <div className="px-4 py-8 text-center text-[12.5px] text-slate-400">ยังไม่มีใบนับส่งเข้ามา</div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
+            {submissions.slice(0, 5).map(s => {
+              const st = STAT[s.status] || STAT.pending;
+              return (
+                <button key={s.id} onClick={() => setView('inbox')} className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left hover:bg-[#F6F7F8]">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: st.ink }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-800 truncate">{s.counter}</div>
+                    <div className="text-[10.5px] text-slate-400 tabular-nums">
+                      {new Date(s.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[12.5px] font-bold text-slate-800 tabular-nums">{s.itemCount} · {s.totalQty.toLocaleString('th-TH')}</div>
+                    <div className="text-[10.5px] font-semibold" style={{ color: st.ink }}>{st.label}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -1797,6 +2194,301 @@ function ReportView() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function StaffAdminView() {
+  const [staff, setStaff] = useState(null);
+  const [tab, setTab] = useState('active');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [mode, setMode] = useState(null);      // null | 'add' | id ของคนที่เปิดดู
+  const [confirmOff, setConfirmOff] = useState(null);
+  const [form, setForm] = useState({ name: '', dept: 'คลังสินค้า', allow_recorder: true, allow_compare: false, allow_invoice: false });
+  const [saving, setSaving] = useState(false);
+
+  const FEAT_META = [
+    { key: 'allow_recorder', label: 'Recorder', sub: 'นับสต็อกส่งผู้จัดการ', soft: '#EAF1F0', line: '#B6D0CC', ink: '#2A5A55', main: '#35706A' },
+    { key: 'allow_compare',  label: 'นับ+เปรียบเทียบ', sub: 'นับแล้วเทียบกับยอดในระบบ', soft: '#F2EFFA', line: '#D5CAEE', ink: '#5F45A8', main: '#7658C9' },
+    { key: 'allow_invoice',  label: 'สแกนบิล', sub: 'คีย์บิลซื้อด้วยรูป', soft: '#EAF0F4', line: '#B9CFDC', ink: '#255771', main: '#2F6E90' },
+  ];
+  const DEPTS = ['คลังสินค้า', 'หน้าร้าน', 'บัญชี'];
+
+  const load = async () => {
+    setLoading(true); setErr('');
+    try {
+      const res = await fetch('/api/staff');
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'โหลดรายชื่อไม่สำเร็จ');
+      setStaff(j.staff || []);
+    } catch (e) { setErr(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const post = async (body) => {
+    setSaving(true); setErr('');
+    try {
+      const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'บันทึกไม่สำเร็จ');
+      await load();
+      return true;
+    } catch (e) { setErr(e.message); return false; } finally { setSaving(false); }
+  };
+
+  const shown = (staff || []).filter(s => (tab === 'active' ? s.active : !s.active));
+  const opened = mode && mode !== 'add' ? (staff || []).find(s => s.id === mode) : null;
+
+  // ── เพิ่มพนักงาน ────────────────────────────────────────────────
+  if (mode === 'add') return (
+    <div className="space-y-3">
+      <button onClick={() => setMode(null)} className="text-[12px] font-semibold text-slate-500 hover:text-slate-800">‹ กลับรายชื่อ</button>
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">เพิ่มพนักงาน</h2>
+        <p className="text-[12px] text-slate-500 mt-0.5">ไม่ต้องตั้งรหัสผ่าน — ระบบไม่ใช้ล็อกอิน</p>
+      </div>
+
+      <div className="bg-white border rounded-xl p-3 space-y-3" style={{ borderColor: '#E4E6EA' }}>
+        <div>
+          <div className="text-[11.5px] font-semibold text-slate-600 mb-1.5">ชื่อที่ขึ้นหน้าเลือกชื่อ</div>
+          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="สมชาย พ."
+            className="w-full px-3 py-2.5 border rounded-lg outline-none focus:border-[#35706A] text-[15px]"
+            style={{ borderColor: '#E2E8F0' }} />
+          <div className="text-[10.5px] text-slate-400 mt-1">ใช้ชื่อจริง + อักษรย่อนามสกุล เพราะเครื่องรวมกันหลายคน</div>
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold text-slate-600 mb-1.5">แผนก</div>
+          <div className="flex gap-1.5">
+            {DEPTS.map(d => (
+              <button key={d} onClick={() => setForm(f => ({ ...f, dept: d }))}
+                className="flex-1 rounded-lg text-[12px] font-semibold border"
+                style={form.dept === d
+                  ? { minHeight: 42, background: '#0F172A', borderColor: '#0F172A', color: '#fff' }
+                  : { minHeight: 42, background: '#fff', borderColor: '#E2E8F0', color: '#475569' }}>{d}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3 py-2.5 border-b" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>
+          <div className="text-[12px] font-bold text-slate-700">ใช้ฟีเจอร์อะไรได้</div>
+          <div className="text-[10.5px] text-slate-500 mt-0.5">เปิดเท่าที่ต้องใช้ — หน้าเลือกชื่อของฟีเจอร์อื่นจะไม่มีชื่อนี้</div>
+        </div>
+        <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
+          {FEAT_META.map(f => {
+            const on = form[f.key];
+            return (
+              <button key={f.key} onClick={() => setForm(v => ({ ...v, [f.key]: !v[f.key] }))}
+                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ color: on ? f.ink : '#334155' }}>{f.label}</div>
+                  <div className="text-[10.5px] text-slate-400 truncate">{f.sub}</div>
+                </div>
+                <span className="shrink-0 rounded-full border-2 flex items-center justify-center"
+                  style={{ width: 26, height: 26, background: on ? f.main : '#fff', borderColor: on ? f.main : '#CBD5E1' }}>
+                  {on && <Check size={14} color="#fff" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded-xl px-3 py-2.5 text-[12px] flex items-start gap-2 border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />{err}
+        </div>
+      )}
+
+      <button onClick={async () => { if (await post({ action: 'add', ...form })) { setMode(null); setForm({ name: '', dept: 'คลังสินค้า', allow_recorder: true, allow_compare: false, allow_invoice: false }); } }}
+        disabled={!form.name.trim() || saving}
+        className="w-full text-white font-bold text-[15px] rounded-xl disabled:opacity-40 flex items-center justify-center gap-2"
+        style={{ minHeight: 52, background: '#0F172A' }}>
+        {saving ? <><RefreshCw size={17} className="animate-spin" />กำลังบันทึก</> : <><Plus size={17} />เพิ่มเข้ารายชื่อ</>}
+      </button>
+    </div>
+  );
+
+  // ── เปิดดูรายคน ─────────────────────────────────────────────────
+  if (opened) return (
+    <div className="space-y-3">
+      <button onClick={() => { setMode(null); setConfirmOff(null); }} className="text-[12px] font-semibold text-slate-500 hover:text-slate-800">‹ กลับรายชื่อ</button>
+
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: opened.active ? '#E4E6EA' : '#FDE68A' }}>
+        <div className="px-4 py-4 flex items-center gap-3" style={{ background: opened.active ? '#F6F7F8' : '#FFFBEB' }}>
+          <span className="shrink-0 rounded-full flex items-center justify-center text-xl font-bold text-white"
+            style={{ width: 54, height: 54, background: opened.active ? '#35706A' : '#94A3B8' }}>
+            {opened.initial || opened.name.charAt(0)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[17px] font-bold text-slate-800 truncate">{opened.name}</div>
+            <div className="text-[11.5px] text-slate-500 mt-0.5">
+              {opened.dept || 'ไม่ระบุแผนก'} · เข้าทำงาน {opened.joined_at ? new Date(opened.joined_at).toLocaleDateString('th-TH', { month: 'short', year: 'numeric' }) : '—'}
+            </div>
+          </div>
+          {!opened.active && (
+            <span className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: '#FDE68A', color: '#B45309' }}>ปิดใช้งาน</span>
+          )}
+        </div>
+        <div className="p-3 grid grid-cols-2 gap-2">
+          <div className="rounded-xl px-3 py-2.5" style={{ background: '#F6F7F8' }}>
+            <div className="text-[10px] text-slate-500">ใบที่เคยส่ง</div>
+            <div className="text-lg font-bold text-slate-800 tabular-nums">{opened.submission_count ?? 0}</div>
+          </div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: '#F6F7F8' }}>
+            <div className="text-[10px] text-slate-500">ฟีเจอร์ที่เปิด</div>
+            <div className="text-lg font-bold text-slate-800 tabular-nums">{FEAT_META.filter(f => opened[f.key]).length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3 py-2.5 border-b text-[12px] font-bold text-slate-700" style={{ background: '#F6F7F8', borderColor: '#EEF0F3' }}>สิทธิ์การใช้งาน</div>
+        <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
+          {FEAT_META.map(f => {
+            const on = !!opened[f.key];
+            return (
+              <button key={f.key} disabled={saving}
+                onClick={() => post({ action: 'update', id: opened.id, [f.key]: !on })}
+                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left disabled:opacity-60">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ color: on ? f.ink : '#334155' }}>{f.label}</div>
+                  <div className="text-[10.5px] text-slate-400 truncate">{f.sub}</div>
+                </div>
+                <span className="shrink-0 rounded-full border-2 flex items-center justify-center"
+                  style={{ width: 26, height: 26, background: on ? f.main : '#fff', borderColor: on ? f.main : '#CBD5E1' }}>
+                  {on && <Check size={14} color="#fff" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded-xl px-3 py-2.5 text-[12px] flex items-start gap-2 border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />{err}
+        </div>
+      )}
+
+      {opened.active ? (
+        confirmOff === opened.id ? (
+          <div className="space-y-2.5">
+            <div className="rounded-2xl p-4 border-2" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+              <div className="text-[14.5px] font-bold" style={{ color: '#B45309' }}>ปิดการใช้งาน {opened.name}</div>
+              <div className="text-[12px] mt-2 leading-relaxed" style={{ color: '#B45309' }}>
+                • หายจากหน้าเลือกชื่อของทุกเครื่องทันที<br />
+                • ใบ {opened.submission_count ?? 0} ใบที่เคยส่งยังอยู่ครบ ชื่อยังกำกับไว้<br />
+                • เปิดกลับมาได้ทุกเมื่อ ไม่มีอะไรหาย
+              </div>
+            </div>
+            <button onClick={async () => { if (await post({ action: 'setActive', id: opened.id, active: false })) setConfirmOff(null); }}
+              disabled={saving}
+              className="w-full text-white font-bold text-[14px] rounded-xl" style={{ minHeight: 50, background: '#B45309' }}>
+              ยืนยันปิดการใช้งาน
+            </button>
+            <button onClick={() => setConfirmOff(null)}
+              className="w-full border bg-white rounded-xl font-semibold text-[13.5px] text-slate-600"
+              style={{ minHeight: 46, borderColor: '#E4E6EA' }}>ยกเลิก</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmOff(opened.id)}
+            className="w-full border bg-white rounded-xl font-bold text-[13.5px]"
+            style={{ minHeight: 48, borderColor: '#FDE68A', color: '#B45309' }}>ปิดการใช้งานคนนี้</button>
+        )
+      ) : (
+        <button onClick={() => post({ action: 'setActive', id: opened.id, active: true })} disabled={saving}
+          className="w-full text-white font-bold text-[14px] rounded-xl" style={{ minHeight: 50, background: '#35706A' }}>
+          เปิดใช้งานกลับ
+        </button>
+      )}
+
+      <div className="bg-white border rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed" style={{ borderColor: '#E4E6EA' }}>
+        ไม่มีปุ่มลบถาวร — ลบคนออกจะทำให้ใบเก่ากลายเป็นใบไม่มีเจ้าของ ตรวจย้อนหลังไม่ได้
+      </div>
+    </div>
+  );
+
+  // ── รายชื่อ ─────────────────────────────────────────────────────
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">พนักงาน</h2>
+          <p className="text-[12px] text-slate-500 mt-0.5">รายชื่อนี้คือหน้าเลือกชื่อที่พนักงานเห็น</p>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="shrink-0 rounded-lg flex items-center justify-center text-slate-500 border bg-white"
+          style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}>
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      <div className="bg-white border rounded-xl flex overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        {[['active', 'ใช้งานอยู่'], ['off', 'ปิดใช้งาน']].map(([k, label]) => {
+          const cnt = (staff || []).filter(s => (k === 'active' ? s.active : !s.active)).length;
+          const on = tab === k;
+          return (
+            <button key={k} onClick={() => setTab(k)} className="flex-1 py-2.5 text-[12.5px] font-bold border-b-2"
+              style={on ? { color: '#0F172A', background: '#F6F7F8', borderColor: '#0F172A' } : { color: '#64748B', borderColor: 'transparent' }}>
+              {label}{cnt > 0 && <span className="tabular-nums"> {cnt}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {err && (
+        <div className="rounded-xl px-3 py-2.5 text-[12px] flex items-start gap-2 border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />{err}
+        </div>
+      )}
+
+      {loading && !staff ? (
+        <div className="bg-white rounded-xl px-4 py-9 text-center text-[13px] text-slate-400" style={{ border: '1px dashed #CBD5E1' }}>กำลังโหลดรายชื่อ…</div>
+      ) : shown.length === 0 ? (
+        <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
+          <User className="mx-auto text-[#E4E6EA] mb-2" size={32} />
+          <div className="text-[13px] text-slate-500">{tab === 'active' ? 'ยังไม่มีพนักงานในรายชื่อ' : 'ไม่มีคนที่ปิดใช้งาน'}</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {shown.map(s => (
+            <button key={s.id} onClick={() => setMode(s.id)}
+              className="w-full bg-white border rounded-xl px-3 py-2.5 flex items-center gap-2.5 text-left hover:bg-[#F6F7F8]"
+              style={{ borderColor: '#E4E6EA' }}>
+              <span className="shrink-0 rounded-full flex items-center justify-center text-[15px] font-bold text-white"
+                style={{ width: 42, height: 42, background: s.active ? '#35706A' : '#94A3B8' }}>
+                {s.initial || s.name.charAt(0)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-bold text-slate-800 truncate">{s.name}</div>
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full text-slate-600" style={{ background: '#F6F7F8' }}>{s.dept || 'ไม่ระบุ'}</span>
+                  {FEAT_META.filter(f => s[f.key]).map(f => (
+                    <span key={f.key} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                      style={{ background: f.soft, color: f.ink }}>{f.label}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-[13px] font-bold text-slate-800 tabular-nums">{s.submission_count ?? 0}</div>
+                <div className="text-[9.5px] text-slate-400">ใบ</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button onClick={() => { setMode('add'); setErr(''); }}
+        className="w-full text-white font-bold text-[15px] rounded-xl flex items-center justify-center gap-2"
+        style={{ minHeight: 52, background: '#0F172A' }}><Plus size={18} />เพิ่มพนักงาน</button>
+
+      <div className="bg-white border rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed" style={{ borderColor: '#E4E6EA' }}>
+        ชื่อที่ปิดใช้งานจะหายจากหน้าเลือกชื่อทันที แต่ใบเก่ายังมีชื่อกำกับไว้ครบ — ไม่มีปุ่มลบถาวร
+      </div>
     </div>
   );
 }

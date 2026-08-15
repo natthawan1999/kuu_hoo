@@ -500,6 +500,16 @@ export default function CombinedApp() {
   };
 
   const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  // สลับฟีเจอร์โดยไม่ต้องออกจากระบบ — ร่างแยกตามฟีเจอร์ ไม่หาย
+  const switchFeature = (f) => {
+    if (!currentUser || f === currentUser.feature) return;
+    const next = { ...currentUser, feature: f };
+    setCurrentUser(next);
+    try { localStorage.setItem('currentUser', JSON.stringify(next)); } catch {}
+    setView(f === 'invoice' ? 'invoice' : 'count');
+    setMenuOpen(false);
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
     storage.delete('currentUser').catch(() => {});
@@ -540,6 +550,7 @@ export default function CombinedApp() {
     const timestamp = new Date(`${dateStr}T${timeStr}`).toISOString();
     setCountEntries(prev => [{
       id: `e${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      featureType: currentUser?.feature || 'recorder',
       barcode: entry.barcode, productName: entry.productName, productId: entry.productId || '',
       unit: entry.unit || '', price: entry.price || 0, cost: entry.cost || 0,
       qty: parseInt(entry.qty) || 0, notFound: !!entry.notFound,
@@ -737,7 +748,8 @@ export default function CombinedApp() {
 
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
-  const myEntries = countEntries.filter(e => e.counterId === currentUser.id);
+  const myEntries = countEntries.filter(e =>
+    e.counterId === currentUser.id && (e.featureType || 'recorder') === (currentUser.feature || 'recorder'));
   const pendingCount = isManager
     ? submissions.filter(s => s.status === 'pending').length + invSubs.filter(s => s.status === 'pending').length
     : submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
@@ -751,6 +763,16 @@ export default function CombinedApp() {
     invoice:       { main: '#2F6E90', deep: '#255771', soft: '#EAF0F4', line: '#B9CFDC' },
   };
   // ผู้จัดการใช้สีกลาง (หมึก) — สีฟีเจอร์ไปอยู่บนป้ายของแต่ละใบ
+  // ฟีเจอร์ที่พนักงานคนนี้มีสิทธิ์ — ใช้ในลิ้นชักสลับฟีเจอร์
+  const ALL_FEATURES = [
+    { id: 'recorder',      key: 'allow_recorder', label: 'นับสินค้า',   icon: ScanLine,       main: '#35706A', soft: '#EAF1F0', ink: '#2A5A55' },
+    { id: 'stock_compare', key: 'allow_compare',  label: 'นับเทียบยอด', icon: ArrowLeftRight, main: '#7658C9', soft: '#F2EFFA', ink: '#5F45A8' },
+    { id: 'invoice',       key: 'allow_invoice',  label: 'บันทึกบิล',   icon: Receipt,        main: '#2F6E90', soft: '#EAF0F4', ink: '#255771' },
+  ];
+  const myFeatures = ALL_FEATURES
+    .filter(f => currentUser?.allow ? currentUser.allow[f.key] : f.id === currentUser?.feature)
+    .map(f => ({ ...f, pending: countEntries.filter(e => e.counterId === currentUser?.id && (e.featureType || 'recorder') === f.id).length }));
+
   const C = isManager
     ? { main: '#0F172A', deep: '#0F172A', soft: '#F6F7F8', line: '#E4E6EA' }
     : (FEAT[feature] || FEAT.recorder);
@@ -787,20 +809,22 @@ export default function CombinedApp() {
                 )}
               </button>
             ) : (
-              <button
-                onClick={() => { if (activeView !== navItems[0]?.id) setView(navItems[0].id); else handleLogout(); }}
-                title={activeView !== navItems[0]?.id ? 'กลับหน้าแรก' : 'กลับหน้าเลือกชื่อ'}
+              <button onClick={() => setMenuOpen(true)} title="เมนู"
                 className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
-                style={{ width: 38, height: 38, borderColor: '#E4E6EA', color: C.main }}>
-                <ArrowRight size={17} className="rotate-180" />
+                style={{ width: 40, height: 40, borderColor: '#E4E6EA' }}>
+                <span style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
+                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
+                  <span style={{ width:16, height:2, background:C.main, borderRadius:2, display:'block' }}></span>
+                </span>
               </button>
             )}
             <div className="min-w-0">
               <h1 className="font-bold text-slate-800">
-                {isManager ? (navItems.find(i => i.id === activeView)?.label || 'KUUHOO') : 'KUUHOO'}
+                {navItems.find(i => i.id === activeView)?.label || 'KUUHOO'}
               </h1>
               <p className="text-xs text-slate-500 truncate">
-                {isManager ? `ผู้จัดการ • ${currentUser.name}` : `พนักงาน • ${currentUser.name} • ${FEATURE_LABEL[feature] || feature}`}
+                {isManager ? `ผู้จัดการ • ${currentUser.name}` : `${FEATURE_LABEL[feature] || feature} • ${currentUser.name}`}
               </p>
             </div>
           </div>
@@ -822,7 +846,7 @@ export default function CombinedApp() {
         </div>
       )}
 
-      {isManager && menuOpen && (
+      {menuOpen && (
         <div className="fixed inset-0 z-50 flex" onClick={() => setMenuOpen(false)}>
           <div className="bg-white h-full flex flex-col" style={{ width: 268, maxWidth: '84vw', boxShadow: '2px 0 16px rgba(15,23,42,.18)' }}
             onClick={e => e.stopPropagation()}>
@@ -831,12 +855,34 @@ export default function CombinedApp() {
                 style={{ width: 42, height: 42, background: '#0F172A' }}>{(currentUser.name || '?').charAt(0)}</span>
               <div className="min-w-0">
                 <div className="text-[14px] font-bold text-slate-800 truncate">{currentUser.name}</div>
-                <div className="text-[11px] text-slate-500">ผู้จัดการ</div>
+                <div className="text-[11px] text-slate-500">{isManager ? 'ผู้จัดการ' : 'พนักงาน'}</div>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto py-2">
-              <div className="px-4 py-2 text-[10px] font-bold tracking-wide text-slate-400">งานประจำวัน</div>
+              {!isManager && myFeatures.length > 1 && (
+                <>
+                  <div className="px-4 py-2 text-[10px] font-bold tracking-wide text-slate-400">ฟีเจอร์</div>
+                  {myFeatures.map(f => {
+                    const on = feature === f.id;
+                    const FIcon = f.icon;
+                    return (
+                      <button key={f.id} onClick={() => switchFeature(f.id)}
+                        className="w-full flex items-center gap-3 px-4 text-left"
+                        style={{ minHeight: 52, background: on ? f.soft : '#fff',
+                                 borderLeft: on ? `3px solid ${f.main}` : '3px solid transparent' }}>
+                        <FIcon size={18} style={{ color: on ? f.ink : '#64748B' }} className="shrink-0" />
+                        <span className="flex-1 text-[14px] font-semibold" style={{ color: on ? f.ink : '#334155' }}>{f.label}</span>
+                        {f.pending > 0 && (
+                          <span className="text-[10px] font-bold rounded-full text-center shrink-0"
+                            style={{ minWidth: 20, padding: '2px 6px', background: f.soft, color: f.ink }}>{f.pending}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+              <div className="px-4 py-2 mt-1 text-[10px] font-bold tracking-wide text-slate-400">{isManager ? 'งานประจำวัน' : `งานใน${FEATURE_LABEL[feature] || ''}`}</div>
               {navItems.map(item => {
                 const Icon = item.icon; const on = activeView === item.id;
                 return (
@@ -928,24 +974,28 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
     indigo:   { soft: '#F6F7F8', ink: '#0F172A' },
   };
 
-  // พนักงานเลือกชื่อจากรายชื่อจริง — กรองตามสิทธิ์ฟีเจอร์นั้น
+  // เลือกชื่อได้ทันทีจากหน้าแรก — ไม่ต้องเลือกบทบาท/ฟีเจอร์ก่อน
   useEffect(() => {
-    if (role !== 'counter' || !feature) { setStaffList(undefined); return; }
-    const apiFeature = feature === 'stock_compare' ? 'compare' : feature;
+    if (role === 'manager') { setStaffList(undefined); return; }
     let alive = true;
     setStaffLoading(true); setStaffErr('');
-    fetch('/api/staff?feature=' + apiFeature)
+    fetch('/api/staff')
       .then(async r => {
         const text = await r.text();
         let j; try { j = JSON.parse(text); } catch { throw new Error('เซิร์ฟเวอร์ตอบไม่ใช่ JSON (' + r.status + '): ' + text.slice(0, 120)); }
         if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
         return j;
       })
-      .then(j => { if (alive) setStaffList(Array.isArray(j.staff) ? j.staff : null); })
+      .then(j => {
+        if (!alive) return;
+        const list = Array.isArray(j.staff) ? j.staff : null;
+        // เฉพาะคนที่เปิดใช้งานและมีสิทธิ์อย่างน้อยหนึ่งฟีเจอร์
+        setStaffList(list ? list.filter(s => s.active !== false && (s.allow_recorder || s.allow_compare || s.allow_invoice)) : null);
+      })
       .catch(e => { if (alive) { setStaffList(null); setStaffErr(e.message || 'ไม่ทราบสาเหตุ'); } })
       .finally(() => { if (alive) setStaffLoading(false); });
     return () => { alive = false; };
-  }, [role, feature]);
+  }, [role]);
 
   const COUNTER_FEATURES = [
     { id: 'recorder',      label: 'นับสินค้า',            desc: 'นับแล้วส่งให้ผู้จัดการตรวจ',              icon: ScanLine,      accent: 'recorder' },
@@ -993,8 +1043,16 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
       setLoading(false);
     }
     // เลือกจากรายชื่อ → ใช้ id ของ staff เพื่อให้ร่างเดินตามคนข้ามเครื่อง
-    const stableId = picked?.id || `${role}_${feature}_${useName.toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: useName, role, feature, loginAt: new Date().toISOString() });
+    const allow = picked ? {
+      allow_recorder: !!picked.allow_recorder,
+      allow_compare:  !!picked.allow_compare,
+      allow_invoice:  !!picked.allow_invoice,
+    } : { allow_recorder: true, allow_compare: false, allow_invoice: false };
+    const firstFeature = role === 'manager' ? 'all'
+      : allow.allow_recorder ? 'recorder' : allow.allow_compare ? 'stock_compare' : allow.allow_invoice ? 'invoice' : 'recorder';
+    const useFeature = role === 'manager' ? 'all' : firstFeature;
+    const stableId = picked?.id || `${role}_${useName.toLowerCase().replace(/\s+/g,'_')}`;
+    onLogin({ id: stableId, name: useName, role, feature: useFeature, allow, loginAt: new Date().toISOString() });
   };
 
   const features = role === 'manager' ? MANAGER_FEATURES : COUNTER_FEATURES;
@@ -1004,17 +1062,16 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#F6F7F8' }}>
       {!role ? (
       <div className="w-full" style={{ maxWidth: 460 }}>
-        {/* หัวเรื่อง */}
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-4">
           <div className="text-white rounded-2xl flex items-center justify-center shrink-0"
             style={{ width: 52, height: 52, background: '#0F172A' }}><Package size={26} /></div>
           <div className="min-w-0">
             <h1 className="text-[26px] font-bold text-slate-800 leading-none">KUUHOO</h1>
+            <p className="text-[12.5px] text-slate-500 mt-1">เลือกชื่อของคุณเพื่อเริ่มงาน</p>
           </div>
         </div>
 
-        {/* สถานะเซิร์ฟเวอร์ — บอกสถานะเท่านั้น ทางเข้าตั้งค่าอยู่ในรายการเครื่องมือ */}
-        <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-5"
+        <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-4"
           style={serverReady
             ? { background: '#EAF1F0', borderColor: '#B6D0CC' }
             : { background: '#FFFBEB', borderColor: '#FDE68A' }}>
@@ -1029,53 +1086,90 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         </div>
 
-        {/* เริ่มทำงาน */}
-        <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
-        <div className="grid grid-cols-2 gap-2.5 mb-5">
-          <button onClick={() => setRole('counter')}
-            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#35706A]"
-            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
-            <div className="rounded-xl flex items-center justify-center shrink-0"
-              style={{ width: 42, height: 42, background: '#EAF1F0', color: '#2A5A55' }}><User size={21} /></div>
-            <div className="mt-auto">
-              <div className="text-[15px] font-bold text-slate-800">พนักงาน</div>
+        {staffLoading || staffList === undefined ? (
+          <div className="bg-white rounded-2xl border px-4 py-9 text-center text-[13px] text-slate-400 flex items-center justify-center gap-2"
+            style={{ borderColor: '#E4E6EA' }}>
+            <RefreshCw size={15} className="animate-spin" />กำลังโหลดรายชื่อ…
+          </div>
+        ) : staffList === null ? (
+          <div className="space-y-2.5">
+            <div className="rounded-xl p-3 border text-[12px] leading-relaxed" style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#B45309' }}>
+              <div className="font-bold">โหลดรายชื่อไม่ได้ — พิมพ์ชื่อเองไปก่อนได้</div>
+              {staffErr && <div className="mt-1.5 font-mono text-[10.5px] break-all" style={{ opacity: .85 }}>{staffErr}</div>}
             </div>
-          </button>
-          <button onClick={() => setRole('manager')}
-            className="bg-white rounded-2xl border-2 p-4 text-left flex flex-col gap-2.5 hover:border-[#0F172A]"
-            style={{ borderColor: '#E4E6EA', minHeight: 132 }}>
-            <div className="rounded-xl flex items-center justify-center shrink-0"
-              style={{ width: 42, height: 42, background: '#F6F7F8', color: '#0F172A' }}><Shield size={21} /></div>
-            <div className="mt-auto">
-              <div className="text-[15px] font-bold text-slate-800">ผู้จัดการ</div>
-            </div>
-          </button>
-        </div>
+            <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="ชื่อของคุณ"
+              className="w-full px-3 py-3 border rounded-xl outline-none focus:border-[#35706A] text-[15px]" style={{ borderColor: '#E2E8F0' }} />
+            <button onClick={() => handleLogin()} disabled={!name.trim()}
+              className="w-full text-white font-bold text-[15px] rounded-xl disabled:opacity-40"
+              style={{ minHeight: 52, background: '#35706A' }}>เริ่มงาน</button>
+          </div>
+        ) : staffList.length === 0 ? (
+          <div className="bg-white rounded-2xl border px-4 py-8 text-center" style={{ borderColor: '#E4E6EA' }}>
+            <User className="mx-auto text-[#E4E6EA] mb-2" size={32} />
+            <div className="text-[13px] text-slate-500">ยังไม่มีพนักงานในรายชื่อ</div>
+            <button onClick={() => onOpenPage('staff')}
+              className="mt-3 text-white px-4 rounded-xl text-[13px] font-bold" style={{ minHeight: 44, background: '#0F172A' }}>ไปเพิ่มพนักงาน</button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+            {staffList.map((s, i) => {
+              const tags = [
+                s.allow_recorder && { label: 'นับสินค้า', soft: '#EAF1F0', ink: '#2A5A55' },
+                s.allow_compare && { label: 'นับเทียบยอด', soft: '#F2EFFA', ink: '#5F45A8' },
+                s.allow_invoice && { label: 'บันทึกบิล', soft: '#EAF0F4', ink: '#255771' },
+              ].filter(Boolean);
+              return (
+                <button key={s.id} onClick={() => handleLogin(s)}
+                  className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
+                  style={{ minHeight: 68, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
+                  <span className="rounded-full flex items-center justify-center text-[16px] font-bold text-white shrink-0"
+                    style={{ width: 44, height: 44, background: '#35706A' }}>
+                    {s.initial || (s.name || '?').charAt(0)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-bold text-slate-800 truncate">{s.name}</div>
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {tags.map(t => (
+                        <span key={t.label} className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full"
+                          style={{ background: t.soft, color: t.ink }}>{t.label}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <ArrowRight size={15} className="text-slate-300 shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* เครื่องมือ — เปิดได้เลย */}
-        <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เครื่องมือ · เปิดได้เลย ไม่ต้องเลือกชื่อ</div>
+        {error && (
+          <div className="mt-2.5 rounded-xl px-3 py-2.5 text-[12px] border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>{error}</div>
+        )}
+
+        <div className="text-[11px] font-bold tracking-wide text-slate-400 mt-5 mb-2">สำหรับผู้จัดการและเครื่องมือ</div>
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
           {[
-            { id: 'staff',    icon: Users,           title: 'จัดการพนักงาน' },
-            { id: 'report',   icon: FileSpreadsheet, title: 'รายงาน' },
-            { id: 'settings', icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์' },
+            { id: '__manager', icon: Shield,          title: 'เข้าเป็นผู้จัดการ',  sub: 'รีวิว อนุมัติ เทียบยอด — ใส่ PIN' },
+            { id: 'staff',     icon: Users,           title: 'จัดการพนักงาน',    sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
+            { id: 'report',    icon: FileSpreadsheet, title: 'รายงาน',           sub: 'ดึงข้อมูลและส่งออก Excel / CSV' },
+            { id: 'settings',  icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง' },
           ].map((p, i) => {
             const PIcon = p.icon;
             return (
-              <button key={p.id} onClick={() => onOpenPage(p.id)}
+              <button key={p.id} onClick={() => { if (p.id === '__manager') { setRole('manager'); setFeature('all'); } else onOpenPage(p.id); }}
                 className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
                 style={{ minHeight: 62, borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
                 <div className="rounded-lg flex items-center justify-center shrink-0"
                   style={{ width: 36, height: 36, background: '#F6F7F8', color: '#0F172A' }}><PIcon size={17} /></div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-bold text-slate-800">{p.title}</div>
+                  <div className="text-[11px] text-slate-500 truncate">{p.sub}</div>
                 </div>
                 <ArrowRight size={15} className="text-slate-300 shrink-0" />
               </button>
             );
           })}
         </div>
-
       </div>
       ) : (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">

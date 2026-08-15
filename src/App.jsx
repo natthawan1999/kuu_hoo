@@ -421,6 +421,23 @@ export default function CombinedApp() {
       await tryLoad('lastSyncAt', setLastSyncAt, false);
       let cfg = { url: '', anonKey: '', tableName: 'product_price', stockTableName: 'product_stock' };
       try { const r = await storage.get('supabaseConfig'); if (r?.value) { cfg = JSON.parse(r.value); setSupabaseConfig(cfg); } } catch {}
+
+      // ยังไม่ได้ตั้งค่าในเครื่องนี้ → ดึงค่ากลางจากเซิร์ฟเวอร์ ทุกเครื่องพร้อมใช้ทันที
+      if (!cfg.url || !cfg.anonKey) {
+        try {
+          const res = await fetch('/api/config');
+          const j = await res.json();
+          if (j?.configured && j.url && j.anonKey) {
+            cfg = {
+              url: j.url, anonKey: j.anonKey,
+              tableName: cfg.tableName || j.tableName || 'product_price',
+              stockTableName: cfg.stockTableName || j.stockTableName || 'product_stock',
+            };
+            setSupabaseConfig(cfg);
+            storage.set('supabaseConfig', JSON.stringify(cfg)).catch(() => {});
+          }
+        } catch {}
+      }
       let src = 'none';
       try { const r = await storage.get('dataSource'); if (r?.value) src = r.value; } catch {}
       if (cfg.url && cfg.anonKey && src === 'none') src = 'supabase';
@@ -433,6 +450,42 @@ export default function CombinedApp() {
 
   useDebouncedStorage('countEntries', countEntries, loaded);
   useDebouncedStorage('submissions', submissions, loaded);
+
+  // ร่างขึ้นเซิร์ฟเวอร์ — นับเครื่องหนึ่ง ไปต่อเครื่องอื่นได้
+  const [draftSync, setDraftSync] = useState({ busy: '', msg: '', err: '' });
+
+  const pushDraft = async () => {
+    if (!currentUser) return;
+    setDraftSync({ busy: 'up', msg: '', err: '' });
+    try {
+      const res = await fetch('/api/draft', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          counter_id: currentUser.id, counter_name: currentUser.name,
+          feature: currentUser.feature || 'recorder',
+          device_id: safeGet('deviceId', '') || null,
+          entries: countEntries.filter(e => e.counterId === currentUser.id),
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      setDraftSync({ busy: '', msg: `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} บรรทัด`, err: '' });
+    } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
+  };
+
+  const pullDraft = async () => {
+    if (!currentUser) return;
+    setDraftSync({ busy: 'down', msg: '', err: '' });
+    try {
+      const res = await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser.id)}&feature=${encodeURIComponent(currentUser.feature || 'recorder')}`);
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      const mine = (j.entries || []).map(e => ({ ...e, counterId: currentUser.id, counterName: currentUser.name, id: e.id || `${Date.now()}_${Math.random()}` }));
+      // ทับร่างของคนนี้ในเครื่องนี้ ของคนอื่นไม่แตะ
+      setCountEntries(prev => [...prev.filter(e => e.counterId !== currentUser.id), ...mine]);
+      setDraftSync({ busy: '', msg: mine.length ? `ดึงร่างมา ${mine.length} บรรทัด` : 'ไม่มีร่างบนเซิร์ฟเวอร์', err: '' });
+    } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
+  };
 
   const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   const handleLogout = () => {
@@ -501,6 +554,10 @@ export default function CombinedApp() {
       itemCount: grouped.length, totalQty: grouped.reduce((s, g) => s + g.qty, 0), data: grouped,
     };
     setSubmissions(prev => [sub, ...prev]);
+    // ส่งเป็นใบแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย ไม่ให้เครื่องอื่นดึงของเก่ากลับมา
+    try {
+      await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}`, { method: 'DELETE' });
+    } catch {}
     return sub;
   };
 
@@ -631,7 +688,7 @@ export default function CombinedApp() {
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
-        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} />}
+        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {!isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'stock_compare') === 'stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
@@ -980,7 +1037,7 @@ function EntryRow({ e, deleteEntry, highlight }) {
   );
 }
 
-function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft }) {
+function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {} }) {
   const [location, setLocation] = useState('');
   const [checking, setChecking] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -1139,6 +1196,25 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
         <div className="text-[13px] font-bold text-slate-700">ร่างของคุณ ({entries.length} ครั้ง)</div>
         <div className="text-[11.5px] text-slate-500">{uniqueBarcodes} บาร์โค้ด</div>
       </div>
+
+      {(pushDraft || pullDraft) && (
+        <div className="bg-white border rounded-xl p-2.5 space-y-2" style={{ borderColor: '#e2e8f0' }}>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={pushDraft} disabled={!!draftSync.busy || entries.length === 0}
+              className="rounded-xl font-bold text-[12.5px] text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
+              style={{ minHeight: 46, background: '#35706a' }}>
+              {draftSync.busy === 'up' ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}บันทึกขึ้นเซิร์ฟเวอร์
+            </button>
+            <button onClick={pullDraft} disabled={!!draftSync.busy}
+              className="rounded-xl font-bold text-[12.5px] border flex items-center justify-center gap-1.5 disabled:opacity-40"
+              style={{ minHeight: 46, borderColor: '#b6d0cc', background: '#eaf1f0', color: '#2a5a55' }}>
+              {draftSync.busy === 'down' ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}ดึงร่างจากเซิร์ฟเวอร์
+            </button>
+          </div>
+          {draftSync.msg && <div className="text-[11px] font-semibold" style={{ color: '#2a5a55' }}>{draftSync.msg}</div>}
+          {draftSync.err && <div className="text-[11px] font-semibold" style={{ color: '#B91C1C' }}>{draftSync.err}</div>}
+        </div>
+      )}
 
       {entries.length === 0 ? (
         <div className="bg-white rounded-xl px-4 py-7 text-center text-[12.5px] text-slate-400"

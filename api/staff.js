@@ -1,100 +1,155 @@
 // KUUHOO — /api/staff
-// วางไฟล์นี้ที่ api/staff.js บน Vercel
+// เรียก Supabase ผ่าน REST ตรง ๆ ไม่ใช้ SDK — ฟังก์ชันจะไม่พังตอนโหลดถ้า env ไม่ครบ
+// แต่จะตอบเป็น JSON บอกสาเหตุแทน
 //
-//   GET  /api/staff                      → รายชื่อทั้งหมด (ผู้จัดการ)
-//   GET  /api/staff?feature=recorder     → เฉพาะคนที่ใช้งานได้ (หน้าเลือกชื่อ)
-//   POST /api/staff  { action, ... }     → add | update | setActive
+//   GET  /api/staff                    → รายชื่อทั้งหมด + จำนวนใบที่ส่ง
+//   GET  /api/staff?feature=recorder   → เฉพาะคนที่เปิดใช้งานและมีสิทธิ์ฟีเจอร์นั้น
+//   GET  /api/staff?debug=1            → เช็กว่า env ครบไหม (ไม่โชว์ค่า key)
+//   POST /api/staff  { action: add | update | setActive, ... }
 //
-// ต้องมี env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-
-import { createClient } from '@supabase/supabase-js';
-
-const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+// env ที่ต้องมีบน Vercel: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 const FEATURES = { recorder: 'allow_recorder', compare: 'allow_compare', invoice: 'allow_invoice' };
 
+function env() {
+  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const missing = [];
+  if (!url) missing.push('SUPABASE_URL');
+  if (!key) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  return { url, key, missing };
+}
+
+async function sb(path, init = {}) {
+  const { url, key } = env();
+  const res = await fetch(`${url}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: init.method === 'POST' || init.method === 'PATCH' ? 'return=representation' : '',
+      ...(init.headers || {}),
+    },
+  });
+  const text = await res.text();
+  let body = null;
+  if (text) { try { body = JSON.parse(text); } catch { body = { message: text.slice(0, 300) }; } }
+  if (!res.ok) {
+    const msg = body?.message || body?.hint || `HTTP ${res.status}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.code = body?.code;
+    throw err;
+  }
+  return body;
+}
+
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
   try {
+    const { missing, url } = env();
+    if (req.query?.debug) {
+      return res.status(200).json({
+        ok: missing.length === 0,
+        missing,
+        url_set: !!url,
+        url_host: url ? url.replace(/^https?:\/\//, '').split('.')[0] + '.supabase.co' : null,
+        node: process.version,
+      });
+    }
+    if (missing.length) {
+      return res.status(500).json({
+        error: `ยังไม่ได้ตั้งค่า env บน Vercel: ${missing.join(', ')} — ตั้งแล้วต้อง Redeploy ด้วย`,
+      });
+    }
+
     if (req.method === 'GET') {
       const { feature } = req.query;
 
-      // หน้าเลือกชื่อ — กรองเฉพาะคนที่เปิดใช้งานและมีสิทธิ์ฟีเจอร์นั้น
+      // หน้าเลือกชื่อ — เฉพาะคนที่ active และมีสิทธิ์ฟีเจอร์นั้น
       if (feature) {
-        if (!FEATURES[feature]) return res.status(400).json({ error: 'feature ไม่ถูกต้อง' });
-        const { data, error } = await db.rpc('staff_for_feature', { p_feature: feature });
-        if (error) throw error;
-        return res.status(200).json({ staff: data || [] });
+        const col = FEATURES[feature];
+        if (!col) return res.status(400).json({ error: `feature ไม่ถูกต้อง: ${feature}` });
+        const rows = await sb(`staff?select=id,name,initial,dept&active=eq.true&${col}=eq.true&order=name.asc`);
+        return res.status(200).json({ staff: rows || [] });
       }
 
-      // หน้า Staff Admin — ทั้งหมด พร้อมจำนวนใบที่เคยส่ง
-      const { data, error } = await db.from('staff').select('*').order('name');
-      if (error) throw error;
-
-      const { data: subs } = await db.from('count_submissions').select('counter_id');
-      const tally = {};
-      for (const s of subs || []) if (s.counter_id) tally[s.counter_id] = (tally[s.counter_id] || 0) + 1;
+      // หน้าจัดการพนักงาน — ทั้งหมด พร้อมจำนวนใบที่เคยส่ง
+      const rows = await sb('staff?select=*&order=name.asc');
+      let tally = {};
+      try {
+        const subs = await sb('count_submissions?select=counter_id');
+        for (const s of subs || []) if (s.counter_id) tally[s.counter_id] = (tally[s.counter_id] || 0) + 1;
+      } catch { /* ยังไม่มีตารางใบนับก็ไม่เป็นไร */ }
 
       return res.status(200).json({
-        staff: (data || []).map(s => ({ ...s, submission_count: tally[s.id] || 0 })),
+        staff: (rows || []).map(s => ({ ...s, submission_count: tally[s.id] || 0 })),
       });
     }
 
     if (req.method === 'POST') {
-      const { action } = req.body || {};
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const { action } = body;
 
       if (action === 'add') {
-        const { name, dept, initial, allow_recorder, allow_compare, allow_invoice } = req.body;
+        const { name, dept, initial, allow_recorder, allow_compare, allow_invoice } = body;
         if (!name?.trim()) return res.status(400).json({ error: 'ต้องมีชื่อ' });
 
-        // id รูปแบบ u1, u2 … ต่อจากตัวท้ายสุด
-        const { data: last } = await db.from('staff').select('id').like('id', 'u%');
-        const next = 'u' + ((last || []).reduce((m, r) => Math.max(m, parseInt(r.id.slice(1)) || 0), 0) + 1);
+        const existing = await sb('staff?select=id&id=like.u*');
+        const next = 'u' + ((existing || []).reduce((m, r) => Math.max(m, parseInt(String(r.id).slice(1)) || 0), 0) + 1);
 
-        const { data, error } = await db.from('staff').insert({
-          id: next,
-          name: name.trim(),
-          initial: (initial || name.trim()).charAt(0),
-          dept: dept || null,
-          allow_recorder: !!allow_recorder,
-          allow_compare: !!allow_compare,
-          allow_invoice: !!allow_invoice,
-        }).select().single();
-
-        // ชื่อซ้ำกับคนที่ยังใช้งานอยู่
-        if (error?.code === '23505' || error?.message?.includes('idx_staff_active_name')) {
-          return res.status(409).json({ error: `มีชื่อ "${name.trim()}" อยู่แล้ว` });
+        try {
+          const out = await sb('staff', {
+            method: 'POST',
+            body: JSON.stringify({
+              id: next,
+              name: name.trim(),
+              initial: (initial || name.trim()).charAt(0),
+              dept: dept || null,
+              allow_recorder: !!allow_recorder,
+              allow_compare: !!allow_compare,
+              allow_invoice: !!allow_invoice,
+            }),
+          });
+          return res.status(200).json({ staff: Array.isArray(out) ? out[0] : out });
+        } catch (e) {
+          if (e.code === '23505' || /duplicate|unique/i.test(e.message)) {
+            return res.status(409).json({ error: `มีชื่อ "${name.trim()}" อยู่แล้ว` });
+          }
+          throw e;
         }
-        if (error) throw error;
-        return res.status(200).json({ staff: data });
       }
 
       if (action === 'update') {
-        const { id, ...fields } = req.body;
+        const { id } = body;
         if (!id) return res.status(400).json({ error: 'ต้องมี id' });
-        const allowed = ['name', 'initial', 'dept', 'allow_recorder', 'allow_compare', 'allow_invoice'];
         const patch = {};
-        for (const k of allowed) if (k in fields) patch[k] = fields[k];
-        const { data, error } = await db.from('staff').update(patch).eq('id', id).select().single();
-        if (error) throw error;
-        return res.status(200).json({ staff: data });
+        for (const k of ['name', 'initial', 'dept', 'allow_recorder', 'allow_compare', 'allow_invoice'])
+          if (k in body) patch[k] = body[k];
+        const out = await sb(`staff?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+        return res.status(200).json({ staff: Array.isArray(out) ? out[0] : out });
       }
 
       if (action === 'setActive') {
-        const { id, active } = req.body;
+        const { id, active } = body;
         if (!id) return res.status(400).json({ error: 'ต้องมี id' });
-        // ปิดการใช้งาน ไม่ใช่ลบ — ใบเก่าต้องมีชื่อกำกับไว้ (trigger กัน DELETE อยู่)
-        const { data, error } = await db.from('staff').update({ active: !!active }).eq('id', id).select().single();
-        if (error) throw error;
-        return res.status(200).json({ staff: data });
+        // ปิดการใช้งาน ไม่ใช่ลบ — ใบเก่าต้องมีชื่อกำกับไว้
+        const out = await sb(`staff?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ active: !!active }) });
+        return res.status(200).json({ staff: Array.isArray(out) ? out[0] : out });
       }
 
-      return res.status(400).json({ error: 'action ไม่ถูกต้อง' });
+      return res.status(400).json({ error: `action ไม่ถูกต้อง: ${action}` });
     }
 
     return res.status(405).json({ error: 'ใช้ได้แค่ GET กับ POST' });
   } catch (e) {
-    return res.status(500).json({ error: e.message || 'เกิดข้อผิดพลาด' });
+    const msg = e?.message || 'เกิดข้อผิดพลาด';
+    const hint = /relation .*staff.* does not exist|could not find the table/i.test(msg)
+      ? ' — ยังไม่ได้รัน sql/2-staff-setup.sql บน Supabase'
+      : /invalid api key|jwt/i.test(msg)
+      ? ' — SUPABASE_SERVICE_ROLE_KEY ไม่ถูกต้อง (ต้องเป็น service_role ไม่ใช่ anon)'
+      : '';
+    return res.status(500).json({ error: msg + hint });
   }
 }

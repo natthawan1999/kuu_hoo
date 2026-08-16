@@ -2924,16 +2924,16 @@ function ReportView() {
 
         <div className="p-4 space-y-4">
         {conf.needDate && (
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block min-w-0">
               <span className="text-xs font-medium text-slate-500">ตั้งแต่</span>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                className="mt-1 w-full min-w-0 border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
+                className="mt-1 block w-full min-w-0 max-w-full border border-[#E4E6EA] rounded-lg px-2.5 py-2 text-[13px] appearance-none bg-white" />
             </label>
-            <label className="block">
+            <label className="block min-w-0">
               <span className="text-xs font-medium text-slate-500">ถึง</span>
               <input type="date" value={to} onChange={e => setTo(e.target.value)}
-                className="mt-1 w-full min-w-0 border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
+                className="mt-1 block w-full min-w-0 max-w-full border border-[#E4E6EA] rounded-lg px-2.5 py-2 text-[13px] appearance-none bg-white" />
             </label>
           </div>
         )}

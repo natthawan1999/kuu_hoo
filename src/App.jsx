@@ -2742,12 +2742,17 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   );
 }
 
+const REPORT_GROUPS = [
+  { key: 'app', label: 'บันทึกในแอป' },
+  { key: 'pos', label: 'ดึงจาก POS' },
+];
+
 const REPORT_TOPICS = [
-  { id: 'count',   label: 'การนับ',        needDate: true  },
-  { id: 'invoice', label: 'บิลซื้อ',        needDate: true  },
-  { id: 'stock',   label: 'สินค้าคงเหลือ',  needDate: false },
-  { id: 'in',      label: 'ซื้อเข้า',       needDate: true  },
-  { id: 'out',     label: 'ขายออก',        needDate: true  },
+  { id: 'count',   label: 'การนับ',        needDate: true,  group: 'app', edge: '#22C55E', hint: 'เลขที่ใบ · ผู้นับ · วันที่' },
+  { id: 'invoice', label: 'บิลซื้อ',        needDate: true,  group: 'app', edge: '#22C55E', hint: 'เลขที่บิล · ผู้ขาย' },
+  { id: 'stock',   label: 'สินค้าคงเหลือ',  needDate: false, group: 'pos', edge: '#F59E0B', hint: 'รหัสสินค้า · ประเภท' },
+  { id: 'in',      label: 'ซื้อเข้า',       needDate: true,  group: 'pos', edge: '#F59E0B', hint: 'เลขที่ใบรับ · ผู้ขาย' },
+  { id: 'out',     label: 'ขายออก',        needDate: true,  group: 'pos', edge: '#F59E0B', hint: 'เลขที่บิลขาย · ลูกค้า' },
 ];
 
 // หัวคอลัมน์ภาษาไทย — คีย์ตรงกับที่ /api/report ส่งกลับมา
@@ -2863,24 +2868,46 @@ function ReportView() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800">รายงาน</h2>
-        <p className="text-sm text-slate-500">เลือกเรื่อง ใส่เงื่อนไข แล้วส่งออกเป็นไฟล์</p>
-      </div>
+    <div className="flex flex-col md:flex-row gap-4 items-start">
 
-      {/* เลือกเรื่อง */}
-      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {REPORT_TOPICS.map(t => (
-            <button key={t.id} onClick={() => { setTopic(t.id); setRows(null); }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                topic === t.id
-                  ? 'bg-slate-800 border-slate-800 text-white'
-                  : 'bg-white border-[#E4E6EA] text-slate-600 hover:bg-[#F6F7F8]'}`}>
-              {t.label}
-            </button>
+      {/* เมนูรายงาน — sidebar */}
+      <aside className="w-full md:w-56 md:shrink-0 bg-[#0F172A] rounded-xl overflow-hidden md:sticky md:top-4">
+        <div className="px-4 py-3 border-b border-[#1E293B]">
+          <div className="text-sm font-bold text-white">รายงาน</div>
+          <div className="text-[11px] text-[#64748B] mt-0.5">เลือกเรื่อง ใส่เงื่อนไข ส่งออกไฟล์</div>
+        </div>
+        <nav className="p-2 space-y-3">
+          {REPORT_GROUPS.map(g => (
+            <div key={g.label}>
+              <div className="px-2 pb-1.5 text-[10px] font-bold tracking-wider text-[#64748B]">{g.label}</div>
+              <div className="space-y-1">
+                {REPORT_TOPICS.filter(t => t.group === g.key).map(t => (
+                  <button key={t.id} onClick={() => { setTopic(t.id); setRows(null); setColFilter({}); }}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left transition-colors ${
+                      topic === t.id ? 'bg-[#1E293B]' : 'hover:bg-[#1E293B]/60'}`}>
+                    <span className="w-1 h-5 rounded-sm shrink-0" style={{ background: t.edge }} />
+                    <span className="min-w-0">
+                      <span className={`block text-[13px] font-semibold ${topic === t.id ? 'text-white' : 'text-[#CBD5E1]'}`}>{t.label}</span>
+                      <span className="block text-[10.5px] text-[#64748B] truncate">{t.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
+        </nav>
+      </aside>
+
+      {/* เนื้อหา */}
+      <div className="flex-1 min-w-0 space-y-4">
+      <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: conf.edge }} />
+          <h2 className="text-xl font-bold text-slate-800">{conf.label}</h2>
+          <span className={`text-[10.5px] font-bold rounded-md px-2 py-1 ${
+            conf.group === 'app' ? 'text-[#15803D] bg-[#F0FDF4]' : 'text-[#92400E] bg-[#FFFBEB]'}`}>
+            {conf.group === 'app' ? 'บันทึกในแอป' : 'จาก POS'}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -3024,6 +3051,7 @@ function ReportView() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

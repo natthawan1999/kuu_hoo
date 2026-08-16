@@ -2753,7 +2753,7 @@ const REPORT_TOPICS = [
 // หัวคอลัมน์ภาษาไทย — คีย์ตรงกับที่ /api/report ส่งกลับมา
 const COL_LABEL = {
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
-  product_code: 'รหัสสินค้า', barcode: 'บาร์โค้ด', name: 'ชื่อสินค้า', unit: 'หน่วย',
+  product_code: 'รหัสสินค้า', barcode: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',

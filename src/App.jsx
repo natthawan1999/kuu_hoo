@@ -6,7 +6,7 @@ import {
   Shield, Eye, EyeOff, ClipboardCheck, Lock, LogOut, Database, Cloud,
   RefreshCw, Settings as SettingsIcon, CheckCircle2, XCircle, Layers,
   FileSpreadsheet, ArrowRight, FileCheck, WifiOff, Zap, Send, Clock,
-  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin, Users,
+  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin, Users, Menu,
 } from 'lucide-react';
 
 const INVOICE_API = "/api/claude";
@@ -2867,44 +2867,57 @@ function ReportView() {
       `report-${topic}-${todayISO()}.csv`);
   }
 
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <div className="flex flex-col md:flex-row gap-4 items-start">
+    <div className="space-y-4">
 
-      {/* เมนูรายงาน — sidebar */}
-      <aside className="w-full md:w-56 md:shrink-0 bg-[#0F172A] rounded-xl overflow-hidden md:sticky md:top-4">
-        <div className="px-4 py-3 border-b border-[#1E293B]">
-          <div className="text-sm font-bold text-white">รายงาน</div>
-          <div className="text-[11px] text-[#64748B] mt-0.5">เลือกเรื่อง ใส่เงื่อนไข ส่งออกไฟล์</div>
-        </div>
-        <nav className="p-2 space-y-3">
-          {REPORT_GROUPS.map(g => (
-            <div key={g.label}>
-              <div className="px-2 pb-1.5 text-[10px] font-bold tracking-wider text-[#64748B]">{g.label}</div>
-              <div className="space-y-1">
-                {REPORT_TOPICS.filter(t => t.group === g.key).map(t => (
-                  <button key={t.id} onClick={() => { setTopic(t.id); setRows(null); setColFilter({}); }}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left transition-colors ${
-                      topic === t.id ? 'bg-[#1E293B]' : 'hover:bg-[#1E293B]/60'}`}>
-                    <span className="w-1 h-5 rounded-sm shrink-0" style={{ background: t.edge }} />
-                    <span className="min-w-0">
-                      <span className={`block text-[13px] font-semibold ${topic === t.id ? 'text-white' : 'text-[#CBD5E1]'}`}>{t.label}</span>
-                      <span className="block text-[10.5px] text-[#64748B] truncate">{t.hint}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
+      {/* เมนูรายงาน — ปุ่ม 3 ขีด + แผงเลื่อนออกมา เหมือนเมนูฟีเจอร์อื่น */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex" onClick={() => setMenuOpen(false)}>
+          <div className="bg-white h-full flex flex-col" style={{ width: 268, maxWidth: '84vw', boxShadow: '2px 0 16px rgba(15,23,42,.18)' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-4 border-b" style={{ borderColor: '#E4E6EA', background: '#F6F7F8' }}>
+              <div className="text-[14px] font-bold text-slate-800">รายงาน</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">เลือกเรื่อง ใส่เงื่อนไข ส่งออกไฟล์</div>
             </div>
-          ))}
-        </nav>
-      </aside>
+            <div className="flex-1 overflow-y-auto py-2">
+              {REPORT_GROUPS.map(g => (
+                <div key={g.key}>
+                  <div className="px-4 py-2 text-[10px] font-bold tracking-wide text-slate-400">{g.label}</div>
+                  {REPORT_TOPICS.filter(t => t.group === g.key).map(t => {
+                    const on = topic === t.id;
+                    return (
+                      <button key={t.id} onClick={() => { setTopic(t.id); setRows(null); setColFilter({}); setMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 text-left"
+                        style={{ minHeight: 52, background: on ? '#F6F7F8' : '#fff',
+                                 borderLeft: on ? '3px solid #0F172A' : '3px solid transparent' }}>
+                        <span className="shrink-0 rounded-sm" style={{ width: 4, height: 22, background: t.edge }} />
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[14px] font-semibold" style={{ color: on ? '#0F172A' : '#334155' }}>{t.label}</span>
+                          <span className="block text-[10.5px] text-slate-400 truncate">{t.hint}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1" style={{ background: 'rgba(15,23,42,.45)' }}></div>
+        </div>
+      )}
 
-      {/* เนื้อหา */}
-      <div className="flex-1 min-w-0 space-y-4">
       <div className="bg-white rounded-xl border border-[#E4E6EA] p-4 space-y-4">
-        <div className="flex items-center gap-2.5">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: conf.edge }} />
-          <h2 className="text-xl font-bold text-slate-800">{conf.label}</h2>
-          <span className={`text-[10.5px] font-bold rounded-md px-2 py-1 ${
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMenuOpen(true)} title="เมนูรายงาน"
+            className="shrink-0 rounded-lg flex items-center justify-center border bg-white"
+            style={{ width: 40, height: 40, borderColor: '#E4E6EA', color: '#0F172A' }}>
+            <Menu size={20} />
+          </button>
+          <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: conf.edge }} />
+          <h2 className="text-xl font-bold text-slate-800 min-w-0 truncate">{conf.label}</h2>
+          <span className={`text-[10.5px] font-bold rounded-md px-2 py-1 shrink-0 ${
             conf.group === 'app' ? 'text-[#15803D] bg-[#F0FDF4]' : 'text-[#92400E] bg-[#FFFBEB]'}`}>
             {conf.group === 'app' ? 'บันทึกในแอป' : 'จาก POS'}
           </span>
@@ -3051,7 +3064,6 @@ function ReportView() {
           )}
         </div>
       )}
-      </div>
     </div>
   );
 }

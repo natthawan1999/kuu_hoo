@@ -35,7 +35,10 @@
       img, svg, video, canvas, table { max-width: 100%; }
       /* iOS ซูมจอเองเวลาแตะช่องกรอกที่ตัวอักษรเล็กกว่า 16px — กันด้วยการบังคับ 16px บนจอเล็ก */
       @media (max-width: 480px) {
-        input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
+        input:not([type="checkbox"]):not([type="radio"]):not([type="date"]), select, textarea { font-size: 16px !important; }
+        /* ช่องวันที่บน iOS กว้างตายตัวจนดันกรอบ — ย่อให้อยู่ในกรอบ */
+        input[type="date"] { font-size: 13px; width: 100%; min-width: 0; max-width: 100%;
+          -webkit-appearance: none; appearance: none; }
       }
       /* จอสูงจริงบนมือถือ (แถบเบราว์เซอร์ซ่อน/โผล่) */
       @supports (height: 100dvh) {

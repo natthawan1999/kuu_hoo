@@ -1063,20 +1063,16 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         </div>
 
-        <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-4"
-          style={serverReady
-            ? { background: '#EAF1F0', borderColor: '#B6D0CC' }
-            : { background: '#FFFBEB', borderColor: '#FDE68A' }}>
-          <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: serverReady ? '#35706A' : '#B45309' }} />
-          <div className="flex-1 min-w-0">
-            <div className="text-[12.5px] font-bold" style={{ color: serverReady ? '#2A5A55' : '#B45309' }}>
-              {serverReady ? 'เชื่อมต่อเซิร์ฟเวอร์แล้ว' : 'ยังไม่ได้ตั้งค่าเซิร์ฟเวอร์'}
-            </div>
-            <div className="text-[11px] mt-0.5 truncate" style={{ color: serverReady ? '#2A5A55' : '#B45309' }}>
-              {serverReady ? `สินค้าในเครื่อง ${productCount.toLocaleString('th-TH')} รายการ` : 'ต้องใส่ URL และ Anon Key ก่อนเริ่มนับ'}
+        {!serverReady && (
+          <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mb-4"
+            style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: '#B45309' }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] font-bold" style={{ color: '#B45309' }}>ยังไม่ได้ตั้งค่าเซิร์ฟเวอร์</div>
+              <div className="text-[11px] mt-0.5 truncate" style={{ color: '#B45309' }}>ต้องใส่ URL และ Anon Key ก่อนเริ่มนับ</div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
         <div className="grid grid-cols-2 gap-2.5">

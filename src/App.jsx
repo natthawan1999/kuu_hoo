@@ -2924,19 +2924,17 @@ function ReportView() {
 
         <div className="p-4 space-y-4">
         {conf.needDate && (
-          <div className="rounded-xl border border-[#E4E6EA] overflow-hidden">
-            <div className="grid grid-cols-1 sm:grid-cols-2">
-              <label className="block p-3 border-b sm:border-b-0 sm:border-r border-[#E4E6EA]">
-                <span className="text-[11px] font-bold tracking-wide text-slate-400">ตั้งแต่</span>
-                <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                  className="mt-1.5 block w-full min-w-0 bg-transparent text-[15px] font-semibold text-slate-800 outline-none" />
-              </label>
-              <label className="block p-3">
-                <span className="text-[11px] font-bold tracking-wide text-slate-400">ถึง</span>
-                <input type="date" value={to} onChange={e => setTo(e.target.value)}
-                  className="mt-1.5 block w-full min-w-0 bg-transparent text-[15px] font-semibold text-slate-800 outline-none" />
-              </label>
-            </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-medium text-slate-500">ตั้งแต่</span>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+                className="mt-1 w-full min-w-0 border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-500">ถึง</span>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)}
+                className="mt-1 w-full min-w-0 border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
+            </label>
           </div>
         )}
 

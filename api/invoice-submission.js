@@ -5,6 +5,7 @@
 //   GET    /api/invoice-submission?keyed_by_id=u1     → ใบของคนนั้น
 //   POST   /api/invoice-submission { submission }     → ส่งใบใหม่ (pending)
 //   PATCH  /api/invoice-submission { id, status, review_note, reviewed_by }
+//          { id, drive: { ok, url, filename, error, by } } → บันทึกผลส่งขึ้น Drive
 //          status=approved → เขียนลง bill_header + imp_data ให้ด้วย
 //   DELETE /api/invoice-submission?id=...
 //
@@ -51,6 +52,15 @@ const toApp = (r) => ({
   reviewedAt: r.reviewed_at,
   reviewedBy: r.reviewed_by,
   postedAt: r.posted_at,
+  drive: {
+    status: r.drive_status || null,
+    filename: r.drive_filename || '',
+    url: r.drive_url || '',
+    uploadedAt: r.drive_uploaded_at || null,
+    error: r.drive_error || '',
+    tries: r.drive_tries || 0,
+    by: r.drive_by || '',
+  },
 });
 
 // วันที่ไทย/ค.ศ. หลายรูปแบบ → YYYY-MM-DD (เหมือน th_date() ฝั่ง SQL)
@@ -204,8 +214,21 @@ export default async function handler(req, res) {
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      const { id, status, review_note, reviewed_by, header, lines } = body;
+      const { id, status, review_note, reviewed_by, header, lines, drive } = body;
       if (!id) return res.status(400).json({ error: 'ต้องมี id' });
+
+      // บันทึกผลส่งขึ้น Drive — ไม่แตะฟิลด์รีวิว ไม่ยิงลง ledger ซ้ำ
+      if (drive) {
+        const cur = await sb(`invoice_submissions?id=eq.${encodeURIComponent(id)}&select=drive_tries`);
+        const tries = (cur?.[0]?.drive_tries || 0) + 1;
+        const dp = drive.ok
+          ? { drive_status: 'ok', drive_filename: drive.filename || null, drive_url: drive.url || null,
+              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries, drive_by: drive.by || null }
+          : { drive_status: 'failed', drive_filename: drive.filename || null,
+              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries, drive_by: drive.by || null };
+        const o = await sb(`invoice_submissions?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dp) });
+        return res.status(200).json({ submission: toApp(Array.isArray(o) ? o[0] : o) });
+      }
 
       const cur = await sb(`invoice_submissions?select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = cur?.[0];

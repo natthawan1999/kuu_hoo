@@ -11,6 +11,12 @@
 const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
 
+// ออกเลขเอกสารจากตัวนับกลางใน DB — ทุกเครื่องขอจากที่นี่ที่เดียว จึงไม่ชนกัน
+async function nextDocNo(prefix) {
+  const out = await sb('rpc/next_doc_no', { method: 'POST', body: JSON.stringify({ p_prefix: prefix }) });
+  return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
+}
+
 async function sb(path, init = {}) {
   const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
     ...init,
@@ -49,6 +55,16 @@ const toApp = (r) => ({
   reviewedBy: r.reviewed_by,
   compareAt: r.compare_at,
   compareData: r.compare_data || null,
+  // สถานะส่งขึ้น Drive — อยู่กับใบ ทุกเครื่องเห็นตรงกัน
+  drive: {
+    status: r.drive_status || null,
+    filename: r.drive_filename || '',
+    url: r.drive_url || '',
+    uploadedAt: r.drive_uploaded_at || null,
+    error: r.drive_error || '',
+    tries: r.drive_tries || 0,
+    by: r.drive_by || '',
+  },
 });
 
 export default async function handler(req, res) {
@@ -72,11 +88,11 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const s = body.submission || body;
-      if (!s?.docNo) return res.status(400).json({ error: 'ต้องมี docNo' });
       if (!Array.isArray(s.data)) return res.status(400).json({ error: 'data ต้องเป็น array' });
 
+      const prefix = (s.featureType || 'recorder') === 'stock_compare' ? 'ST' : 'RC';
       const row = {
-        doc_no: s.docNo,
+        doc_no: null,   // เซิร์ฟเวอร์ออกให้ตอนบันทึก
         counter_id: s.counterId || 'unknown',
         counter_name: s.counter || 'พนักงาน',
         feature_type: s.featureType || 'recorder',
@@ -107,22 +123,40 @@ export default async function handler(req, res) {
         }
       } catch { /* เช็คซ้ำไม่ได้ก็ให้บันทึกต่อ ดีกว่าบล็อกงาน */ }
 
-      try {
-        const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
-        return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
-      } catch (e) {
-        // เลขใบซ้ำ (สองเครื่องส่งพร้อมกัน) — บอกให้แอปขอเลขใหม่
-        if (e.code === '23505' || /duplicate|unique/i.test(e.message)) {
-          return res.status(409).json({ error: `เลขที่เอกสาร ${s.docNo} มีอยู่แล้ว — กดส่งอีกครั้งเพื่อขอเลขใหม่`, duplicate: true });
+      // ขอเลขจากตัวนับกลาง ถ้าชนจริง (แข่งกันเสี้ยววินาที) ขอใหม่ให้เองเงียบ ๆ
+      let lastErr;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          row.doc_no = await nextDocNo(prefix);
+          const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
+          return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
+        } catch (e) {
+          lastErr = e;
+          if (e.code === '23505' || /duplicate|unique/i.test(e.message || '')) continue;
+          throw e;
         }
-        throw e;
       }
+      throw lastErr;
     }
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      const { id, status, review_note, reviewed_by } = body;
+      const { id, status, review_note, reviewed_by, drive } = body;
       if (!id) return res.status(400).json({ error: 'ต้องมี id' });
+
+      // บันทึกผลส่งขึ้น Drive — ไม่แตะฟิลด์รีวิว
+      if (drive) {
+        const cur = await sb(`count_submissions?id=eq.${encodeURIComponent(id)}&select=drive_tries`);
+        const tries = (cur?.[0]?.drive_tries || 0) + 1;
+        const dp = drive.ok
+          ? { drive_status: 'ok', drive_filename: drive.filename || null, drive_url: drive.url || null,
+              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries, drive_by: drive.by || null }
+          : { drive_status: 'failed', drive_filename: drive.filename || null,
+              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries, drive_by: drive.by || null };
+        const o = await sb(`count_submissions?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dp) });
+        return res.status(200).json({ submission: toApp(Array.isArray(o) ? o[0] : o) });
+      }
+
       const patch = { reviewed_at: new Date().toISOString() };
       if (status) patch.status = status;
       if (review_note !== undefined) patch.review_note = review_note || '';

@@ -2094,7 +2094,6 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } };
   const ago = (h) => h === null ? '—' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
 
-  if (st.busy && !d && !st.err) return null;   // อย่าให้หน้าแรกกระตุก
 
   const shortRows = reports.filter(r => r.missing > 0).length;
   const driveState = st.err ? 'unknown' : !up ? 'unknown' : up.failed ? 'late' : up.pending ? 'stale' : 'ok';
@@ -2104,15 +2103,16 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
     : reports.length ? 'ok' : 'unknown';
 
   const dbReady = !!(db?.url && db?.anonKey);
-  const dbState = !dbReady ? 'late' : db.connection === 'error' ? 'late' : db.productCount > 0 || db.connection === 'ok' ? 'ok' : 'stale';
+  const dbState = !dbReady ? 'late' : db.connection === 'error' ? 'late' : 'ok';
 
+  const loading = st.busy && !d;
   const cards = [
     {
       id: 'db', icon: Cloud, title: 'เชื่อมต่อ Supabase', state: dbState,
       sub: !dbReady ? 'ยังไม่ได้ตั้งค่า — แอปทำงานไม่ได้'
         : db.connection === 'error' ? 'ต่อไม่ได้ — เช็คคีย์หรือชื่อตาราง'
         : db.productCount > 0 ? `ต่ออยู่ · สินค้า ${db.productCount.toLocaleString()} รายการ`
-        : 'ต่ออยู่ · ยังไม่ได้โหลดสินค้า',
+        : 'ต่ออยู่',
       badge: 0,
     },
     {
@@ -2142,29 +2142,32 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
         <button onClick={load} disabled={st.busy}
           className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 disabled:opacity-50">
           <RefreshCw size={11} className={st.busy ? 'animate-spin' : ''} />
-          {d ? fmt(d.checkedAt) : 'เช็คใหม่'}
+          {loading ? 'กำลังเช็ค…' : d ? fmt(d.checkedAt) : 'เช็คใหม่'}
         </button>
       </div>
 
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
         {cards.map((c, i) => {
-          const CIcon = c.icon;
+          const busyCard = loading && c.id !== 'db';   // สถานะ Supabase รู้จากในเครื่อง ไม่ต้องรอ API
+          const state = busyCard ? 'unknown' : c.state;
+          const CIcon = busyCard ? RefreshCw : c.icon;
           const on = open === c.id;
-          const ink = INK[c.state];
+          const ink = INK[state];
           return (
             <div key={c.id} style={{ borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
               <button onClick={() => setOpen(on ? '' : c.id)}
                 className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
                 style={{ minHeight: 62 }}>
                 <div className="rounded-lg flex items-center justify-center shrink-0"
-                  style={{ width: 36, height: 36, background: c.state === 'ok' ? '#F6F7F8' : `${ink}14`, color: c.state === 'ok' ? '#0F172A' : ink }}>
-                  <CIcon size={17} />
+                  style={{ width: 36, height: 36, background: `${ink}14`, color: ink }}>
+                  <CIcon size={17} className={busyCard ? 'animate-spin' : ''} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-bold text-slate-800">{c.title}</div>
-                  <div className="text-[11px] truncate" style={{ color: c.state === 'ok' ? '#64748B' : ink }}>{c.sub}</div>
+                  <div className="text-[11px] truncate" style={{ color: ink }}>{busyCard ? 'กำลังเช็ค…' : c.sub}</div>
                 </div>
-                {c.badge > 0 && (
+                {state === 'ok' && !busyCard && <CheckCircle2 size={15} className="shrink-0" style={{ color: ink }} />}
+                {!busyCard && c.badge > 0 && (
                   <span className="shrink-0 rounded-full text-[11px] font-bold text-white tabular-nums px-2 py-0.5"
                     style={{ background: ink }}>{c.badge}</span>
                 )}

@@ -367,11 +367,11 @@ function openPDFPrint(sub) {
   document.getElementById('__pdf_close_btn__')?.addEventListener('click', () => { document.getElementById(OVERLAY_ID)?.remove(); document.getElementById(STYLE_ID)?.remove(); });
 }
 
-// ค่ากลางจาก /api/settings — ตั้งครั้งเดียว ทุกเครื่องใช้ร่วม ค่าใน const เป็นค่าตั้งต้น
+// ค่ากลางจาก /api/config — ตั้งครั้งเดียว ทุกเครื่องใช้ร่วม ค่าใน const เป็นค่าตั้งต้น
 let CLOUD_SETTINGS = {};
 async function loadCloudSettings() {
   try {
-    const r = await fetch('/api/settings');
+    const r = await fetch('/api/config');
     const j = await r.json();
     if (j?.settings) CLOUD_SETTINGS = j.settings;
   } catch {}
@@ -4165,7 +4165,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const saveCentral = async (key, value) => {
     setCfgSaved('saving');
     try {
-      const r = await fetch('/api/settings', {
+      const r = await fetch('/api/config', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value, by: currentUser?.name || '' }),
       });
@@ -4469,7 +4469,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       (async()=>{
         // ชื่อไฟล์ = เลขเอกสารจากตัวนับกลาง เช่น IV-202608220001 — หลายคนคีย์พร้อมกันก็ไม่ชน
         try {
-          const r=await fetch('/api/filename?prefix=IV');
+          const r=await fetch('/api/config?next=IV');
           const name=await r.json();
           if(r.ok&&typeof name==='string'&&name){setFileName(name);return;}
         } catch {}

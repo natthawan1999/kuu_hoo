@@ -892,7 +892,9 @@ export default function CombinedApp() {
     );
   }
 
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenPage={setPublicPage} serverReady={isSupabaseReady} productCount={products.length} />;
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} onOpenPage={setPublicPage} serverReady={isSupabaseReady}
+    productCount={products.length} onPrefillView={setView} onTestDb={testConnection}
+    db={{ ...supabaseConfig, connection: connectionStatus, dataSource, lastSyncAt, productCount: products.length }} />;
 
   const isManager = currentUser.role === 'manager';
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
@@ -1105,7 +1107,7 @@ export default function CombinedApp() {
   );
 }
 
-function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
+function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0, db, onTestDb, onPrefillView }) {
   const [role, setRole] = useState(null);
   const [feature, setFeature] = useState(null);
   const [name, setName] = useState('');
@@ -1262,8 +1264,10 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
 
         <div className="mt-5">
           <LandingStatus
-            onOpenManager={() => { setView('saved'); setRole('manager'); setFeature('all'); }}
-            onOpenSync={() => { setView('data_sync'); setRole('manager'); setFeature('all'); }} />
+            onOpenManager={() => { onPrefillView?.('saved'); setRole('manager'); setFeature('all'); }}
+            onOpenSync={() => { onPrefillView?.('data_sync'); setRole('manager'); setFeature('all'); }}
+            db={db} onTestDb={onTestDb}
+            onOpenDbSettings={() => onOpenPage('settings')} />
         </div>
 
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mt-5 mb-2">เครื่องมือ · เปิดได้เลย</div>
@@ -1271,7 +1275,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           {[
             { id: 'staff',     icon: Users,           title: 'จัดการพนักงาน',    sub: 'เพิ่มคน ตั้งสิทธิ์ ปิดการใช้งาน' },
             { id: 'report',    icon: FileSpreadsheet, title: 'รายงาน',           sub: 'ดึงข้อมูลและส่งออก Excel / CSV' },
-            { id: 'settings',  icon: Cloud,           title: 'ตั้งค่าเซิร์ฟเวอร์', sub: 'เชื่อมต่อ Supabase และเลือกตาราง' },
           ].map((p, i) => {
             const PIcon = p.icon;
             return (
@@ -2069,9 +2072,10 @@ function PDFDownloadButton({ sub }) {
 
 // สถานะระบบบนหน้าแรก — แยกเป็น 2 การ์ด: ส่งขึ้น Drive / ซิงก์จาก POS
 // ใช้หน้าตาเดียวกับแถวในกล่อง "เครื่องมือ" แตะเพื่อกางรายละเอียด
-function LandingStatus({ onOpenManager, onOpenSync }) {
+function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTestDb }) {
   const [st, setSt] = useState({ busy: true, err: '', d: null });
   const [open, setOpen] = useState('');
+  const [dbTest, setDbTest] = useState({ busy: false, msg: '', ok: null });
 
   const load = useCallback(async () => {
     setSt(v => ({ ...v, busy: true, err: '' }));
@@ -2100,7 +2104,18 @@ function LandingStatus({ onOpenManager, onOpenSync }) {
     : reports.some(r => r.state === 'stale') ? 'stale'
     : reports.length ? 'ok' : 'unknown';
 
+  const dbReady = !!(db?.url && db?.anonKey);
+  const dbState = !dbReady ? 'late' : db.connection === 'error' ? 'late' : db.productCount > 0 || db.connection === 'ok' ? 'ok' : 'stale';
+
   const cards = [
+    {
+      id: 'db', icon: Cloud, title: 'เชื่อมต่อ Supabase', state: dbState,
+      sub: !dbReady ? 'ยังไม่ได้ตั้งค่า — แอปทำงานไม่ได้'
+        : db.connection === 'error' ? 'ต่อไม่ได้ — เช็คคีย์หรือชื่อตาราง'
+        : db.productCount > 0 ? `ต่ออยู่ · สินค้า ${db.productCount.toLocaleString()} รายการ`
+        : 'ต่ออยู่ · ยังไม่ได้โหลดสินค้า',
+      badge: 0,
+    },
     {
       id: 'drive', icon: Upload, title: 'ส่งขึ้น Drive', state: driveState,
       sub: st.err ? 'เช็คสถานะไม่ได้'
@@ -2157,6 +2172,40 @@ function LandingStatus({ onOpenManager, onOpenSync }) {
                 <ChevronRight size={15} className="shrink-0 text-slate-300"
                   style={{ transform: on ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
               </button>
+
+              {on && c.id === 'db' && (
+                <div className="px-3.5 pb-3.5 pt-1 space-y-2">
+                  <div className="rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: '#F6F7F8' }}>
+                    {[['เซิร์ฟเวอร์', dbReady ? String(db.url).replace(/^https?:\/\//, '') : 'ยังไม่ได้ตั้ง'],
+                      ['ตารางสินค้า', db?.tableName || '—'],
+                      ['ตารางสต็อก', db?.stockTableName || '—'],
+                      ['แหล่งข้อมูล', db?.dataSource === 'supabase' ? 'Supabase' : db?.dataSource === 'seed' ? 'ข้อมูลตัวอย่าง' : 'ยังไม่โหลด']].map(([k, v]) => (
+                      <div key={k} className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500 shrink-0" style={{ width: 74 }}>{k}</span>
+                        <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] font-semibold text-slate-800">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {db?.lastSyncAt && <div className="text-[11px] text-slate-500">โหลดสินค้าล่าสุด {fmt(db.lastSyncAt)}</div>}
+                  {dbTest.msg && (
+                    <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed"
+                      style={{ background: dbTest.ok ? '#F0F7F4' : '#FDF2F2', color: dbTest.ok ? '#2A5A55' : '#B91C1C' }}>{dbTest.msg}</div>
+                  )}
+                  <div className="flex gap-2">
+                    <button disabled={dbTest.busy || !dbReady}
+                      onClick={async () => {
+                        setDbTest({ busy: true, msg: '', ok: null });
+                        try { const r = await onTestDb?.(db); setDbTest({ busy: false, ok: true, msg: r || 'ต่อได้ อ่านข้อมูลได้ปกติ' }); }
+                        catch (e) { setDbTest({ busy: false, ok: false, msg: e.message || 'ต่อไม่ได้' }); }
+                      }}
+                      className="flex-1 rounded-xl text-white text-[12.5px] font-bold disabled:opacity-50"
+                      style={{ minHeight: 42, background: '#0F172A' }}>{dbTest.busy ? 'กำลังทดสอบ…' : 'ทดสอบการเชื่อมต่อ'}</button>
+                    <button onClick={onOpenDbSettings}
+                      className="rounded-xl border bg-white text-[12.5px] font-semibold text-slate-600 px-3"
+                      style={{ minHeight: 42, borderColor: '#E4E6EA' }}>แก้ด้วยมือ</button>
+                  </div>
+                </div>
+              )}
 
               {on && c.id === 'drive' && (
                 <div className="px-3.5 pb-3.5 pt-1">

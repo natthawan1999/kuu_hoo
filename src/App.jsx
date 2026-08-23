@@ -2092,7 +2092,8 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
   const up = d?.uploads;
   const reports = d?.reports || [];
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } };
-  const ago = (h) => h === null ? '—' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
+  const ago = (h) => h === null ? '—' : h < 1 ? 'เพิ่งดึง' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
+  const thDate = (v) => { try { return new Date(v + 'T00:00:00+07:00').toLocaleDateString('th-TH', { day:'numeric', month:'short' }); } catch { return v || '—'; } };
 
 
   const shortRows = reports.filter(r => r.missing > 0).length;
@@ -2128,9 +2129,9 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
       id: 'sync', icon: Database, title: 'ซิงก์จาก POS', state: syncState,
       sub: st.err ? 'เช็คสถานะไม่ได้'
         : !reports.length ? 'ยังไม่มีรอบซิงก์'
-        : shortRows ? `ขึ้นไม่ครบ ${shortRows} รีพอร์ต`
-        : reports.some(r => r.state !== 'ok') ? 'มีรีพอร์ตที่ค้าง'
-        : `ครบทั้ง ${reports.length} รีพอร์ต`,
+        : shortRows ? `ขึ้นไม่ครบ ${shortRows} รายงาน`
+        : reports.some(r => r.state !== 'ok') ? 'มีรายงานที่ค้าง'
+        : `ข้อมูลวันที่ ${thDate(reports[0].dataDate)} · ครบทั้ง ${reports.length} รายงาน`,
       badge: shortRows || reports.filter(r => r.state !== 'ok').length,
     },
   ];
@@ -2247,15 +2248,32 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                   ) : (
                     <>
                       <div className="divide-y" style={{ borderColor: '#F1F3F5' }}>
-                        {reports.map(r => (
-                          <div key={r.report} className="flex items-center gap-2 py-1.5">
-                            <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
-                            <span className="flex-1 min-w-0 truncate text-[11.5px] text-slate-700">{r.label || r.report}</span>
-                            <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: r.missing > 0 ? '#B91C1C' : '#64748B' }}>
-                              {r.missing > 0 ? `ขาด ${r.missing.toLocaleString()} แถว` : ago(r.hoursAgo)}
-                            </span>
-                          </div>
-                        ))}
+                        {reports.map(r => {
+                          const short = r.missing > 0;
+                          return (
+                            <div key={r.report} className="py-2">
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
+                                <span className="flex-1 min-w-0 truncate text-[12px] font-semibold text-slate-800">{r.label || r.report}</span>
+                                <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: short ? '#B91C1C' : '#2A5A55' }}>
+                                  {r.rowsCsv !== null && r.rowsCsv !== r.rowsSent
+                                    ? `${Number(r.rowsSent || 0).toLocaleString()} / ${r.rowsCsv.toLocaleString()} แถว`
+                                    : `${Number(r.rowsSent ?? r.rows ?? 0).toLocaleString()} แถว`}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 pl-3.5 mt-0.5 text-[11px] text-slate-500">
+                                <span className="shrink-0">ข้อมูลวันที่ {thDate(r.dataDate)}</span>
+                                <span className="flex-1" />
+                                <span className="shrink-0">ดึงเมื่อ {ago(r.hoursAgo)}</span>
+                              </div>
+                              {short && (
+                                <div className="pl-3.5 mt-0.5 text-[11px] font-semibold" style={{ color: '#B91C1C' }}>
+                                  ขาด {r.missing.toLocaleString()} แถว
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                       <button onClick={onOpenSync}
                         className="w-full rounded-xl border bg-white text-[12.5px] font-semibold text-slate-700 mt-2.5"
@@ -2390,6 +2408,7 @@ function DataSyncView() {
                         <div className="text-[10px]" style={{ color: short ? '#B91C1C' : '#64748B' }}>แถวที่เข้า</div>
                         <div className="text-[13px] font-bold tabular-nums" style={{ color: short ? '#B91C1C' : '#0F172A' }}>
                           {(r.rowsSent ?? r.rows ?? 0).toLocaleString()}
+                          {r.rowsCsv !== null && <span className="text-[11px] font-semibold text-slate-400"> / {r.rowsCsv.toLocaleString()}</span>}
                         </div>
                       </div>
                     </div>

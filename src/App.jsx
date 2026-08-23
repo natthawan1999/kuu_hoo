@@ -414,7 +414,7 @@ const safeFilename = (name) => String(name ?? 'file').replace(/[\\/:*?"<>|\u0000
 // สถานะจริงอยู่ใน DB (คอลัมน์ drive_* ของใบ) — localStorage เป็นแค่แคชตอนเน็ตหลุด
 function driveEntryOf(sub, cache = {}, type = 'xlsx') {
   const d = sub?.drive;
-  if (d?.status === 'ok')     return { ok: true,  link: d.url, filename: d.filename, at: d.uploadedAt, tries: d.tries, by: d.by, fromDb: true };
+  if (d?.status === 'ok')     return { ok: true,  link: d.url, filename: d.filename, at: d.uploadedAt, tries: d.tries, fromDb: true };
   if (d?.status === 'failed') return { ok: false, err: d.error, filename: d.filename, at: d.uploadedAt, tries: d.tries, fromDb: true };
   return cache[uploadKey(sub.id, type)] || null;
 }
@@ -422,7 +422,7 @@ async function recordDriveResult(sub, entry, by, endpoint = '/api/submission') {
   try {
     const res = await fetch(endpoint, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: sub.id, drive: { ok: !!entry.ok, url: entry.link || '', filename: entry.filename || '', error: entry.err || '', by: by || '' } }),
+      body: JSON.stringify({ id: sub.id, drive: { ok: !!entry.ok, url: entry.link || '', filename: entry.filename || '', error: entry.err || '' } }),
     });
     const j = await res.json().catch(() => null);
     return j?.submission || null;
@@ -2429,6 +2429,77 @@ function DataSyncView() {
   );
 }
 
+function DriveSettingsPanel({ currentUser }) {
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState(() => ({ ...CLOUD_SETTINGS }));
+  const [saved, setSaved] = useState('');
+
+  useEffect(() => { loadCloudSettings().then(cs => setV({ ...cs })); }, []);
+
+  const FIELDS = [
+    { k: 'drive_folder_recorder', label: 'โฟลเดอร์ใบนับสต็อก', ph: DRIVE_FOLDER_RECORDER },
+    { k: 'drive_folder_compare',  label: 'โฟลเดอร์เทียบยอด',   ph: DRIVE_FOLDER_STOCK_COMPARE },
+    { k: 'drive_folder_invoice',  label: 'โฟลเดอร์บิลซื้อ',     ph: DRIVE_FOLDER_INVOICE },
+    { k: 'drive_client_id',       label: 'Google Client ID',   ph: 'xxx.apps.googleusercontent.com' },
+  ];
+
+  const save = async () => {
+    setSaved('saving');
+    try {
+      const r = await fetch('/api/config', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: v, by: currentUser?.name || '' }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.error) throw new Error(j.error);
+      CLOUD_SETTINGS = { ...CLOUD_SETTINGS, ...v };
+      setSaved('ok');
+    } catch { setSaved('err'); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]" style={{ minHeight: 58 }}>
+        <div className="rounded-lg flex items-center justify-center shrink-0"
+          style={{ width: 34, height: 34, background: '#F6F7F8', color: '#0F172A' }}><SettingsIcon size={16} /></div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-bold text-slate-800">ตั้งค่าโฟลเดอร์ Drive</div>
+          <div className="text-[11px] text-slate-500 truncate">ไฟล์ทุกชนิดลงโฟลเดอร์ไหน — ตั้งครั้งเดียวทุกเครื่องใช้ร่วม</div>
+        </div>
+        <ChevronRight size={15} className="shrink-0 text-slate-300"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
+
+      {open && (
+        <div className="px-3.5 pb-3.5 pt-1 space-y-2">
+          {FIELDS.map(f => (
+            <div key={f.k}>
+              <label className="text-[11px] font-semibold text-slate-500">{f.label}</label>
+              <input value={v[f.k] || ''} placeholder={f.ph}
+                onChange={e => { setV(o => ({ ...o, [f.k]: e.target.value })); setSaved(''); }}
+                className="w-full mt-1 rounded-xl border px-3 font-mono text-[12px] text-slate-800 outline-none"
+                style={{ minHeight: 44, borderColor: '#E4E6EA', background: '#FAFBFB' }} />
+            </div>
+          ))}
+          <div className="text-[11px] text-slate-400 leading-relaxed">
+            เว้นว่าง = ใช้ค่าตั้งต้นในระบบ · Folder ID คือส่วนท้าย URL ของโฟลเดอร์ใน Drive (หลัง /folders/)
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button onClick={save} disabled={saved === 'saving'}
+              className="rounded-xl text-white text-[12.5px] font-bold px-4 disabled:opacity-60"
+              style={{ minHeight: 42, background: '#0F172A' }}>{saved === 'saving' ? 'กำลังบันทึก…' : 'บันทึกค่ากลาง'}</button>
+            <span className="text-[11.5px] font-semibold"
+              style={{ color: saved === 'err' ? '#B91C1C' : saved === 'ok' ? '#2A5A55' : '#94A3B8' }}>
+              {saved === 'ok' ? 'บันทึกแล้ว — ทุกเครื่องใช้ค่านี้' : saved === 'err' ? 'บันทึกไม่ได้ — ยังไม่ได้รัน sql/14' : ''}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, currentUser, onPatched, onInvPatched }) {
   const cache = useUploadLog();
   const [tab, setTab] = useState('pending');
@@ -2527,8 +2598,12 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2.5">
                     <CheckCircle2 size={15} style={{ color: '#2F5D50' }} />
                     <span className="text-[12px] font-bold" style={{ color: '#2A5A55' }}>ขึ้น Drive แล้ว</span>
-                    <span className="flex-1" />
-                    <span className="font-mono text-[11px] text-slate-400">{fmt(res.at)}{res.by ? ' · ' + res.by : ''}</span>
+                    {res.link && (
+                      <a href={res.link} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
+                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
+                    )}
+                    <span className="font-mono text-[11px] text-slate-400">{fmt(res.at)}</span>
                   </div>
                   <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed border"
                     style={{ background: '#F0F7F4', borderColor: '#DBE9E3', color: '#2A5A55' }}>
@@ -2567,7 +2642,11 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2">
                     <XCircle size={15} style={{ color: '#B91C1C' }} />
                     <span className="text-[12px] font-bold" style={{ color: '#B91C1C' }}>ส่งไม่สำเร็จ</span>
-                    <span className="flex-1" />
+                    {res.link && (
+                      <a href={res.link} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
+                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
+                    )}
                     <span className="text-[11px] text-slate-400">ลองแล้ว {res.tries || 1} ครั้ง</span>
                   </div>
                   <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FDF2F2', color: '#B91C1C' }}>
@@ -2585,7 +2664,11 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2.5">
                     <span className="w-2 h-2 rounded-full" style={{ background: '#94A3B8' }} />
                     <span className="text-[12px] font-bold text-slate-600">ยังไม่ขึ้น Drive</span>
-                    <span className="flex-1" />
+                    {res.link && (
+                      <a href={res.link} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
+                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
+                    )}
                     <span className="text-[11.5px] text-slate-400">{isInv(sub) ? `${sub.vendorName || 'ไม่ระบุผู้ขาย'} · ${sub.itemCount || 0} รายการ` : `${sub.counter || sub.staffName || 'ทีมงาน'} · ${sub.data?.length || 0} รายการ`}</span>
                   </div>
                   <div className="flex gap-2">
@@ -2607,6 +2690,8 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
           </div>
         );
       })}
+
+      <DriveSettingsPanel currentUser={currentUser} />
     </div>
   );
 }
@@ -4274,7 +4359,6 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
     } catch { setCfgSaved('err'); }
   };
   const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_DRIVE_FOLDER_ID || DRIVE_FOLDER_DEFAULT) : DRIVE_FOLDER_DEFAULT));
-  const [showInvCfg, setShowInvCfg] = useState(false);
   const [nameStatus, setNameStatus] = useState(null);
 
   const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
@@ -4317,7 +4401,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   };
 
   const connectGoogle = () => {
-    if (!gClientId) { alert('กรุณาใส่ Google Client ID ก่อน'); setShowInvCfg(true); return; }
+    if (!gClientId) { alert('ยังไม่ได้ตั้ง Google Client ID — ให้ผู้จัดการตั้งที่ บันทึกแล้ว → ตั้งค่าโฟลเดอร์ Drive'); return; }
     if (!gReady || !window.google?.accounts) { alert('Google library ยังไม่โหลด'); return; }
     const client = window.google.accounts.oauth2.initTokenClient({ client_id: gClientId, scope: 'https://www.googleapis.com/auth/drive.file', callback: resp => { if (resp.access_token) setGToken(resp.access_token); else if (resp.error) setDErr('OAuth: '+resp.error); }, error_callback: err => setDErr('OAuth error: '+(err.message||err.type)) });
     client.requestAccessToken();
@@ -4605,25 +4689,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
           <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
-          <button onClick={()=>setShowInvCfg(!showInvCfg)} style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', cursor:'pointer' }}>⚙ ตั้งค่า</button>
+
           {step>1&&<button onClick={reset} style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ ใหม่</button>}
         </div>
       </div>
 
-      {showInvCfg&&(
-        <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:16, marginBottom:16 }}>
-          <div style={{ fontWeight:600, marginBottom:4 }}>ตั้งค่า Google Drive</div>
-          <div style={{ fontSize:11.5, color:'#64748b', marginBottom:10 }}>ค่ากลาง — ตั้งที่นี่แล้วทุกเครื่องใช้ร่วมกัน</div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>{safeSet('g_client',gClientId);saveCentral('drive_client_id',gClientId);}} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID (บิลซื้อ)</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>{safeSet('drive_folder',driveFolder);saveCentral('drive_folder_invoice',driveFolder);}} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:9, background:'#2f6e90', color:'#fff', border:'none', cursor:'pointer' }}>ปิด</button>
-            <span style={{ fontSize:11.5, fontWeight:600, color: cfgSaved==='err' ? '#B91C1C' : cfgSaved==='ok' ? '#2A5A55' : '#94a3b8' }}>
-              {cfgSaved==='saving' ? 'กำลังบันทึก…' : cfgSaved==='ok' ? 'บันทึกเป็นค่ากลางแล้ว' : cfgSaved==='err' ? 'บันทึกค่ากลางไม่ได้ — ใช้เฉพาะเครื่องนี้' : ''}
-            </span>
-          </div>
-        </div>
-      )}
 
       {currentUser && (
         <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:10, marginBottom:12, display:'flex', flexDirection:'column', gap:8 }}>

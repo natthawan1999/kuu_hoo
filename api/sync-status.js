@@ -28,16 +28,27 @@ const rpc = (fn, args = {}) => sb(`rpc/${fn}`, { method: 'POST', body: JSON.stri
 
 const n = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
-// เกณฑ์เดียวที่ใช้ทั้งหน้าแรกและหน้าสถานะ
-//   late  = รอบล่าสุด fail · ส่งแถวไม่ครบ · หรือไม่ได้ซิงก์เกิน 48 ชม.
-//   stale = ไม่ได้ซิงก์เกิน 26 ชม. (ควรวันละรอบ)
+// ชื่อรายงานเป็นภาษาคน
+const REPORT_LABEL = {
+  product_price:    'ราคาสินค้า',
+  product_stock:    'สินค้าคงคลัง',
+  vendor_info:      'ข้อมูลผู้ขาย',
+  sale_report_bill: 'บิลขาย',
+  sale_item:        'รายการสินค้าขาย',
+};
+
+// view sync_status ตัดสินสถานะมาให้แล้วในคอลัมน์ "สรุป" — ใช้ของมัน ไม่ตั้งเกณฑ์ซ้ำ
+//   ปกติ / ล้มเหลว / ไม่ได้ซิงก์นานผิดปกติ (เกิน 36 ชม.)
+// เพิ่มเงื่อนไขเดียวที่ view ไม่รู้: แถวหายระหว่างทาง (rows_csv ≠ rows_sent)
 function gradeReport(r) {
-  if (r.status && r.status !== 'ok') return 'late';
   if (r.rowsCsv !== null && r.rowsSent !== null && r.rowsSent < r.rowsCsv) return 'late';
+  if (r.summary === 'ล้มเหลว') return 'late';
+  if (r.summary === 'ไม่ได้ซิงก์นานผิดปกติ') return 'stale';
+  if (r.summary === 'ปกติ') return 'ok';
+  // ไม่มีค่า "สรุป" (อ่าน view ไม่ได้ ใช้ sync_log แทน) — ตัดสินเอง
+  if (r.status && r.status !== 'ok') return 'late';
   if (r.hoursAgo === null) return 'unknown';
-  if (r.hoursAgo > 48) return 'late';
-  if (r.hoursAgo > 26) return 'stale';
-  return 'ok';
+  return r.hoursAgo > 36 ? 'stale' : 'ok';
 }
 
 export default async function handler(req, res) {
@@ -66,20 +77,25 @@ export default async function handler(req, res) {
       const view = await sb('sync_status?select=*');
       reports = (view || []).map(v => {
         const latest = runs.find(x => x.report === v.report);
+        const src  = n(v['แถวต้นทาง'])  ?? latest?.rowsCsv  ?? null;
+        const sent = n(v['แถวสำเร็จ'])   ?? latest?.rowsSent ?? null;
+        const miss = n(v['แถวที่หาย'])   ?? latest?.missing  ?? null;
         const base = {
           report: v.report,
           lastRunAt: v['ซิงก์ล่าสุด'] || null,
           dataDate: v['วันที่ข้อมูล'] || null,
           status: v['สถานะ'] || null,
-          rows: n(v['จำนวนแถว']),
+          rows: sent ?? n(v['จำนวนแถว']),
           hoursAgo: n(v['ชั่วโมงที่ผ่านมา']),
           summary: v['สรุป'] || '',
           error: v['ข้อความ_error'] || '',
-          rowsCsv: latest?.rowsCsv ?? null,
-          rowsSent: latest?.rowsSent ?? null,
-          missing: latest?.missing ?? null,
+          mode: v['โหมด'] || '',                       // auto = รันเอง · manual = คนสั่ง
+          durationSec: n(v['ใช้เวลา_วินาที']),
+          rowsCsv: src, rowsSent: sent, missing: miss,
+          // snapshot ทั้งร้าน (ราคา/สต็อก/ผู้ขาย) ไม่ผูกกับวันไหน — ไม่ใช่ข้อมูลขาด
+          snapshot: !v['วันที่ข้อมูล'],
         };
-        return { ...base, state: gradeReport(base) };
+        return { ...base, label: REPORT_LABEL[v.report] || v.report, state: gradeReport(base) };
       });
     } catch {
       const seen = new Set();
@@ -90,10 +106,36 @@ export default async function handler(req, res) {
         const base = { report: r.report, lastRunAt: r.runAt, dataDate: r.dataDate, status: r.status,
                        rows: r.rowsSent, hoursAgo, summary: '', error: r.error,
                        rowsCsv: r.rowsCsv, rowsSent: r.rowsSent, missing: r.missing };
-        reports.push({ ...base, state: gradeReport(base) });
+        reports.push({ ...base, label: REPORT_LABEL[r.report] || r.report, state: gradeReport(base) });
       }
     }
     reports.sort((a, b) => a.report.localeCompare(b.report));
+
+    // บิลที่ควรตรวจสอบ (ยอดผิดปกติ) — ไม่บล็อกอะไร แค่ชี้ให้ไปดู
+    let anomalies = null;
+    try {
+      const rows = await sb('bill_anomalies?select=*&order=วันที่.desc&limit=50');
+      anomalies = {
+        count: (rows || []).length,
+        rows: (rows || []).map(a => ({
+          table: a['ตาราง'], date: a['วันที่'], ref: a['อ้างอิง'],
+          value: n(a['ค่าที่พบ']), reason: a['เหตุผล'],
+        })),
+      };
+    } catch { /* ไม่มี view นี้ */ }
+
+    // สินค้า/ผู้ขายที่ไม่ถูกอัปเดตเกิน 30 วัน (upsert ลบไม่เป็น ของผีจึงค้าง)
+    let stale = null;
+    try {
+      const rows = await sb('stale_records?select=*&order=หายไปกี่วัน.desc&limit=50');
+      stale = {
+        count: (rows || []).length,
+        rows: (rows || []).map(x => ({
+          table: x['ตาราง'], code: x['รหัส'], name: x['ชื่อ'],
+          updatedAt: x.updated_at, days: n(x['หายไปกี่วัน']),
+        })),
+      };
+    } catch { /* ไม่มี view นี้ */ }
 
     // สรุปการส่งขึ้น Drive (sql/13-drive-status.sql)
     let uploads = null;
@@ -119,6 +161,8 @@ export default async function handler(req, res) {
       overall: worst,
       reports,
       runs,
+      anomalies,
+      stale,
       failedRuns: runs.filter(r => r.status && r.status !== 'ok').length,
       uploads,
     });

@@ -2093,7 +2093,12 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
   const reports = d?.reports || [];
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } };
   const ago = (h) => h === null ? '—' : h < 1 ? 'เพิ่งดึง' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
-  const thDate = (v) => { try { return new Date(v + 'T00:00:00+07:00').toLocaleDateString('th-TH', { day:'numeric', month:'short' }); } catch { return v || '—'; } };
+  // ไม่มีวันที่ (บาง view ไม่ส่งมา) อย่าโชว์ Invalid Date
+  const thDate = (v) => {
+    if (!v) return '—';
+    const d = new Date(String(v).slice(0, 10) + 'T00:00:00+07:00');
+    return isNaN(d) ? '—' : d.toLocaleDateString('th-TH', { day:'numeric', month:'short' });
+  };
 
 
   const shortRows = reports.filter(r => r.missing > 0).length;
@@ -2131,7 +2136,7 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
         : !reports.length ? 'ยังไม่มีรอบซิงก์'
         : shortRows ? `ขึ้นไม่ครบ ${shortRows} รายงาน`
         : reports.some(r => r.state !== 'ok') ? 'มีรายงานที่ค้าง'
-        : `ข้อมูลวันที่ ${thDate(reports[0].dataDate)} · ครบทั้ง ${reports.length} รายงาน`,
+        : `ครบทั้ง ${reports.length} รายงาน`,
       badge: shortRows || reports.filter(r => r.state !== 'ok').length,
     },
   ];
@@ -2262,7 +2267,9 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 pl-3.5 mt-0.5 text-[11px] text-slate-500">
-                                <span className="shrink-0">ข้อมูลวันที่ {thDate(r.dataDate)}</span>
+                                <span className="shrink-0">{r.dataDate ? 'ข้อมูลวันที่ ' + thDate(r.dataDate) : 'ภาพรวมทั้งร้าน'}</span>
+                                {r.mode === 'auto' && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#F0F7F4', color: '#2A5A55' }}>auto</span>}
+                                {r.mode === 'manual' && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#FFFBEB', color: '#B45309' }}>คนสั่ง</span>}
                                 <span className="flex-1" />
                                 <span className="shrink-0">ดึงเมื่อ {ago(r.hoursAgo)}</span>
                               </div>
@@ -2323,7 +2330,11 @@ function DataSyncView() {
   const d = st.d;
   const head = TONE[d?.overall] || TONE.unknown;
   const fmtTime = (iso) => { try { return new Date(iso).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } };
-  const fmtDate = (v) => { try { return new Date(v + 'T00:00:00+07:00').toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'2-digit' }); } catch { return v || '—'; } };
+  const fmtDate = (v) => {
+    if (!v) return '—';
+    const d = new Date(String(v).slice(0, 10) + 'T00:00:00+07:00');
+    return isNaN(d) ? '—' : d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'2-digit' });
+  };
   const ago = (h) => h === null ? '—' : h < 1 ? 'เพิ่งซิงก์' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
 
   return (
@@ -2398,7 +2409,7 @@ function DataSyncView() {
                     <div className="grid grid-cols-3 gap-2">
                       <div className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
                         <div className="text-[10px] text-slate-500">ข้อมูลวันที่</div>
-                        <div className="text-[12.5px] font-bold text-slate-800">{fmtDate(r.dataDate)}</div>
+                        <div className="text-[12.5px] font-bold text-slate-800">{r.dataDate ? fmtDate(r.dataDate) : 'ทั้งร้าน'}</div>
                       </div>
                       <div className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
                         <div className="text-[10px] text-slate-500">ซิงก์ล่าสุด</div>
@@ -2425,7 +2436,17 @@ function DataSyncView() {
                     {r.error && (
                       <div className="rounded-xl px-3 py-2.5 mt-2 text-[11.5px] leading-relaxed break-words" style={{ background: '#FDF2F2', color: '#B91C1C' }}>{r.error}</div>
                     )}
-                    <div className="text-[11px] text-slate-400 mt-2 font-mono">{fmtTime(r.lastRunAt)}</div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[11px] text-slate-400 font-mono">{fmtTime(r.lastRunAt)}</span>
+                      {r.durationSec !== null && <span className="text-[11px] text-slate-400 tabular-nums">· {r.durationSec} วิ</span>}
+                      <span className="flex-1" />
+                      {r.mode && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: r.mode === 'auto' ? '#F0F7F4' : '#FFFBEB', color: r.mode === 'auto' ? '#2A5A55' : '#B45309' }}>
+                          {r.mode === 'auto' ? 'รันอัตโนมัติ' : 'คนสั่งเอง'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

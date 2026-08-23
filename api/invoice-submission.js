@@ -5,7 +5,7 @@
 //   GET    /api/invoice-submission?keyed_by_id=u1     → ใบของคนนั้น
 //   POST   /api/invoice-submission { submission }     → ส่งใบใหม่ (pending)
 //   PATCH  /api/invoice-submission { id, status, review_note, reviewed_by }
-//          { id, drive: { ok, url, filename, error, by } } → บันทึกผลส่งขึ้น Drive
+//          { id, drive: { ok, url, filename, error } } → บันทึกผลส่งขึ้น Drive
 //          status=approved → เขียนลง bill_header + imp_data ให้ด้วย
 //   DELETE /api/invoice-submission?id=...
 //
@@ -30,6 +30,12 @@ async function sb(path, init = {}) {
   if (text) { try { body = JSON.parse(text); } catch { body = { message: text.slice(0, 300) }; } }
   if (!res.ok) { const e = new Error(body?.message || `HTTP ${res.status}`); e.code = body?.code; throw e; }
   return body;
+}
+
+// ออกเลขเอกสารจากตัวนับกลางใน DB — atomic ทุกเครื่องขอจากที่นี่ที่เดียว
+async function nextDocNo(prefix) {
+  const out = await sb('rpc/next_doc_no', { method: 'POST', body: JSON.stringify({ p_prefix: prefix }) });
+  return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
 }
 
 const toApp = (r) => ({
@@ -59,7 +65,6 @@ const toApp = (r) => ({
     uploadedAt: r.drive_uploaded_at || null,
     error: r.drive_error || '',
     tries: r.drive_tries || 0,
-    by: r.drive_by || '',
   },
 });
 
@@ -171,22 +176,10 @@ export default async function handler(req, res) {
       if (!Array.isArray(s.lines) || s.lines.length === 0) return res.status(400).json({ error: 'ไม่มีบรรทัดสินค้าในใบนี้' });
 
       // เลขใบส่งงาน IV-YYMMDDNNNN
-      const now = new Date();
-      const dateKey = String(now.getFullYear() % 100).padStart(2,'0')
-        + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0');
-      let seq = 1;
-      try {
-        const cur = await sb(`doc_counters?select=seq&prefix=eq.IV&date_key=eq.${dateKey}&limit=1`);
-        seq = (cur?.[0]?.seq || 0) + 1;
-        await sb('doc_counters', {
-          method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify({ prefix: 'IV', date_key: dateKey, seq }),
-        });
-      } catch { seq = Math.floor(Math.random() * 9000) + 1000; }
-
+      // เลขจาก next_doc_no('IV') — atomic ในคำสั่งเดียว สองคนบันทึกพร้อมกันก็ไม่ซ้ำ
+      // (ของเดิมอ่าน seq แล้วเขียนกลับคนละจังหวะ จึงชนกันได้)
       const row = {
-        doc_no: `IV-${dateKey}${String(seq).padStart(4,'0')}`,
+        doc_no: null,   // เติมตอนบันทึก
         keyed_by_id: s.keyedById,
         keyed_by: s.keyedBy,
         device_id: s.deviceId || null,
@@ -201,15 +194,25 @@ export default async function handler(req, res) {
         status: 'pending',
       };
 
-      try {
-        const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
-        return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
-      } catch (e) {
-        if (e.code === '23505' || /duplicate|unique/i.test(e.message)) {
-          return res.status(409).json({ error: `บิลเลขที่ ${row.invoice_no} ส่งไปแล้วและยังรออนุมัติอยู่`, duplicate: true });
+      // ถ้าเลขชนจริง (แข่งกันเสี้ยววินาที) ขอใหม่ให้เองเงียบ ๆ
+      let lastErr;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          row.doc_no = await nextDocNo('IV');
+          const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
+          return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
+        } catch (e) {
+          lastErr = e;
+          const dup = e.code === '23505' || /duplicate|unique/i.test(e.message || '');
+          // บิลใบเดิมที่ส่งไปแล้ว ไม่ใช่เลขเอกสารชน — ไม่ต้องลองใหม่
+          if (dup && /invoice_no/i.test(e.message || '')) {
+            return res.status(409).json({ error: `บิลเลขที่ ${row.invoice_no} ส่งไปแล้วและยังรออนุมัติอยู่`, duplicate: true });
+          }
+          if (dup) continue;
+          throw e;
         }
-        throw e;
       }
+      throw lastErr;
     }
 
     if (req.method === 'PATCH') {
@@ -223,9 +226,9 @@ export default async function handler(req, res) {
         const tries = (cur?.[0]?.drive_tries || 0) + 1;
         const dp = drive.ok
           ? { drive_status: 'ok', drive_filename: drive.filename || null, drive_url: drive.url || null,
-              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries, drive_by: drive.by || null }
+              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries }
           : { drive_status: 'failed', drive_filename: drive.filename || null,
-              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries, drive_by: drive.by || null };
+              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries };
         const o = await sb(`invoice_submissions?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dp) });
         return res.status(200).json({ submission: toApp(Array.isArray(o) ? o[0] : o) });
       }

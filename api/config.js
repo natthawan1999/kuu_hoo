@@ -12,20 +12,24 @@
 const SB_URL  = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const SRV_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
 
+// โฟลเดอร์ Drive 4 ประเภท — เก็บใน app_settings ตั้งจากหน้าผู้จัดการ (ต้องรัน sql/14)
 const ALLOWED = [
-  'drive_client_id',        // Google Client ID
-  'drive_folder_invoice',   // โฟลเดอร์บิลซื้อ
-  'drive_folder_recorder',  // โฟลเดอร์ใบนับ
-  'drive_folder_compare',   // โฟลเดอร์เทียบยอด
-  'invoice_model',          // โมเดลที่ใช้อ่านบิล
+  'drive_client_id',            // Google Client ID
+  'drive_folder_stock_count',   // นับสต็อก
+  'drive_folder_stock_adjust',  // ปรับยอด / เทียบยอด
+  'drive_folder_manual',        // บันทึกมือ
+  'drive_folder_purchase',      // บิลซื้อ
+  'invoice_model',              // โมเดลที่ใช้อ่านบิล
 ];
 
+// env เก็บแค่ของที่เป็นความลับ (client id) — โฟลเดอร์ตั้งในแอป เก็บที่ app_settings
 const DEFAULTS = {
-  drive_client_id:       process.env.VITE_GOOGLE_CLIENT_ID || '',
-  drive_folder_invoice:  process.env.VITE_DRIVE_FOLDER_ID || '',
-  drive_folder_recorder: process.env.DRIVE_FOLDER_RECORDER || '',
-  drive_folder_compare:  process.env.DRIVE_FOLDER_COMPARE || '',
-  invoice_model:         '',
+  drive_client_id:           process.env.VITE_GOOGLE_CLIENT_ID || '',
+  drive_folder_stock_count:  '',
+  drive_folder_stock_adjust: '',
+  drive_folder_manual:       '',
+  drive_folder_purchase:     '',
+  invoice_model:             '',
 };
 
 async function sb(path, init = {}) {

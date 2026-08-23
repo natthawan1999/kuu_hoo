@@ -63,7 +63,6 @@ const toApp = (r) => ({
     uploadedAt: r.drive_uploaded_at || null,
     error: r.drive_error || '',
     tries: r.drive_tries || 0,
-    by: r.drive_by || '',
   },
 });
 
@@ -150,9 +149,9 @@ export default async function handler(req, res) {
         const tries = (cur?.[0]?.drive_tries || 0) + 1;
         const dp = drive.ok
           ? { drive_status: 'ok', drive_filename: drive.filename || null, drive_url: drive.url || null,
-              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries, drive_by: drive.by || null }
+              drive_uploaded_at: new Date().toISOString(), drive_error: null, drive_tries: tries }
           : { drive_status: 'failed', drive_filename: drive.filename || null,
-              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries, drive_by: drive.by || null };
+              drive_error: (drive.error || 'ส่งไม่สำเร็จ').slice(0, 500), drive_tries: tries };
         const o = await sb(`count_submissions?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(dp) });
         return res.status(200).json({ submission: toApp(Array.isArray(o) ? o[0] : o) });
       }

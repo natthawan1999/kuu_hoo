@@ -933,7 +933,7 @@ export default function CombinedApp() {
 
   // Nav per role+feature
   const navItems = isManager
-    ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight }]
+    ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
@@ -1069,6 +1069,7 @@ export default function CombinedApp() {
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
+        {isManager && activeView === 'drive_cfg' && <ErrorBox><DriveSettingsView currentUser={currentUser} /></ErrorBox>}
         {isManager && activeView === 'saved' && <ErrorBox><SavedUploadsView submissions={submissions} invSubs={invSubs} subSync={subSync} currentUser={currentUser}
             onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }}
             onPatched={u => setSubmissions(prev => prev.map(x => x.id === u.id ? { ...x, ...u } : x))}
@@ -2490,8 +2491,8 @@ function DataSyncView() {
   );
 }
 
-function DriveSettingsPanel({ currentUser }) {
-  const [open, setOpen] = useState(false);
+// หน้าตั้งค่าโฟลเดอร์ Drive — เมนูของผู้จัดการ
+function DriveSettingsView({ currentUser }) {
   const [v, setV] = useState(() => ({ ...CLOUD_SETTINGS }));
   const [saved, setSaved] = useState('');
 
@@ -2502,7 +2503,6 @@ function DriveSettingsPanel({ currentUser }) {
     { k: 'drive_folder_stock_adjust', label: 'ปรับยอด (stock_adjustment)' },
     { k: 'drive_folder_manual',       label: 'บันทึกมือ (manual_record)' },
     { k: 'drive_folder_purchase',     label: 'บิลซื้อ (purchase_bill)' },
-    { k: 'drive_client_id',           label: 'Google Client ID' },
   ];
 
   const save = async () => {
@@ -2519,25 +2519,20 @@ function DriveSettingsPanel({ currentUser }) {
     } catch { setSaved('err'); }
   };
 
-  return (
-    <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]" style={{ minHeight: 58 }}>
-        <div className="rounded-lg flex items-center justify-center shrink-0"
-          style={{ width: 34, height: 34, background: '#F6F7F8', color: '#0F172A' }}><SettingsIcon size={16} /></div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-bold text-slate-800">ตั้งค่าโฟลเดอร์ Drive</div>
-          <div className="text-[11px] text-slate-500 truncate">ไฟล์ทุกชนิดลงโฟลเดอร์ไหน — ตั้งครั้งเดียวทุกเครื่องใช้ร่วม</div>
-        </div>
-        <ChevronRight size={15} className="shrink-0 text-slate-300"
-          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
-      </button>
+  const missing = FIELDS.filter(f => !v[f.k]).length;
 
-      {open && (
-        <div className="px-3.5 pb-3.5 pt-1 space-y-2">
-          {FIELDS.filter(f => f.k.startsWith('drive_folder')).some(f => !v[f.k]) && (
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">ตั้งค่าโฟลเดอร์ Drive</h2>
+        <p className="text-[11.5px] text-slate-500">ไฟล์แต่ละชนิดลงโฟลเดอร์ไหน — ตั้งครั้งเดียวทุกเครื่องใช้ร่วม</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        <div className="p-3.5 space-y-2.5">
+          {missing > 0 && (
             <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FFFBEB', color: '#B45309' }}>
-              ยังมีโฟลเดอร์ที่ไม่ได้ตั้ง — ฟีเจอร์นั้นจะส่งไฟล์ขึ้น Drive ไม่ได้
+              ยังไม่ได้ตั้ง {missing} โฟลเดอร์ — ฟีเจอร์นั้นจะส่งไฟล์ขึ้น Drive ไม่ได้
             </div>
           )}
           {FIELDS.map(f => (
@@ -2562,7 +2557,7 @@ function DriveSettingsPanel({ currentUser }) {
             </span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -2743,7 +2738,6 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
         );
       })}
 
-      <DriveSettingsPanel currentUser={currentUser} />
     </div>
   );
 }
@@ -4388,12 +4382,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [selectedPages, setSelPages] = useState({});
   const [gReady, setGReady] = useState(false);
   const [gToken, setGToken] = useState(null);
-  const [gClientId, setGClientId] = useState(() => setting('drive_client_id') || safeGet('g_client', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));
+  const [gClientId] = useState(() => (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));   // จาก env เท่านั้น
   const [cfgSaved, setCfgSaved] = useState('');
   // ค่ากลางมาช้ากว่า mount — ทับค่าในเครื่องเมื่อโหลดเสร็จ
   useEffect(() => {
     loadCloudSettings().then(cs => {
-      if (cs.drive_client_id) setGClientId(cs.drive_client_id);
       if (cs.drive_folder_purchase) setDriveFolder(cs.drive_folder_purchase);
     });
   }, []);

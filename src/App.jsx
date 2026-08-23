@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 
 const INVOICE_API = "/api/claude";
-const DRIVE_FOLDER_DEFAULT = "1Egu5XH0UInn4ol6V2FlI06-TMUdnXO4D";
 const MODELS = [
   { id: "claude-opus-4-6",    label: "Opus 4.6" },
   { id: "claude-sonnet-4-6",  label: "Sonnet 4.6 ✦" },
@@ -379,10 +378,7 @@ async function loadCloudSettings() {
 }
 const setting = (key, fallback = '') => CLOUD_SETTINGS[key] || fallback;
 
-const DRIVE_FOLDER_RECORDER     = '1ACXWxpekq69xJEEuiwOkZZa5KosPtXXa';
-const DRIVE_FOLDER_STOCK_COMPARE = '1dc62dEDZ8VWCV8nUx_uQg9h-3PoKSioi';
-// บิลซื้อยังไม่มีโฟลเดอร์แยก — ลงที่เดียวกับใบนับไว้ก่อน เปลี่ยน id ที่นี่ได้เลย
-const DRIVE_FOLDER_INVOICE      = DRIVE_FOLDER_RECORDER;
+// โฟลเดอร์ Drive ไม่ hardcode — มาจาก /api/config (env → app_settings)
 
 /* ---- ส่งขึ้น Drive: จำว่าไฟล์ไหนขึ้นแล้ว กันส่งซ้ำ + กันชื่อไทยทำ base64 พัง ---- */
 const UPLOAD_LOG_KEY = 'drive_upload_log';
@@ -432,6 +428,7 @@ async function recordDriveResult(sub, entry, by, endpoint = '/api/submission') {
 const uploadInFlight = new Set();
 // ส่งจริงครั้งเดียวต่อ (ใบ, ชนิดไฟล์) — ต้อง force ถ้าจะส่งซ้ำ
 async function driveUpload({ subId, type, filename, mimeType, content, isBase64 = false, folderId, force = false }) {
+  if (!folderId) return { ok: false, err: 'ยังไม่ได้ตั้งโฟลเดอร์ Drive — ตั้งที่ บันทึกแล้ว → ตั้งค่าโฟลเดอร์ Drive' };
   const key = uploadKey(subId, type);
   const log = readUploadLog();
   if (!force && log[key]?.ok) return { ...log[key], skipped: true };
@@ -457,10 +454,11 @@ async function driveUpload({ subId, type, filename, mimeType, content, isBase64 
     return entry;
   } finally { uploadInFlight.delete(key); }
 }
+// ใบนับ → บันทึกมือ · เทียบยอด → ปรับยอด
 function subFolderId(sub) {
   return (sub.featureType || 'recorder') === 'stock_compare'
-    ? setting('drive_folder_compare', DRIVE_FOLDER_STOCK_COMPARE)
-    : setting('drive_folder_recorder', DRIVE_FOLDER_RECORDER);
+    ? setting('drive_folder_stock_adjust')
+    : setting('drive_folder_manual');
 }
 function buildSubXlsxBase64(sub) {
   const rows = buildStockExcelRows(sub.data, sub.docNo, sub.startedAt || sub.submittedAt);
@@ -2248,7 +2246,7 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                         {reports.map(r => (
                           <div key={r.report} className="flex items-center gap-2 py-1.5">
                             <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
-                            <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-slate-700">{r.report}</span>
+                            <span className="flex-1 min-w-0 truncate text-[11.5px] text-slate-700">{r.label || r.report}</span>
                             <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: r.missing > 0 ? '#B91C1C' : '#64748B' }}>
                               {r.missing > 0 ? `ขาด ${r.missing.toLocaleString()} แถว` : ago(r.hoursAgo)}
                             </span>
@@ -2270,6 +2268,11 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
   );
 }
 
+const REPORT_LABEL_TH = {
+  product_price: 'ราคาสินค้า', product_stock: 'สินค้าคงคลัง', vendor_info: 'ข้อมูลผู้ขาย',
+  sale_report_bill: 'บิลขาย', sale_item: 'รายการสินค้าขาย',
+};
+
 function DataSyncView() {
   const [st, setSt] = useState({ busy: true, err: '', d: null });
   const [tab, setTab] = useState('now');
@@ -2283,12 +2286,16 @@ function DataSyncView() {
       setSt({ busy: false, err: '', d: j });
     } catch (e) { setSt({ busy: false, err: e.message, d: null }); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const TONE = {
-    ok:      { label: 'ปกติ',        ink: '#2A5A55', soft: '#F0F7F4', line: '#DBE9E3' },
-    stale:   { label: 'ค้าง 1 วัน',  ink: '#B45309', soft: '#FFFBEB', line: '#F3E3C3' },
-    late:    { label: 'ต้องดู',      ink: '#B91C1C', soft: '#FDF2F2', line: '#F3D5D5' },
+    ok:      { label: 'ปกติ',                   ink: '#2A5A55', soft: '#F0F7F4', line: '#DBE9E3' },
+    stale:   { label: 'ไม่ได้ซิงก์นานผิดปกติ',  ink: '#B45309', soft: '#FFFBEB', line: '#F3E3C3' },
+    late:    { label: 'ล้มเหลว',                ink: '#B91C1C', soft: '#FDF2F2', line: '#F3D5D5' },
     unknown: { label: 'ไม่มีข้อมูล', ink: '#475569', soft: '#F6F7F8', line: '#E4E6EA' },
   };
   const d = st.d;
@@ -2335,13 +2342,16 @@ function DataSyncView() {
             <div className="text-[11px] text-slate-500 mt-1 font-mono">เช็คเมื่อ {fmtTime(d.checkedAt)}</div>
           </div>
 
-          <div className="flex gap-2">
-            {[{ id:'now', label:'รายรีพอร์ต', n: d.reports.length }, { id:'runs', label:'ประวัติการซิงก์', n: d.runs.length }].map(t => {
+          <div className="flex gap-2 flex-wrap">
+            {[{ id:'now', label:'รายรายงาน', n: d.reports.length },
+              { id:'odd', label:'บิลที่ควรตรวจ', n: d.anomalies?.count ?? 0 },
+              { id:'old', label:'สินค้าค้าง', n: d.stale?.count ?? 0 },
+              { id:'runs', label:'ประวัติ', n: d.runs.length }].map(t => {
               const on = tab === t.id;
               return (
                 <button key={t.id} onClick={() => setTab(t.id)}
-                  className="flex-1 rounded-xl flex items-center justify-center gap-2 text-[12.5px] font-bold border"
-                  style={{ minHeight: 42, background: on ? '#0F172A' : '#fff', color: on ? '#fff' : '#475569', borderColor: on ? '#0F172A' : '#E4E6EA' }}>
+                  className="rounded-xl flex items-center justify-center gap-1.5 text-[12px] font-bold border px-3"
+                  style={{ minHeight: 42, flex: '1 1 44%', background: on ? '#0F172A' : '#fff', color: on ? '#fff' : '#475569', borderColor: on ? '#0F172A' : '#E4E6EA' }}>
                   {t.label}
                   <span className="rounded-full text-[11px] font-bold px-2 py-0.5"
                     style={{ background: on ? '#fff' : '#F6F7F8', color: on ? '#0F172A' : '#64748B' }}>{t.n}</span>
@@ -2359,7 +2369,7 @@ function DataSyncView() {
               return (
                 <div key={r.report} className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
                   <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ background: t.soft, borderColor: '#ECEEF0' }}>
-                    <span className="flex-1 min-w-0 truncate font-mono text-[13px] font-bold text-slate-900">{r.report}</span>
+                    <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-slate-900">{r.label || r.report}</span>
                     <span className="shrink-0 text-[10.5px] font-bold rounded-full px-2 py-1 bg-white" style={{ color: t.ink }}>{r.summary || t.label}</span>
                   </div>
                   <div className="p-3">
@@ -2397,6 +2407,57 @@ function DataSyncView() {
                 </div>
               );
             })
+          ) : tab === 'odd' ? (
+            !d.anomalies ? (
+              <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center text-[13px] text-slate-500">ยังไม่ได้เปิดใช้การตรวจบิล</div>
+            ) : d.anomalies.count === 0 ? (
+              <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center">
+                <CheckCircle2 className="mx-auto mb-2" size={30} style={{ color: '#DBE9E3' }} />
+                <div className="text-[13px] text-slate-500">ไม่มีบิลที่ต้องตรวจ</div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                <div className="px-3 py-2.5 border-b text-[11.5px] text-slate-500 leading-relaxed" style={{ background: '#F6F7F8', borderColor: '#ECEEF0' }}>
+                  ตัวเลขผิดปกติ — ระบบไม่แก้อะไรให้ แค่ชี้ให้ไปดูเอง
+                </div>
+                <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
+                  {d.anomalies.rows.map((a, i) => (
+                    <div key={i} className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 min-w-0 truncate font-mono text-[12px] font-bold text-slate-800">{a.ref || '—'}</span>
+                        <span className="text-[12.5px] font-bold tabular-nums shrink-0" style={{ color: '#B91C1C' }}>{Number(a.value || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{a.reason} · {a.date} · {a.table}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : tab === 'old' ? (
+            !d.stale ? (
+              <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center text-[13px] text-slate-500">ยังไม่ได้เปิดใช้การตรวจสินค้าค้าง</div>
+            ) : d.stale.count === 0 ? (
+              <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center">
+                <div className="text-[13px] text-slate-500 leading-relaxed">ยังไม่มีข้อมูล<br /><span className="text-[11.5px] text-slate-400">ต้องเก็บสถิติอย่างน้อย 30 วันก่อน</span></div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                <div className="px-3 py-2.5 border-b text-[11.5px] text-slate-500 leading-relaxed" style={{ background: '#F6F7F8', borderColor: '#ECEEF0' }}>
+                  ไม่ถูกอัปเดตเกิน 30 วัน — อาจเลิกขายแล้วแต่ยังค้างในระบบ
+                </div>
+                <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
+                  {d.stale.rows.map((x, i) => (
+                    <div key={i} className="px-3 py-2.5 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-semibold text-slate-800 truncate">{x.name || '(ไม่มีชื่อ)'}</div>
+                        <div className="font-mono text-[10.5px] text-slate-400 truncate">{x.code} · {x.table}</div>
+                      </div>
+                      <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: '#B45309' }}>{x.days} วัน</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
           ) : (
             <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
               <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
@@ -2407,7 +2468,7 @@ function DataSyncView() {
                     <div key={r.id} className="px-3 py-2.5" style={{ background: bad ? '#FDF2F2' : '#fff' }}>
                       <div className="flex items-center gap-2">
                         <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: bad || short ? '#B91C1C' : '#2F5D50' }} />
-                        <span className="flex-1 min-w-0 truncate font-mono text-[12px] font-bold text-slate-800">{r.report}</span>
+                        <span className="flex-1 min-w-0 truncate text-[12px] font-bold text-slate-800">{REPORT_LABEL_TH[r.report] || r.report}</span>
                         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{(r.rowsSent ?? 0).toLocaleString()} แถว</span>
                       </div>
                       <div className="flex items-center gap-2 mt-1 pl-3.5">
@@ -2437,10 +2498,11 @@ function DriveSettingsPanel({ currentUser }) {
   useEffect(() => { loadCloudSettings().then(cs => setV({ ...cs })); }, []);
 
   const FIELDS = [
-    { k: 'drive_folder_recorder', label: 'โฟลเดอร์ใบนับสต็อก', ph: DRIVE_FOLDER_RECORDER },
-    { k: 'drive_folder_compare',  label: 'โฟลเดอร์เทียบยอด',   ph: DRIVE_FOLDER_STOCK_COMPARE },
-    { k: 'drive_folder_invoice',  label: 'โฟลเดอร์บิลซื้อ',     ph: DRIVE_FOLDER_INVOICE },
-    { k: 'drive_client_id',       label: 'Google Client ID',   ph: 'xxx.apps.googleusercontent.com' },
+    { k: 'drive_folder_stock_count',  label: 'นับสต็อก (stock_count)' },
+    { k: 'drive_folder_stock_adjust', label: 'ปรับยอด (stock_adjustment)' },
+    { k: 'drive_folder_manual',       label: 'บันทึกมือ (manual_record)' },
+    { k: 'drive_folder_purchase',     label: 'บิลซื้อ (purchase_bill)' },
+    { k: 'drive_client_id',           label: 'Google Client ID' },
   ];
 
   const save = async () => {
@@ -2473,17 +2535,22 @@ function DriveSettingsPanel({ currentUser }) {
 
       {open && (
         <div className="px-3.5 pb-3.5 pt-1 space-y-2">
+          {FIELDS.filter(f => f.k.startsWith('drive_folder')).some(f => !v[f.k]) && (
+            <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FFFBEB', color: '#B45309' }}>
+              ยังมีโฟลเดอร์ที่ไม่ได้ตั้ง — ฟีเจอร์นั้นจะส่งไฟล์ขึ้น Drive ไม่ได้
+            </div>
+          )}
           {FIELDS.map(f => (
             <div key={f.k}>
               <label className="text-[11px] font-semibold text-slate-500">{f.label}</label>
-              <input value={v[f.k] || ''} placeholder={f.ph}
+              <input value={v[f.k] || ''} placeholder="วาง Folder ID"
                 onChange={e => { setV(o => ({ ...o, [f.k]: e.target.value })); setSaved(''); }}
                 className="w-full mt-1 rounded-xl border px-3 font-mono text-[12px] text-slate-800 outline-none"
                 style={{ minHeight: 44, borderColor: '#E4E6EA', background: '#FAFBFB' }} />
             </div>
           ))}
           <div className="text-[11px] text-slate-400 leading-relaxed">
-            เว้นว่าง = ใช้ค่าตั้งต้นในระบบ · Folder ID คือส่วนท้าย URL ของโฟลเดอร์ใน Drive (หลัง /folders/)
+            Folder ID คือส่วนท้าย URL ของโฟลเดอร์ใน Drive — หลัง /folders/ ตัด ?usp=... ออก · เว้นว่าง = ฟีเจอร์นั้นส่งไฟล์ไม่ได้
           </div>
           <div className="flex items-center gap-2.5">
             <button onClick={save} disabled={saved === 'saving'}
@@ -2531,7 +2598,7 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
       filename: `${sub.docNo || sub.id}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       content: inv ? buildInvoiceXlsxBase64(sub) : buildSubXlsxBase64(sub), isBase64: true,
-      folderId: inv ? setting('drive_folder_invoice', DRIVE_FOLDER_INVOICE) : subFolderId(sub), force,
+      folderId: inv ? setting('drive_folder_purchase') : subFolderId(sub), force,
     });
     if (!entry.skipped) {
       const updated = await recordDriveResult(sub, entry, currentUser?.name,
@@ -2598,11 +2665,6 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2.5">
                     <CheckCircle2 size={15} style={{ color: '#2F5D50' }} />
                     <span className="text-[12px] font-bold" style={{ color: '#2A5A55' }}>ขึ้น Drive แล้ว</span>
-                    {res.link && (
-                      <a href={res.link} target="_blank" rel="noopener noreferrer"
-                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
-                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
-                    )}
                     <span className="font-mono text-[11px] text-slate-400">{fmt(res.at)}</span>
                   </div>
                   <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed border"
@@ -2642,11 +2704,6 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2">
                     <XCircle size={15} style={{ color: '#B91C1C' }} />
                     <span className="text-[12px] font-bold" style={{ color: '#B91C1C' }}>ส่งไม่สำเร็จ</span>
-                    {res.link && (
-                      <a href={res.link} target="_blank" rel="noopener noreferrer"
-                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
-                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
-                    )}
                     <span className="text-[11px] text-slate-400">ลองแล้ว {res.tries || 1} ครั้ง</span>
                   </div>
                   <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FDF2F2', color: '#B91C1C' }}>
@@ -2664,11 +2721,6 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
                   <div className="flex items-center gap-2 mb-2.5">
                     <span className="w-2 h-2 rounded-full" style={{ background: '#94A3B8' }} />
                     <span className="text-[12px] font-bold text-slate-600">ยังไม่ขึ้น Drive</span>
-                    {res.link && (
-                      <a href={res.link} target="_blank" rel="noopener noreferrer"
-                        className="flex-1 rounded-xl border bg-white flex items-center justify-center text-[12.5px] font-semibold text-slate-700"
-                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>เปิดใน Drive</a>
-                    )}
                     <span className="text-[11.5px] text-slate-400">{isInv(sub) ? `${sub.vendorName || 'ไม่ระบุผู้ขาย'} · ${sub.itemCount || 0} รายการ` : `${sub.counter || sub.staffName || 'ทีมงาน'} · ${sub.data?.length || 0} รายการ`}</span>
                   </div>
                   <div className="flex gap-2">
@@ -3372,7 +3424,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       subId: selectedSub.id, type: 'compare_txt',
       filename: getFilename('txt'), mimeType: 'text/csv',
       content: buildSimpleCSV(), isBase64: false,
-      folderId: setting('drive_folder_compare', DRIVE_FOLDER_STOCK_COMPARE), force,
+      folderId: setting('drive_folder_stock_adjust'), force,
     });
     set({ driveResult: res.ok ? { ok: true, link: res.link, skipped: res.skipped } : { ok: false, err: res.err }, driveSaving: false });
   };
@@ -4342,7 +4394,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   useEffect(() => {
     loadCloudSettings().then(cs => {
       if (cs.drive_client_id) setGClientId(cs.drive_client_id);
-      if (cs.drive_folder_invoice) setDriveFolder(cs.drive_folder_invoice);
+      if (cs.drive_folder_purchase) setDriveFolder(cs.drive_folder_purchase);
     });
   }, []);
   const saveCentral = async (key, value) => {
@@ -4358,7 +4410,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       setCfgSaved('ok');
     } catch { setCfgSaved('err'); }
   };
-  const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_DRIVE_FOLDER_ID || DRIVE_FOLDER_DEFAULT) : DRIVE_FOLDER_DEFAULT));
+  const [driveFolder, setDriveFolder] = useState(() => setting('drive_folder_purchase') || safeGet('drive_folder', ''));
   const [nameStatus, setNameStatus] = useState(null);
 
   const { url: sbUrl, anonKey: sbKey } = supabaseConfig;

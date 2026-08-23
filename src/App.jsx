@@ -1232,8 +1232,6 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
           </div>
         )}
 
-        <LandingStatus onOpenManager={() => { setRole('manager'); setFeature('all'); }} />
-
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mb-2">เริ่มทำงาน</div>
         <div className="grid grid-cols-2 gap-2.5">
           <button onClick={() => setRole('counter')}
@@ -1261,6 +1259,12 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0 }) {
         {error && (
           <div className="mt-2.5 rounded-xl px-3 py-2.5 text-[12px] border" style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>{error}</div>
         )}
+
+        <div className="mt-5">
+          <LandingStatus
+            onOpenManager={() => { setView('saved'); setRole('manager'); setFeature('all'); }}
+            onOpenSync={() => { setView('data_sync'); setRole('manager'); setFeature('all'); }} />
+        </div>
 
         <div className="text-[11px] font-bold tracking-wide text-slate-400 mt-5 mb-2">เครื่องมือ · เปิดได้เลย</div>
         <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
@@ -1923,7 +1927,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
               </div>
             </div>
           </div>
-          <button onClick={handleSubmit} className="w-full   text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+          <button onClick={handleSubmit} className="w-full text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg" style={{ background: T.main }}>
             <Send size={18}/>ใช่ ส่งในชื่อ {currentUser?.name || 'พนักงาน'}
           </button>
           <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] rounded-xl font-medium text-sm text-slate-600">
@@ -2063,10 +2067,11 @@ function PDFDownloadButton({ sub }) {
   return <button onClick={() => openPDFPrint(sub)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-[#FEF2F2] hover:bg-[#FECACA] rounded text-[#B91C1C] font-medium"><Download size={12}/>PDF</button>;
 }
 
-// แผงสถานะบนหน้าแรก — เปิดแอปมาเห็นทันทีว่ามีอะไรค้างไหม ไม่ต้องเข้าเมนู
-function LandingStatus({ onOpenManager }) {
+// สถานะระบบบนหน้าแรก — แยกเป็น 2 การ์ด: ส่งขึ้น Drive / ซิงก์จาก POS
+// ใช้หน้าตาเดียวกับแถวในกล่อง "เครื่องมือ" แตะเพื่อกางรายละเอียด
+function LandingStatus({ onOpenManager, onOpenSync }) {
   const [st, setSt] = useState({ busy: true, err: '', d: null });
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState('');
 
   const load = useCallback(async () => {
     setSt(v => ({ ...v, busy: true, err: '' }));
@@ -2079,96 +2084,140 @@ function LandingStatus({ onOpenManager }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const TONE = {
-    ok:    { ink: '#2A5A55', soft: '#F0F7F4', line: '#DBE9E3' },
-    stale: { ink: '#B45309', soft: '#FFFBEB', line: '#F3E3C3' },
-    late:  { ink: '#B91C1C', soft: '#FDF2F2', line: '#F3D5D5' },
-  };
+  const INK = { ok: '#2F5D50', stale: '#B45309', late: '#B91C1C', unknown: '#94A3B8' };
   const d = st.d;
   const up = d?.uploads;
   const reports = d?.reports || [];
-  const posOk = reports.length > 0 && reports.every(x => x.state === 'ok');
-  const shortRows = reports.filter(x => x.missing > 0).length;
-  const state = !d ? 'stale'
-              : (up?.failed || reports.some(x => x.state === 'late')) ? 'late'
-              : (up?.pending || !posOk) ? 'stale' : 'ok';
-  const t = TONE[state];
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } };
+  const ago = (h) => h === null ? '—' : h < 24 ? `${h} ชม.ก่อน` : `${Math.floor(h / 24)} วันก่อน`;
 
-  if (st.busy && !d) return null;   // อย่าให้หน้าแรกกระตุก
+  if (st.busy && !d && !st.err) return null;   // อย่าให้หน้าแรกกระตุก
+
+  const shortRows = reports.filter(r => r.missing > 0).length;
+  const driveState = st.err ? 'unknown' : !up ? 'unknown' : up.failed ? 'late' : up.pending ? 'stale' : 'ok';
+  const syncState  = st.err ? 'unknown'
+    : shortRows || reports.some(r => r.state === 'late') ? 'late'
+    : reports.some(r => r.state === 'stale') ? 'stale'
+    : reports.length ? 'ok' : 'unknown';
+
+  const cards = [
+    {
+      id: 'drive', icon: Upload, title: 'ส่งขึ้น Drive', state: driveState,
+      sub: st.err ? 'เช็คสถานะไม่ได้'
+        : !up ? 'ยังไม่ได้เปิดใช้ — รัน sql/13 ก่อน'
+        : up.failed ? `ส่งไม่สำเร็จ ${up.failed} ใบ`
+        : up.pending ? `รอส่ง ${up.pending} ใบ`
+        : 'ส่งครบแล้ว',
+      badge: up ? (up.failed || up.pending || 0) : 0,
+    },
+    {
+      id: 'sync', icon: Database, title: 'ซิงก์จาก POS', state: syncState,
+      sub: st.err ? 'เช็คสถานะไม่ได้'
+        : !reports.length ? 'ยังไม่มีรอบซิงก์'
+        : shortRows ? `ขึ้นไม่ครบ ${shortRows} รีพอร์ต`
+        : reports.some(r => r.state !== 'ok') ? 'มีรีพอร์ตที่ค้าง'
+        : `ครบทั้ง ${reports.length} รีพอร์ต`,
+      badge: shortRows || reports.filter(r => r.state !== 'ok').length,
+    },
+  ];
 
   return (
-    <div className="rounded-2xl border mb-4 overflow-hidden" style={{ background: t.soft, borderColor: t.line }}>
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left">
-        <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: t.ink }} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[12.5px] font-bold" style={{ color: t.ink }}>
-            {st.err ? 'เช็คสถานะระบบไม่ได้'
-              : state === 'ok' ? 'ข้อมูลครบ ส่ง Drive ครบแล้ว'
-              : shortRows ? `ข้อมูล POS ขึ้นไม่ครบ ${shortRows} รีพอร์ต`
-              : up?.failed ? `ส่ง Drive ไม่สำเร็จ ${up.failed} ใบ`
-              : up?.pending ? `รอส่งขึ้น Drive ${up.pending} ใบ`
-              : 'ข้อมูล POS ยังไม่อัปเดต'}
-          </div>
-          <div className="text-[11px] mt-0.5 truncate" style={{ color: t.ink, opacity: .75 }}>
-            {st.err ? st.err : `แตะดูรายละเอียด · เช็คเมื่อ ${fmt(d?.checkedAt)}`}
-          </div>
-        </div>
-        <ChevronRight size={16} className="shrink-0" style={{ color: t.ink, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
-      </button>
+    <>
+      <div className="flex items-center justify-between gap-2 mt-1 mb-2">
+        <div className="text-[11px] font-bold tracking-wide text-slate-400">สถานะระบบ</div>
+        <button onClick={load} disabled={st.busy}
+          className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 disabled:opacity-50">
+          <RefreshCw size={11} className={st.busy ? 'animate-spin' : ''} />
+          {d ? fmt(d.checkedAt) : 'เช็คใหม่'}
+        </button>
+      </div>
 
-      {open && (
-        <div className="bg-white border-t px-3 py-3 space-y-2.5" style={{ borderColor: t.line }}>
-          {up && (
-            <div>
-              <div className="text-[11px] font-bold text-slate-400 mb-1.5">ส่งขึ้น Drive</div>
-              <div className="grid grid-cols-3 gap-2">
-                {[{ k:'รอส่ง', v: up.pending, ink: up.pending ? '#B45309' : '#475569' },
-                  { k:'ส่งแล้ว', v: up.count.uploaded + up.invoice.uploaded, ink: '#2A5A55' },
-                  { k:'ไม่สำเร็จ', v: up.failed, ink: up.failed ? '#B91C1C' : '#475569' }].map(x => (
-                  <div key={x.k} className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
-                    <div className="text-[10px] text-slate-500">{x.k}</div>
-                    <div className="text-[15px] font-bold tabular-nums" style={{ color: x.ink }}>{x.v.toLocaleString()}</div>
-                  </div>
-                ))}
-              </div>
-              {up.lastAt && <div className="text-[11px] text-slate-500 mt-1.5">ส่งครั้งล่าสุด {fmt(up.lastAt)}</div>}
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        {cards.map((c, i) => {
+          const CIcon = c.icon;
+          const on = open === c.id;
+          const ink = INK[c.state];
+          return (
+            <div key={c.id} style={{ borderTop: i ? '1px solid #F1F3F5' : 'none' }}>
+              <button onClick={() => setOpen(on ? '' : c.id)}
+                className="w-full flex items-center gap-3 px-3.5 text-left hover:bg-[#F6F7F8]"
+                style={{ minHeight: 62 }}>
+                <div className="rounded-lg flex items-center justify-center shrink-0"
+                  style={{ width: 36, height: 36, background: c.state === 'ok' ? '#F6F7F8' : `${ink}14`, color: c.state === 'ok' ? '#0F172A' : ink }}>
+                  <CIcon size={17} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-bold text-slate-800">{c.title}</div>
+                  <div className="text-[11px] truncate" style={{ color: c.state === 'ok' ? '#64748B' : ink }}>{c.sub}</div>
+                </div>
+                {c.badge > 0 && (
+                  <span className="shrink-0 rounded-full text-[11px] font-bold text-white tabular-nums px-2 py-0.5"
+                    style={{ background: ink }}>{c.badge}</span>
+                )}
+                <ChevronRight size={15} className="shrink-0 text-slate-300"
+                  style={{ transform: on ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+              </button>
+
+              {on && c.id === 'drive' && (
+                <div className="px-3.5 pb-3.5 pt-1">
+                  {st.err ? (
+                    <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FDF2F2', color: '#B91C1C' }}>{st.err}</div>
+                  ) : !up ? (
+                    <div className="text-[11.5px] text-slate-500 leading-relaxed">ต้องรัน sql/13-drive-status.sql ก่อน จึงจะนับใบที่รอส่งได้</div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[{ k:'รอส่ง', v: up.pending, ink: up.pending ? '#B45309' : '#475569' },
+                          { k:'ส่งแล้ว', v: up.uploaded ?? (up.count.uploaded + up.invoice.uploaded), ink: '#2A5A55' },
+                          { k:'ไม่สำเร็จ', v: up.failed, ink: up.failed ? '#B91C1C' : '#475569' }].map(x => (
+                          <div key={x.k} className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
+                            <div className="text-[10px] text-slate-500">{x.k}</div>
+                            <div className="text-[15px] font-bold tabular-nums" style={{ color: x.ink }}>{Number(x.v || 0).toLocaleString()}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {up.lastAt && <div className="text-[11px] text-slate-500 mt-2">ส่งครั้งล่าสุด {fmt(up.lastAt)}</div>}
+                      {(up.pending || up.failed) ? (
+                        <button onClick={onOpenManager}
+                          className="w-full rounded-xl text-white text-[12.5px] font-bold mt-2.5"
+                          style={{ minHeight: 42, background: '#0F172A' }}>จัดการใน "บันทึกแล้ว"</button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {on && c.id === 'sync' && (
+                <div className="px-3.5 pb-3.5 pt-1">
+                  {st.err ? (
+                    <div className="rounded-xl px-3 py-2.5 text-[11.5px] leading-relaxed" style={{ background: '#FDF2F2', color: '#B91C1C' }}>{st.err}</div>
+                  ) : !reports.length ? (
+                    <div className="text-[11.5px] text-slate-500 leading-relaxed">ยังไม่มีรอบซิงก์ใน sync_log</div>
+                  ) : (
+                    <>
+                      <div className="divide-y" style={{ borderColor: '#F1F3F5' }}>
+                        {reports.map(r => (
+                          <div key={r.report} className="flex items-center gap-2 py-1.5">
+                            <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
+                            <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-slate-700">{r.report}</span>
+                            <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: r.missing > 0 ? '#B91C1C' : '#64748B' }}>
+                              {r.missing > 0 ? `ขาด ${r.missing.toLocaleString()} แถว` : ago(r.hoursAgo)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={onOpenSync}
+                        className="w-full rounded-xl border bg-white text-[12.5px] font-semibold text-slate-700 mt-2.5"
+                        style={{ minHeight: 42, borderColor: '#E4E6EA' }}>ดูประวัติการซิงก์</button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-
-          {reports.length > 0 && (
-            <div>
-              <div className="text-[11px] font-bold text-slate-400 mb-1.5">ซิงก์จาก POS</div>
-              <div className="divide-y" style={{ borderColor: '#F6F7F8' }}>
-                {reports.map(r => (
-                  <div key={r.report} className="flex items-center gap-2 py-1.5">
-                    <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: r.state === 'ok' ? '#2F5D50' : r.state === 'stale' ? '#B45309' : '#B91C1C' }} />
-                    <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-slate-700">{r.report}</span>
-                    <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: r.missing > 0 ? '#B91C1C' : '#64748B' }}>
-                      {r.missing > 0 ? `ขาด ${r.missing.toLocaleString()} แถว`
-                        : r.hoursAgo === null ? '—' : r.hoursAgo < 24 ? `${r.hoursAgo} ชม.ก่อน` : `${Math.floor(r.hoursAgo / 24)} วันก่อน`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-0.5">
-            <button onClick={load} disabled={st.busy}
-              className="flex-1 rounded-xl border bg-white flex items-center justify-center gap-2 text-[12.5px] font-semibold text-slate-700 disabled:opacity-60"
-              style={{ minHeight: 42, borderColor: '#E4E6EA' }}>
-              <RefreshCw size={14} className={st.busy ? 'animate-spin' : ''} />เช็คใหม่
-            </button>
-            {(up?.pending || up?.failed) ? (
-              <button onClick={onOpenManager}
-                className="flex-1 rounded-xl text-white text-[12.5px] font-bold flex items-center justify-center"
-                style={{ minHeight: 42, background: '#0F172A' }}>จัดการใน "บันทึกแล้ว"</button>
-            ) : null}
-          </div>
-        </div>
-      )}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

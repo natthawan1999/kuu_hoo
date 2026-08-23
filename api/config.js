@@ -14,7 +14,6 @@ const SRV_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SE
 
 // โฟลเดอร์ Drive 4 ประเภท — เก็บใน app_settings ตั้งจากหน้าผู้จัดการ (ต้องรัน sql/14)
 const ALLOWED = [
-  'drive_client_id',            // Google Client ID
   'drive_folder_stock_count',   // นับสต็อก
   'drive_folder_stock_adjust',  // ปรับยอด / เทียบยอด
   'drive_folder_manual',        // บันทึกมือ
@@ -24,7 +23,6 @@ const ALLOWED = [
 
 // env เก็บแค่ของที่เป็นความลับ (client id) — โฟลเดอร์ตั้งในแอป เก็บที่ app_settings
 const DEFAULTS = {
-  drive_client_id:           process.env.VITE_GOOGLE_CLIENT_ID || '',
   drive_folder_stock_count:  '',
   drive_folder_stock_adjust: '',
   drive_folder_manual:       '',

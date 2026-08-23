@@ -313,10 +313,10 @@ function downloadBlob(blob, filename) {
 }
 
 function buildStockExcelRows(data, docNo, countedAt) {
-  const header = ['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'จำนวนนับ', 'Location', 'ราคาขาย', 'ทุนเฉลี่ย', 'เวลาสแกน'];
+  const header = ['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'จำนวนนับ', 'Location', 'ราคาขาย', 'มูลค่ารวม', 'ทุนเฉลี่ย', 'เวลาสแกน'];
   const rows = data.map(d => [
     d.barcode, d.productName, d.unit || '', d.qty,
-    d.location || '', d.price || 0, d.cost || 0,
+    d.location || '', Number(d.price || 0), Number(d.price || 0) * Number(d.qty || 0), Number(d.cost || 0),
     d.scannedAt ? new Date(d.scannedAt).toLocaleString('th-TH') : '',
   ]);
   const meta = [
@@ -331,7 +331,7 @@ function buildStockExcelRows(data, docNo, countedAt) {
 function downloadStockExcel(data, filename, docNo, submittedAt) {
   const allRows = buildStockExcelRows(data, docNo, submittedAt);
   const ws = XLSX.utils.aoa_to_sheet(allRows);
-  ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Stock');
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
@@ -348,7 +348,7 @@ function openPDFPrint(sub) {
   document.getElementById(OVERLAY_ID)?.remove();
   document.getElementById(STYLE_ID)?.remove();
   const dateStr = new Date(sub.submittedAt).toLocaleDateString('th-TH');
-  const rows = sub.data.map(d => `<tr><td>${d.barcode}</td><td>${d.productName || ''}</td><td style="text-align:center">${d.qty}</td><td style="text-align:center">${d.unit || ''}</td>${d.location ? `<td>${d.location}</td>` : '<td>-</td>'}<td style="text-align:right">${Number(d.price||0).toLocaleString()}</td></tr>`).join('');
+  const rows = sub.data.map(d => `<tr><td>${d.barcode}</td><td>${d.productName || ''}</td><td style="text-align:center">${d.qty}</td><td style="text-align:center">${d.unit || ''}</td>${d.location ? `<td>${d.location}</td>` : '<td>-</td>'}<td style="text-align:right">${Number(d.price||0).toLocaleString()}</td><td style="text-align:right">${(Number(d.price||0)*Number(d.qty||0)).toLocaleString()}</td></tr>`).join('');
   if (!document.getElementById('__sarabun_font__')) {
     const link = document.createElement('link');
     link.id = '__sarabun_font__'; link.rel = 'stylesheet';
@@ -361,11 +361,23 @@ function openPDFPrint(sub) {
   document.head.appendChild(style);
   const overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
-  overlay.innerHTML = `<div class="pr-header"><div><h1>Stock Count Report</h1><p class="meta">เลขที่เอกสาร : <b>${sub.docNo || sub.id}</b></p><p class="meta">วันที่ : <b>${dateStr}</b></p><p class="meta">พนักงาน : <b>${sub.counter}</b></p><p class="meta">รายการ : <b>${sub.itemCount}</b> &nbsp; รวม : <b>${sub.totalQty}</b></p>${sub.note ? `<p class="meta">หมายเหตุ : <b>${sub.note}</b></p>` : ''}</div><div style="display:flex;gap:8px;align-items:flex-start"><button class="pr-print" id="__pdf_print_btn__">🖨️ พิมพ์ / PDF</button><button class="pr-close" id="__pdf_close_btn__">✕</button></div></div><table><thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th style="text-align:center">จำนวน</th><th style="text-align:center">หน่วย</th><th>Location</th><th style="text-align:right">ราคาขาย</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:16px;font-size:11px;color:#64748b;text-align:right">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>`;
+  overlay.innerHTML = `<div class="pr-header"><div><h1>Stock Count Report</h1><p class="meta">เลขที่เอกสาร : <b>${sub.docNo || sub.id}</b></p><p class="meta">วันที่ : <b>${dateStr}</b></p><p class="meta">พนักงาน : <b>${sub.counter}</b></p><p class="meta">รายการ : <b>${sub.itemCount}</b> &nbsp; รวม : <b>${sub.totalQty}</b></p>${sub.note ? `<p class="meta">หมายเหตุ : <b>${sub.note}</b></p>` : ''}</div><div style="display:flex;gap:8px;align-items:flex-start"><button class="pr-print" id="__pdf_print_btn__">🖨️ พิมพ์ / PDF</button><button class="pr-close" id="__pdf_close_btn__">✕</button></div></div><table><thead><tr><th>รหัสสินค้า</th><th>ชื่อสินค้า</th><th style="text-align:center">จำนวน</th><th style="text-align:center">หน่วย</th><th>Location</th><th style="text-align:right">ราคาขาย</th><th style="text-align:right">มูลค่ารวม</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:16px;font-size:11px;color:#64748b;text-align:right">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>`;
   document.body.appendChild(overlay);
   document.getElementById('__pdf_print_btn__')?.addEventListener('click', () => window.print());
   document.getElementById('__pdf_close_btn__')?.addEventListener('click', () => { document.getElementById(OVERLAY_ID)?.remove(); document.getElementById(STYLE_ID)?.remove(); });
 }
+
+// ค่ากลางจาก /api/settings — ตั้งครั้งเดียว ทุกเครื่องใช้ร่วม ค่าใน const เป็นค่าตั้งต้น
+let CLOUD_SETTINGS = {};
+async function loadCloudSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const j = await r.json();
+    if (j?.settings) CLOUD_SETTINGS = j.settings;
+  } catch {}
+  return CLOUD_SETTINGS;
+}
+const setting = (key, fallback = '') => CLOUD_SETTINGS[key] || fallback;
 
 const DRIVE_FOLDER_RECORDER     = '1ACXWxpekq69xJEEuiwOkZZa5KosPtXXa';
 const DRIVE_FOLDER_STOCK_COMPARE = '1dc62dEDZ8VWCV8nUx_uQg9h-3PoKSioi';
@@ -446,12 +458,14 @@ async function driveUpload({ subId, type, filename, mimeType, content, isBase64 
   } finally { uploadInFlight.delete(key); }
 }
 function subFolderId(sub) {
-  return (sub.featureType || 'recorder') === 'stock_compare' ? DRIVE_FOLDER_STOCK_COMPARE : DRIVE_FOLDER_RECORDER;
+  return (sub.featureType || 'recorder') === 'stock_compare'
+    ? setting('drive_folder_compare', DRIVE_FOLDER_STOCK_COMPARE)
+    : setting('drive_folder_recorder', DRIVE_FOLDER_RECORDER);
 }
 function buildSubXlsxBase64(sub) {
   const rows = buildStockExcelRows(sub.data, sub.docNo, sub.startedAt || sub.submittedAt);
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:30},{wch:10},{wch:12},{wch:12},{wch:10},{wch:10},{wch:20}];
+  ws['!cols'] = [{wch:20},{wch:30},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:10},{wch:20}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Stock');
   return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 }
@@ -581,9 +595,12 @@ export default function CombinedApp() {
   // ร่างขึ้นเซิร์ฟเวอร์ — นับเครื่องหนึ่ง ไปต่อเครื่องอื่นได้
   const [draftSync, setDraftSync] = useState({ busy: '', msg: '', err: '' });
 
-  const pushDraft = async () => {
+  useEffect(() => { loadCloudSettings(); }, []);
+
+  // เงียบ = auto-save (ไม่ขึ้นข้อความรบกวน) · ไม่เงียบ = ผู้ใช้กดปุ่มเอง
+  const pushDraft = async (silent = false) => {
     if (!currentUser) return;
-    setDraftSync({ busy: 'up', msg: '', err: '' });
+    if (!silent) setDraftSync({ busy: 'up', msg: '', err: '' });
     try {
       const res = await fetch('/api/draft', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -596,8 +613,11 @@ export default function CombinedApp() {
       });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
-      setDraftSync({ busy: '', msg: `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} บรรทัด`, err: '' });
-    } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
+      setDraftSync({ busy: '', msg: silent ? 'บันทึกอัตโนมัติแล้ว' : `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} บรรทัด`, err: '' });
+    } catch (e) {
+      // auto-save พลาด (เน็ตหลุด) ไม่ต้องขัดจังหวะการนับ — ของยังอยู่ในเครื่อง
+      setDraftSync({ busy: '', msg: '', err: silent ? 'ยังไม่ได้บันทึกขึ้นเซิร์ฟเวอร์ — จะลองใหม่รอบหน้า' : e.message });
+    }
   };
 
   const pullDraft = async () => {
@@ -655,6 +675,19 @@ export default function CombinedApp() {
     if (dataSource === 'seed') { return null; }
     throw new Error('ยังไม่ได้ตั้งค่า Supabase');
   };
+
+  // auto-save ทุกครั้งที่รายการเปลี่ยน — กันงานหายเวลาเครื่องดับ
+  const autoSaveRef = useRef({ n: -1, timer: null });
+  useEffect(() => {
+    if (!currentUser) return;
+    const n = countEntries.filter(e => e.counterId === currentUser.id).length;
+    if (autoSaveRef.current.n === -1) { autoSaveRef.current.n = n; return; }   // ข้ามรอบโหลดแรก
+    if (autoSaveRef.current.n === n) return;
+    autoSaveRef.current.n = n;
+    clearTimeout(autoSaveRef.current.timer);
+    autoSaveRef.current.timer = setTimeout(() => pushDraft(true), 1200);       // รวบรายการที่กดรัว ๆ เป็นรอบเดียว
+    return () => clearTimeout(autoSaveRef.current.timer);
+  }, [countEntries, currentUser]);
 
   const addCountEntry = (entry) => {
     const now = new Date();
@@ -1448,6 +1481,7 @@ function EntryRow({ e, deleteEntry, highlight }) {
 function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {}, tone }) {
   const T = tone || { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' };
   const [location, setLocation] = useState('');
+  const [manualPrice, setManualPrice] = useState('');   // ราคาขายของรายการที่ไม่พบในระบบ
   const [checking, setChecking] = useState(false);
   const [scanMode, setScanMode] = useState(false);
   const qtyInputRef = useRef(null); const barcodeInputRef = useRef(null);
@@ -1474,7 +1508,9 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
   const handleAddManually = () => {
     if (!barcode.trim() || !qty || parseInt(qty) <= 0) return;
-    addEntry({ barcode: barcode.trim(), productName: '(ไม่พบในระบบ)', productId: '', unit: '', qty: parseInt(qty), countDate, notFound: true, location: location.trim() });
+    addEntry({ barcode: barcode.trim(), productName: '(ไม่พบในระบบ)', productId: '', unit: '', qty: parseInt(qty),
+               price: parseFloat(manualPrice) || 0, cost: 0, countDate, notFound: true, location: location.trim() });
+    setManualPrice('');
     updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
   };
@@ -1595,6 +1631,14 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
             <button onClick={() => setQty(String((parseInt(qty) || 0) + 1))}
               className="rounded-xl border flex items-center justify-center text-2xl text-[#B45309]"
               style={{ width: 48, height: 48, borderColor: '#fde68a', background: '#fffbeb' }}>+</button>
+          </div>
+          <div className="flex items-center gap-2 border rounded-xl px-3" style={{ borderColor: '#fde68a', background: '#fffbeb', minHeight: 48 }}>
+            <span className="text-[11.5px] font-bold shrink-0" style={{ color: '#b45309' }}>ราคาขาย</span>
+            <input type="number" inputMode="decimal" value={manualPrice} onChange={e => setManualPrice(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddManually()} placeholder="ใส่ถ้ารู้"
+              className="flex-1 min-w-0 text-right font-bold text-slate-800 bg-transparent border-0 outline-none"
+              style={{ fontSize: 16, fontFamily: "'IBM Plex Mono', monospace" }} />
+            <span className="text-[11.5px] text-slate-400 shrink-0">บาท</span>
           </div>
           <button onClick={handleAddManually} disabled={!qty || parseInt(qty) <= 0}
             className="w-full text-white font-bold text-sm rounded-xl disabled:opacity-40"
@@ -2318,7 +2362,7 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
       filename: `${sub.docNo || sub.id}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       content: inv ? buildInvoiceXlsxBase64(sub) : buildSubXlsxBase64(sub), isBase64: true,
-      folderId: inv ? DRIVE_FOLDER_INVOICE : subFolderId(sub), force,
+      folderId: inv ? setting('drive_folder_invoice', DRIVE_FOLDER_INVOICE) : subFolderId(sub), force,
     });
     if (!entry.skipped) {
       const updated = await recordDriveResult(sub, entry, currentUser?.name,
@@ -3145,7 +3189,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
       subId: selectedSub.id, type: 'compare_txt',
       filename: getFilename('txt'), mimeType: 'text/csv',
       content: buildSimpleCSV(), isBase64: false,
-      folderId: DRIVE_FOLDER_STOCK_COMPARE, force,
+      folderId: setting('drive_folder_compare', DRIVE_FOLDER_STOCK_COMPARE), force,
     });
     set({ driveResult: res.ok ? { ok: true, link: res.link, skipped: res.skipped } : { ok: false, err: res.err }, driveSaving: false });
   };
@@ -4109,7 +4153,28 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [selectedPages, setSelPages] = useState({});
   const [gReady, setGReady] = useState(false);
   const [gToken, setGToken] = useState(null);
-  const [gClientId, setGClientId] = useState(() => safeGet('g_client', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));
+  const [gClientId, setGClientId] = useState(() => setting('drive_client_id') || safeGet('g_client', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));
+  const [cfgSaved, setCfgSaved] = useState('');
+  // ค่ากลางมาช้ากว่า mount — ทับค่าในเครื่องเมื่อโหลดเสร็จ
+  useEffect(() => {
+    loadCloudSettings().then(cs => {
+      if (cs.drive_client_id) setGClientId(cs.drive_client_id);
+      if (cs.drive_folder_invoice) setDriveFolder(cs.drive_folder_invoice);
+    });
+  }, []);
+  const saveCentral = async (key, value) => {
+    setCfgSaved('saving');
+    try {
+      const r = await fetch('/api/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value, by: currentUser?.name || '' }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.error) throw new Error(j.error);
+      CLOUD_SETTINGS = { ...CLOUD_SETTINGS, [key]: value };
+      setCfgSaved('ok');
+    } catch { setCfgSaved('err'); }
+  };
   const [driveFolder, setDriveFolder] = useState(() => safeGet('drive_folder', '') || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_DRIVE_FOLDER_ID || DRIVE_FOLDER_DEFAULT) : DRIVE_FOLDER_DEFAULT));
   const [showInvCfg, setShowInvCfg] = useState(false);
   const [nameStatus, setNameStatus] = useState(null);
@@ -4400,16 +4465,17 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setDSt(null);setDUrl(null);setDErr(null);setSbSt(null);setSbErr(null);setSelPages({}); };
 
   useEffect(() => {
-    if (step===4&&!fileName&&sbUrl&&sbKey) {
+    if (step===4&&!fileName) {
       (async()=>{
-        const d=new Date(),yy=String(d.getFullYear()).slice(-2),mm=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'),dateKey=yy+mm+dd;
+        // ชื่อไฟล์ = เลขเอกสารจากตัวนับกลาง เช่น IV-202608220001 — หลายคนคีย์พร้อมกันก็ไม่ชน
         try {
-          const r=await fetch(`${sbUrl}/rest/v1/rpc/get_next_filename`,{method:'POST',headers:{apikey:sbKey,Authorization:`Bearer ${sbKey}`,'Content-Type':'application/json'},body:JSON.stringify({date_prefix:dateKey})});
-          if(r.ok){const name=await r.json();if(typeof name==='string'&&name.length===10){setFileName(name);return;}}
+          const r=await fetch('/api/filename?prefix=IV');
+          const name=await r.json();
+          if(r.ok&&typeof name==='string'&&name){setFileName(name);return;}
         } catch {}
-        const cur=parseInt(safeGet('filename_counter_'+dateKey,'0'))||0;
-        safeSet('filename_counter_'+dateKey,String(cur+1));
-        setFileName(dateKey+String(cur+1).padStart(4,'0'));
+        // เซิร์ฟเวอร์ล่ม: ใส่เวลา+สุ่มท้าย ไม่ใช้ตัวนับในเครื่อง (นั่นคือต้นเหตุที่ชื่อชน)
+        const d=new Date(),p=n=>String(n).padStart(2,'0');
+        setFileName('IV-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+'-'+Math.random().toString(36).slice(2,5));
       })();
     }
   }, [step]);
@@ -4448,10 +4514,16 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
 
       {showInvCfg&&(
         <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:16, marginBottom:16 }}>
-          <div style={{ fontWeight:600, marginBottom:10 }}>ตั้งค่า Google Drive</div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>safeSet('g_client',gClientId)} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>safeSet('drive_folder',driveFolder)} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
-          <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:9, background:'#2f6e90', color:'#fff', border:'none', cursor:'pointer' }}>บันทึก</button>
+          <div style={{ fontWeight:600, marginBottom:4 }}>ตั้งค่า Google Drive</div>
+          <div style={{ fontSize:11.5, color:'#64748b', marginBottom:10 }}>ค่ากลาง — ตั้งที่นี่แล้วทุกเครื่องใช้ร่วมกัน</div>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Google Client ID</label><input value={gClientId} onChange={e=>setGClientId(e.target.value)} onBlur={()=>{safeSet('g_client',gClientId);saveCentral('drive_client_id',gClientId);}} placeholder="xxx.apps.googleusercontent.com" style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <div style={{ marginBottom:8 }}><label style={{ fontSize:12, color:'#64748b' }}>Drive Folder ID (บิลซื้อ)</label><input value={driveFolder} onChange={e=>setDriveFolder(e.target.value)} onBlur={()=>{safeSet('drive_folder',driveFolder);saveCentral('drive_folder_invoice',driveFolder);}} placeholder={DRIVE_FOLDER_DEFAULT} style={{ width:'100%', marginTop:4, padding:'6px 10px', borderRadius:9, border:'1px solid #cbd5e1', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }}/></div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <button onClick={()=>setShowInvCfg(false)} style={{ fontSize:12, padding:'6px 16px', borderRadius:9, background:'#2f6e90', color:'#fff', border:'none', cursor:'pointer' }}>ปิด</button>
+            <span style={{ fontSize:11.5, fontWeight:600, color: cfgSaved==='err' ? '#B91C1C' : cfgSaved==='ok' ? '#2A5A55' : '#94a3b8' }}>
+              {cfgSaved==='saving' ? 'กำลังบันทึก…' : cfgSaved==='ok' ? 'บันทึกเป็นค่ากลางแล้ว' : cfgSaved==='err' ? 'บันทึกค่ากลางไม่ได้ — ใช้เฉพาะเครื่องนี้' : ''}
+            </span>
+          </div>
         </div>
       )}
 

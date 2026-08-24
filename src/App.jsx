@@ -6,7 +6,7 @@ import {
   Shield, Eye, EyeOff, ClipboardCheck, Lock, LogOut, Database, Cloud, ChevronRight,
   RefreshCw, Settings as SettingsIcon, CheckCircle2, XCircle, Layers,
   FileSpreadsheet, ArrowRight, FileCheck, WifiOff, Zap, Send, Clock,
-  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin, Users, Menu,
+  ThumbsUp, ThumbsDown, Inbox, ArrowLeftRight, Receipt, MapPin, Users, Menu, Sparkles,
 } from 'lucide-react';
 
 const INVOICE_API = "/api/claude";
@@ -95,6 +95,22 @@ const BARCODE_PROMPT = list => `คุณได้รับรูปภาพส
 รายการสินค้า:
 ${list}`;
 
+// จับคู่ด้วยชื่อล้วน — ไม่ต้องส่งรูป
+// ชื่อที่ส่งไปเป็น "ชื่อจริงในระบบ" เมื่อค้นบาร์โค้ดเจอ (แม่นกว่าชื่อที่อ่านจากกล่อง)
+const REMATCH_PROMPT = (list, items) => `จับคู่สินค้า กับรายการในใบกำกับ
+แต่ละตัวมี name (ชื่อที่ใช้จับคู่) และ source: "ระบบ" = ชื่อจริงจากฐานข้อมูลสินค้า · "รูป" = อ่านจากกล่อง
+ชื่อจาก "ระบบ" เชื่อถือได้สูง · ชื่อจาก "รูป" มักย่อหรือสลับคำ ให้ดูขนาด/ปริมาณ/รส ประกอบ
+ถ้าไม่มีอันไหนตรงจริง ให้ match เป็น null — ห้ามเดา
+
+ตอบเป็น JSON array เท่านั้น รักษาค่า i เดิม:
+[{"i":0,"match":"ชื่อในใบกำกับที่ตรง"}]
+
+รายการในใบกำกับ:
+${list}
+
+สินค้าที่ต้องจับคู่:
+${items}`;
+
 const STEPS = ["อัปโหลด", "สแกนสินค้า", "ตรวจสอบ", "สรุป"];
 
 
@@ -178,6 +194,31 @@ function mapSupabaseRow(row, fallbackCode) {
     price: parseFloat(String(get('ราคา', 'price', 'ราคาขาย') || '0').replace(/[^\d.-]/g, '')) || 0,
     cost:  parseFloat(String(get('ทุนเฉลี่ย', 'ต้นทุน', 'cost', 'ราคาทุน') || '0').replace(/[^\d.-]/g, '')) || 0,
   };
+}
+
+// ค้นชื่อจริงในระบบจากบาร์โค้ด — ทีเดียวหลายตัว ลดจำนวนรอบเรียก
+// ลองทั้งคอลัมน์ "บาร์โค้ด" และ "รหัสสินค้า" เพราะบางสินค้าใช้รหัสร้านเป็นบาร์โค้ด
+async function lookupBarcodes(cfg, codes) {
+  const out = new Map();
+  const list = [...new Set(codes.map(c => String(c || '').trim()).filter(Boolean))];
+  if (!cfg?.url || !cfg?.anonKey || !list.length) return out;
+  const base = cfg.url.replace(/\/$/, '');
+  const h = { apikey: cfg.anonKey, Authorization: `Bearer ${cfg.anonKey}` };
+  const table = cfg.tableName || 'product_price';
+  const inList = list.map(c => `"${c.replace(/"/g, '')}"`).join(',');
+  const qs = `or=(${encodeURIComponent('"บาร์โค้ด"')}.in.(${inList}),${encodeURIComponent('"รหัสสินค้า"')}.in.(${inList}))&limit=500`;
+  try {
+    const res = await fetch(`${base}/rest/v1/${table}?${qs}`, { headers: h });
+    if (!res.ok) return out;
+    for (const row of await res.json()) {
+      const mapped = mapSupabaseRow(row);
+      for (const k of [row['บาร์โค้ด'], row['รหัสสินค้า'], mapped.barcode, mapped.productCode]) {
+        const key = String(k || '').trim();
+        if (key && !out.has(key)) out.set(key, mapped);
+      }
+    }
+  } catch {}
+  return out;
 }
 
 async function sbFetch(url, key, table, rawQS) {
@@ -798,12 +839,22 @@ export default function CombinedApp() {
   }, []);
 
   // บิลรออนุมัติ — ผู้จัดการเห็นในกล่องขาเข้าเดียวกัน
-  const pullInvSubs = useCallback(async (keyedById) => {
-    try {
-      const res = await fetch('/api/invoice-submission' + (keyedById ? '?keyed_by_id=' + encodeURIComponent(keyedById) : ''));
+  const pullInvSubs = useCallback(async (me) => {
+    const get = async (qs) => {
+      const res = await fetch('/api/invoice-submission' + (qs || ''));
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
-      setInvSubs(j.submissions || []);
+      return j.submissions || [];
+    };
+    try {
+      if (!me?.id) { setInvSubs(await get()); return; }   // ผู้จัดการ — เห็นทุกใบ
+      let mine = await get('?keyed_by_id=' + encodeURIComponent(me.id));
+      // id เปลี่ยน (เลือกชื่อใหม่ / เครื่องใหม่) → ใบเก่าผูกกับ id เดิม ค้นด้วยชื่อแทน
+      if (!mine.length && me.name) {
+        const all = await get();
+        mine = all.filter(x => (x.keyedBy || '').trim() === me.name.trim());
+      }
+      setInvSubs(mine);
     } catch (e) { setInvSubs([]); }
   }, []);
 
@@ -832,7 +883,10 @@ export default function CombinedApp() {
       pullSubmissions('stock_compare');
       pullInvSubs();
     } else if ((currentUser.feature || 'recorder') === 'invoice') {
-      pullInvSubs(currentUser.id);      // เห็นเฉพาะบิลของตัวเอง — รู้ว่าถูกส่งกลับแก้
+      pullInvSubs(currentUser);         // เห็นเฉพาะบิลของตัวเอง — รู้ว่าถูกส่งกลับแก้
+      // ผู้จัดการรีวิวตอนไหนก็ได้ — เช็คซ้ำเป็นระยะ พนักงานไม่ต้องกดรีเฟรชเอง
+      const t = setInterval(() => pullInvSubs(currentUser), 60000);
+      return () => clearInterval(t);
     } else {
       pullSubmissions(currentUser.feature || 'recorder');
     }
@@ -938,7 +992,7 @@ export default function CombinedApp() {
     ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt },
-         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:invSubs.filter(s=>s.status==='rejected').length }]
+         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:(invSubs||[]).filter(x=>x.status==='rejected').length }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
@@ -1069,7 +1123,7 @@ export default function CombinedApp() {
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && activeView !== 'my_bills' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
-        {!isManager && feature === 'invoice' && activeView === 'my_bills' && <ErrorBox><MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser?.id)} /></ErrorBox>}
+        {!isManager && feature === 'invoice' && activeView === 'my_bills' && <ErrorBox><MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)} /></ErrorBox>}
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
@@ -1948,6 +2002,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
 // บิลที่พนักงานส่งไปแล้ว — เห็นผลรีวิวและเหตุผลที่ผู้จัดการส่งกลับ
 function MyBillsView({ invSubs = [], setView, onRefresh }) {
   const [open, setOpen] = useState(null);
+  useEffect(() => { onRefresh?.(); }, []);   // เปิดหน้าแล้วเอาสถานะล่าสุดเลย
   const CFG = {
     pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
     approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
@@ -4549,6 +4604,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [barcodeMap, setBMap] = useState({});
   const [scanResults, setSRes] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const [rematching, setRematching] = useState(false);
   const [fileName, setFileName] = useState('');
   const [driveStatus, setDSt] = useState(null);
   const [driveUrl, setDUrl] = useState(null);
@@ -4749,13 +4805,64 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
         return expanded.map(r=>({...r,_fileId:it.id}));
       } catch { setPFiles(prev=>prev.map(p=>p.id===it.id?{...p,status:'error'}:p)); return [{barcode:null,match:null,description_image:null,_fileId:it.id}]; }
     }));
-    const combined = [...kept,...newResults.flat()];
+    let combined = [...kept,...newResults.flat()];
+    // อ่านบาร์โค้ดได้แล้ว → ค้น product_price เอาชื่อจริงมาใช้จับคู่ (แม่นกว่าชื่อบนกล่อง)
+    combined = await withSystemNames(combined);
     setSRes(combined); applyBarcodeMap(buildMap(combined)); setScanning(false);
   };
 
+  // เติมชื่อจริงจากระบบให้ทุกแถวที่มีบาร์โค้ด
+  const withSystemNames = async (rows) => {
+    const need = rows.filter(r => r.barcode && r._sysName === undefined);
+    if (!need.length) return rows;
+    const found = await lookupBarcodes(supabaseConfig, need.map(r => r.barcode));
+    return rows.map(r => {
+      if (!r.barcode) return r;
+      const hit = found.get(String(r.barcode).trim());
+      return { ...r,
+        _sysName: hit ? hit.name : null,
+        _sysCode: hit ? hit.productCode : null,
+        _inSystem: !!hit };
+    });
+  };
+
   const addProductFiles = (newFiles) => { const items=Array.from(newFiles).map(f=>({file:f,id:mkPFileId(),status:'pending'})); setPFiles(prev=>[...prev,...items]); };
+  const pendingPCount = productFiles.filter(it=>it.status==='pending').length;
   const scanPendingPFiles = async () => { const items=productFiles.filter(it=>it.status==='pending'); if(items.length===0)return; await scanProductItems(items); };
   const deleteProductFile = (id) => { setPFiles(prev=>prev.filter(it=>it.id!==id)); setSelPFIds(prev=>{const s=new Set(prev);s.delete(id);return s;}); const remaining=scanResults.filter(r=>r._fileId!==id); setSRes(remaining); applyBarcodeMap(buildMap(remaining)); };
+  // จับคู่ใหม่: ใช้ชื่อที่อ่านจากรูปไว้แล้ว เทียบกับรายการในบิลปัจจุบัน — ไม่ส่งรูปซ้ำ
+  const rematchNames = async (onlyBlank) => {
+    setRematching(true);
+    // ยังไม่รู้ชื่อจริง → ค้นระบบก่อน แล้วจับคู่ด้วยชื่อจริง
+    let base = await withSystemNames(scanResults);
+    setSRes(base);
+    const targets = base.filter(r => (r._sysName || r.description_image) && (!onlyBlank || !r.match));
+    if (!targets.length) { setRematching(false); return; }
+    try {
+      const allP = invoices.filter(i=>i.status==='done'&&i.data?.products).flatMap(i=>i.data.products)
+        .filter((x,i,a)=>a.findIndex(y=>y.description===x.description)===i);
+      const list = allP.map(x=>x.description).filter(Boolean).join('\n');
+      const payload = targets.map((r,i)=>({
+        i, barcode: r.barcode || '',
+        name: r._sysName || r.description_image,
+        source: r._sysName ? 'ระบบ' : 'รูป',
+      }));
+      const res = await callClaude([{ type:'text', text: REMATCH_PROMPT(list, JSON.stringify(payload, null, 1)) }], {}, model);
+      const raw = extractJSON(res.content?.find(b=>b.type==='text')?.text || 'null');
+      const arr = Array.isArray(raw) ? raw : [];
+      const byIdx = new Map(arr.filter(x=>x && x.i != null).map(x=>[Number(x.i), x]));
+      const idOf = new Map(targets.map((r,i)=>[r, i]));
+      const next = base.map(r => {
+        if (!idOf.has(r)) return r;
+        const got = byIdx.get(idOf.get(r));
+        if (!got) return r;
+        return { ...r, match: got.match || null, _userOverride: false };
+      });
+      setSRes(next); applyBarcodeMap(buildMap(next));
+    } catch {}
+    setRematching(false);
+  };
+
   const rescanSelectedPFiles = async () => { const items=productFiles.filter(it=>selPFileIds.has(it.id)); setSelPFIds(new Set()); await scanProductItems(items); };
 
   const buildXLSXBlob = () => {
@@ -5069,8 +5176,34 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
 
           {scanResults.length>0&&(
             <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, overflow:'hidden' }}>
-              <div style={{ padding:'10px 12px', background:'#f8fafc', borderBottom:'1px solid #e4e6ea', fontSize:11, fontWeight:700, color:'#64748b' }}>
-                ผลการจับคู่บาร์โค้ด · {scanResults.length} รูป
+              <div style={{ padding:'10px 12px', background:'#f8fafc', borderBottom:'1px solid #e4e6ea', display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>ผลการจับคู่บาร์โค้ด · {scanResults.length} รูป</span>
+                  {scanResults.filter(r=>r._inSystem).length>0 && (
+                    <span style={{ fontSize:10, fontWeight:700, color:'#15803d', background:'#f0fdf4', borderRadius:99, padding:'3px 8px' }}>
+                      มีในระบบ {scanResults.filter(r=>r._inSystem).length}
+                    </span>
+                  )}
+                  {scanResults.filter(r=>!r.match).length>0 && (
+                    <span style={{ fontSize:10, fontWeight:700, color:'#b91c1c', background:'#fef2f2', borderRadius:99, padding:'3px 8px' }}>
+                      ยังไม่ได้คู่ {scanResults.filter(r=>!r.match).length}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7 }}>
+                  <button onClick={()=>rematchNames(true)} disabled={rematching||scanning}
+                    style={{ minHeight:38, borderRadius:9, border:'1px solid #e4e6ea', background:'#fff', fontFamily:'inherit', fontSize:12, fontWeight:700, color:'#334155', cursor:'pointer', opacity:(rematching||scanning)?0.6:1 }}>
+                    {rematching?'กำลังจับคู่…':'จับคู่เฉพาะที่ว่าง'}
+                  </button>
+                  <button onClick={()=>rematchNames(false)} disabled={rematching||scanning}
+                    title="ทับผลเดิมทั้งหมด รวมที่แก้เองไว้"
+                    style={{ minHeight:38, borderRadius:9, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:12, fontWeight:700, cursor:'pointer', opacity:(rematching||scanning)?0.6:1 }}>
+                    {rematching?'กำลังจับคู่…':'จับคู่ใหม่ทั้งหมด'}
+                  </button>
+                </div>
+                <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>
+                  ค้นบาร์โค้ดในระบบก่อน เจอแล้วใช้ชื่อจริงไปจับคู่ — ไม่ต้องถ่ายรูปใหม่
+                </div>
               </div>
               {scanResults.map((r,i)=>{
                 const usedByOthers = new Set(scanResults.filter((_,j)=>j!==i).map(x=>x.match).filter(Boolean));
@@ -5082,11 +5215,26 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
                       <input value={r.barcode??''} placeholder="บาร์โค้ด"
                         onChange={e=>{const u=[...scanResults];u[i]={...u[i],barcode:e.target.value||null};setSRes(u);applyBarcodeMap(buildMap(u));}}
                         style={{ flex:1, minWidth:0, minHeight:38, fontFamily:"'IBM Plex Mono', monospace", fontSize:12.5, fontWeight:600, color:'#15803d', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
-                      {r._userOverride&&<span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#b45309', background:'#fffbeb', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>แก้เอง</span>}
+                      {r._userOverride
+                      ? <span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#b45309', background:'#fffbeb', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>แก้เอง</span>
+                      : r._inSystem === true
+                        ? <span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#15803d', background:'#f0fdf4', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>มีในระบบ</span>
+                        : r._inSystem === false && r.barcode
+                          ? <span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#b91c1c', background:'#fef2f2', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>ไม่มีในระบบ</span>
+                          : null}
                     </div>
-                    <input value={r.description_image??''} placeholder="ชื่อที่อ่านจากรูป"
-                      onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}}
-                      style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#334155', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                    {r._sysName ? (
+                      <div style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#0f172a', fontWeight:600, border:'1px solid #bbf7d0', background:'#f0fdf4', borderRadius:9, padding:'8px 9px', lineHeight:1.4 }}>
+                        {r._sysName}
+                        <span style={{ display:'block', fontSize:10, fontWeight:400, color:'#64748b', marginTop:2 }}>
+                          ชื่อจริงในระบบ{r.description_image?' · จากรูปอ่านได้ “'+r.description_image+'”':''}
+                        </span>
+                      </div>
+                    ) : (
+                      <input value={r.description_image??''} placeholder="ชื่อที่อ่านจากรูป"
+                        onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null,_sysName:undefined};setSRes(u);}}
+                        style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#334155', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                    )}
                     <select value={r.match??''}
                       onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}}
                       style={{ width:'100%', minHeight:40, fontSize:12.5, fontFamily:'inherit', borderRadius:9, padding:'0 9px',
@@ -5107,8 +5255,21 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
           <div style={{ display:'grid', gridTemplateColumns:'auto minmax(0,1fr)', gap:8, alignItems:'stretch' }}>
             <button onClick={()=>setStep(1)} aria-label="ย้อนกลับ"
               style={{ minWidth:56, minHeight:54, borderRadius:12, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontSize:20, fontWeight:700, cursor:'pointer' }}>‹</button>
-            <button onClick={()=>setStep(3)}
-              style={{ minHeight:54, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:'pointer', boxShadow:'0 2px 0 #255771', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>ตรวจสอบข้อมูล<span style={{ fontSize:18 }}>›</span></button>
+            {(() => {
+              const unread = productFiles.filter(it=>it.status==='pending').length;
+              if (unread > 0 || scanning) return (
+                <button onClick={scanPendingPFiles} disabled={scanning}
+                  style={{ minHeight:54, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:scanning?'wait':'pointer', boxShadow:'0 2px 0 #255771', display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity:scanning?0.75:1 }}>
+                  <Sparkles size={18} />{scanning ? 'กำลังอ่าน…' : `อ่านด้วย AI (${unread})`}
+                </button>
+              );
+              return (
+                <button onClick={()=>setStep(3)}
+                  style={{ minHeight:54, borderRadius:12, background:'#2f6e90', color:'#fff', fontWeight:700, fontSize:15.5, border:'none', fontFamily:'inherit', cursor:'pointer', boxShadow:'0 2px 0 #255771', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  ตรวจสอบข้อมูล<span style={{ fontSize:18 }}>›</span>
+                </button>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -5440,6 +5601,7 @@ function ScannerModal({ products, onScan, onClose }) {
   const [manualBarcode, setManualBarcode] = useState('');
   const [scanError, setScanError] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [rematching, setRematching] = useState(false);
   const fileInputRef = useRef(null);
   const html5QrRef = useRef(null);
   const cameraStarted = useRef(false);

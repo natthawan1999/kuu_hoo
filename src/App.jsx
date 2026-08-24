@@ -95,11 +95,10 @@ const BARCODE_PROMPT = list => `คุณได้รับรูปภาพส
 รายการสินค้า:
 ${list}`;
 
-// จับคู่ด้วยชื่อล้วน — ไม่ต้องส่งรูป
-// ชื่อที่ส่งไปเป็น "ชื่อจริงในระบบ" เมื่อค้นบาร์โค้ดเจอ (แม่นกว่าชื่อที่อ่านจากกล่อง)
-const REMATCH_PROMPT = (list, items) => `จับคู่สินค้า กับรายการในใบกำกับ
-แต่ละตัวมี name (ชื่อที่ใช้จับคู่) และ source: "ระบบ" = ชื่อจริงจากฐานข้อมูลสินค้า · "รูป" = อ่านจากกล่อง
-ชื่อจาก "ระบบ" เชื่อถือได้สูง · ชื่อจาก "รูป" มักย่อหรือสลับคำ ให้ดูขนาด/ปริมาณ/รส ประกอบ
+// จับคู่ด้วยชื่อที่อ่านจากรูปเท่านั้น — ไม่ต้องส่งรูปซ้ำ
+// (ผลค้น product_price ใช้บอกแค่ว่าบาร์โค้ดนี้มีในระบบไหม ไม่เอาไปใช้จับคู่)
+const REMATCH_PROMPT = (list, items) => `จับคู่ชื่อสินค้าที่อ่านจากรูป กับรายการในใบกำกับ
+ชื่อบนกล่องมักย่อหรือสลับคำ ให้ดูขนาด/ปริมาณ/รส ประกอบ
 ถ้าไม่มีอันไหนตรงจริง ให้ match เป็น null — ห้ามเดา
 
 ตอบเป็น JSON array เท่านั้น รักษาค่า i เดิม:
@@ -108,7 +107,7 @@ const REMATCH_PROMPT = (list, items) => `จับคู่สินค้า �
 รายการในใบกำกับ:
 ${list}
 
-สินค้าที่ต้องจับคู่:
+ชื่อที่อ่านจากรูป:
 ${items}`;
 
 const STEPS = ["อัปโหลด", "สแกนสินค้า", "ตรวจสอบ", "สรุป"];
@@ -1018,8 +1017,7 @@ export default function CombinedApp() {
   const navItems = isManager
     ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
-      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt },
-         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:(invSubs||[]).filter(x=>x.status==='rejected').length }]
+      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
@@ -1152,9 +1150,11 @@ export default function CombinedApp() {
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {/* Counter - invoice */}
-        {!isManager && feature === 'invoice' && activeView !== 'my_bills' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser}
-            onOpenSent={() => setView('my_bills')} sentBadge={(invSubs||[]).filter(x=>x.status==='rejected').length} /></ErrorBox>}
-        {!isManager && feature === 'invoice' && activeView === 'my_bills' && <ErrorBox><MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)} /></ErrorBox>}
+        {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser}
+            onOpenSent={() => setView('my_bills')} onCloseSent={() => setView('invoice')}
+            sentActive={activeView === 'my_bills'}
+            sentBadge={(invSubs||[]).filter(x=>x.status==='rejected').length}
+            sentView={<MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)} />} /></ErrorBox>}
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
@@ -1167,7 +1167,7 @@ export default function CombinedApp() {
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
-      {!isManager && navItems.length > 1 && !(feature === 'invoice' && activeView === 'invoice') && (
+      {!isManager && navItems.length > 1 && (
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
@@ -4549,13 +4549,13 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   );
 }
 
-function StepBar({ current, onGo, maxStep, onOpenSent, sentBadge = 0 }) {
+function StepBar({ current, onGo, maxStep, onOpenSent, sentBadge = 0, sentActive = false }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: onOpenSent ? 'repeat(4, minmax(0,1fr)) 1.15fr' : 'repeat(4, minmax(0,1fr))' }}>
         {STEPS.map((label, i) => {
-          const n = i+1, done = current > n, active = current === n, reachable = n <= (maxStep ?? current);
+          const n = i+1, done = current > n, active = !sentActive && current === n, reachable = n <= (maxStep ?? current);
           return (
             <button key={n} onClick={() => reachable && onGo && onGo(n)} disabled={!reachable}
               className="flex flex-col items-center justify-center gap-1 leading-none"
@@ -4577,7 +4577,9 @@ function StepBar({ current, onGo, maxStep, onOpenSent, sentBadge = 0 }) {
           <button onClick={onOpenSent}
             className="relative flex flex-col items-center justify-center gap-1 leading-none border-l"
             style={{ minHeight: 58, paddingTop: 8, paddingBottom: 8, borderColor: '#E4E6EA',
-                     borderTop: '3px solid transparent', background: '#fff', color: '#64748B', cursor: 'pointer' }}>
+                     borderTop: sentActive ? '3px solid #2F6E90' : '3px solid transparent',
+                     background: sentActive ? '#EAF0F4' : '#fff',
+                     color: sentActive ? '#255771' : '#64748B', cursor: 'pointer' }}>
             <Send size={17} />
             <span className="text-[10px] font-semibold whitespace-nowrap">บิลที่ส่งแล้ว</span>
             {sentBadge > 0 && (
@@ -4641,7 +4643,7 @@ class ErrorBox extends React.Component {
   }
 }
 
-function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBadge = 0 }) {
+function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onCloseSent, sentBadge = 0, sentActive = false, sentView = null }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
@@ -4649,8 +4651,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
   const [sendSt, setSendSt] = useState({ busy:false, done:null, err:'' });   // ส่งบิลให้ผู้จัดการ
   // มาจากปุ่ม "แก้ใบนี้ส่งใหม่" — ส่งแล้วได้เลขเดิม + R1
   const [revise, setRevise] = useState(() => { try { const v = safeGet('reviseInvoice',''); return v ? JSON.parse(v) : null; } catch { return null; } });
-  const clearRevise = () => { setRevise(null); try { localStorage.removeItem('reviseInvoice'); } catch {} };
   const [reviseLoaded, setReviseLoaded] = useState(false);
+  const clearRevise = () => {
+    setRevise(null); setReviseLoaded(false);
+    try { localStorage.removeItem('reviseInvoice'); } catch {}
+  };
 
   // แก้ใบเดิม: ยกข้อมูลเก่ามาวางในขั้นตรวจสอบเลย — แก้บาร์โค้ด/จำนวน/ราคาได้ทันที
   useEffect(() => {
@@ -4885,10 +4890,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
     return rows.map(r => {
       if (!r.barcode) return r;
       const hit = found.get(String(r.barcode).trim());
-      return { ...r,
-        _sysName: hit ? hit.name : null,
-        _sysCode: hit ? hit.productCode : null,
-        _inSystem: !!hit };
+      // เก็บแค่ "เจอ/ไม่เจอ" — ชื่อในระบบไม่เอาไปจับคู่ (ชื่อบิลกับชื่อในระบบเขียนไม่เหมือนกัน)
+      return { ...r, _inSystem: !!hit, _sysName: hit ? hit.name : null };
     });
   };
 
@@ -4902,17 +4905,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
     // ยังไม่รู้ชื่อจริง → ค้นระบบก่อน แล้วจับคู่ด้วยชื่อจริง
     let base = await withSystemNames(scanResults);
     setSRes(base);
-    const targets = base.filter(r => (r._sysName || r.description_image) && (!onlyBlank || !r.match));
+    const targets = base.filter(r => r.description_image && (!onlyBlank || !r.match));
     if (!targets.length) { setRematching(false); return; }
     try {
       const allP = invoices.filter(i=>i.status==='done'&&i.data?.products).flatMap(i=>i.data.products)
         .filter((x,i,a)=>a.findIndex(y=>y.description===x.description)===i);
       const list = allP.map(x=>x.description).filter(Boolean).join('\n');
-      const payload = targets.map((r,i)=>({
-        i, barcode: r.barcode || '',
-        name: r._sysName || r.description_image,
-        source: r._sysName ? 'ระบบ' : 'รูป',
-      }));
+      const payload = targets.map((r,i)=>({ i, barcode: r.barcode || '', name: r.description_image }));
       const res = await callClaude([{ type:'text', text: REMATCH_PROMPT(list, JSON.stringify(payload, null, 1)) }], {}, model);
       const raw = extractJSON(res.content?.find(b=>b.type==='text')?.text || 'null');
       const arr = Array.isArray(raw) ? raw : [];
@@ -5016,7 +5015,10 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
     } catch(e) { setSbErr(e.message); setSbSt('error'); }
   };
 
-  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setSbSt(null);setSbErr(null);setSelPages({}); };
+  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setSbSt(null);setSbErr(null);setSelPages({});
+    setMaxStep(1); setSendSt({ busy:false, done:null, err:'' });
+    clearRevise();   // เริ่มใหม่แล้วต้องเป็นบิลใหม่จริง ๆ ไม่ใช่รอบแก้ของใบเดิม
+  };
 
   useEffect(() => {
     if (step===4&&!fileName) {
@@ -5055,12 +5057,15 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0, paddingBottom: 'calc(78px + env(safe-area-inset-bottom))' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      {sentActive && sentView}
+      {/* ซ่อนไว้ ไม่ unmount — กลับมาแล้วงานที่คีย์ไว้ยังอยู่ */}
+      <div style={{ display: sentActive ? 'none' : 'block' }}>
       {revise && (
         <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:12, padding:12, marginBottom:12, display:'flex', flexDirection:'column', gap:7 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <span style={{ fontSize:12.5, fontWeight:700, color:'#B91C1C' }}>กำลังแก้ใบที่ถูกส่งกลับ</span>
             <span style={{ flex:1 }} />
-            <button onClick={() => { clearRevise(); reset(); }}
+            <button onClick={reset}
               style={{ minHeight:30, padding:'0 10px', borderRadius:8, border:'1px solid #FECACA', background:'#fff', color:'#B91C1C', fontFamily:'inherit', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
               ทำเป็นบิลใหม่แทน
             </button>
@@ -5082,7 +5087,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
 
-          {step>1&&<button onClick={reset} style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ ใหม่</button>}
+          {(step>1||revise)&&<button onClick={reset} title={revise?'เลิกแก้ใบเดิม เริ่มบิลใหม่':'เริ่มใหม่'}
+            style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ {revise?'เลิกแก้':'ใหม่'}</button>}
         </div>
       </div>
 
@@ -5266,7 +5272,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
                   </button>
                 </div>
                 <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>
-                  ค้นบาร์โค้ดในระบบก่อน เจอแล้วใช้ชื่อจริงไปจับคู่ — ไม่ต้องถ่ายรูปใหม่
+                  จับคู่จากชื่อที่อ่านจากรูป · เช็คด้วยว่าบาร์โค้ดมีในระบบไหม — ไม่ต้องถ่ายรูปใหม่
                 </div>
               </div>
               {scanResults.map((r,i)=>{
@@ -5287,17 +5293,14 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
                           ? <span style={{ flex:'none', fontSize:10, fontWeight:700, color:'#b91c1c', background:'#fef2f2', borderRadius:99, padding:'4px 8px', whiteSpace:'nowrap' }}>ไม่มีในระบบ</span>
                           : null}
                     </div>
-                    {r._sysName ? (
-                      <div style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#0f172a', fontWeight:600, border:'1px solid #bbf7d0', background:'#f0fdf4', borderRadius:9, padding:'8px 9px', lineHeight:1.4 }}>
-                        {r._sysName}
-                        <span style={{ display:'block', fontSize:10, fontWeight:400, color:'#64748b', marginTop:2 }}>
-                          ชื่อจริงในระบบ{r.description_image?' · จากรูปอ่านได้ “'+r.description_image+'”':''}
-                        </span>
-                      </div>
-                    ) : (
-                      <input value={r.description_image??''} placeholder="ชื่อที่อ่านจากรูป"
-                        onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null,_sysName:undefined};setSRes(u);}}
-                        style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#334155', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                    <input value={r.description_image??''} placeholder="ชื่อที่อ่านจากรูป"
+                      onChange={e=>{const u=[...scanResults];u[i]={...u[i],description_image:e.target.value||null};setSRes(u);}}
+                      style={{ width:'100%', minHeight:38, fontSize:12.5, color:'#334155', border:'1px solid #e4e6ea', borderRadius:9, padding:'0 9px' }}/>
+                    {r._inSystem && r._sysName && (
+                      <div style={{ fontSize:10.5, color:'#15803d', lineHeight:1.4 }}>ในระบบชื่อ “{r._sysName}”</div>
+                    )}
+                    {r._inSystem === false && r.barcode && (
+                      <div style={{ fontSize:10.5, color:'#b91c1c', lineHeight:1.4 }}>บาร์โค้ดนี้ไม่มีในระบบ — เช็คว่าอ่านถูกไหม หรือเป็นสินค้าใหม่</div>
                     )}
                     <select value={r.match??''}
                       onChange={e=>{const u=[...scanResults];u[i]={...u[i],match:e.target.value||null,_userOverride:true};setSRes(u);applyBarcodeMap(buildMap(u));}}
@@ -5637,7 +5640,10 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBad
             style={{ alignSelf:'flex-start', minHeight:44, padding:'0 14px', borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13, cursor:'pointer' }}>‹ กลับไปแก้ข้อมูล</button>
         </div>
       )}
-      <StepBar current={step} maxStep={maxStep} onGo={setStep} onOpenSent={onOpenSent} sentBadge={sentBadge}/>
+      </div>
+      <StepBar current={step} maxStep={maxStep} sentBadge={sentBadge} sentActive={sentActive}
+        onGo={(n)=>{ setStep(n); onCloseSent?.(); }}
+        onOpenSent={onOpenSent}/>
     </div>
   );
 }

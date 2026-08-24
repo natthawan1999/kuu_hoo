@@ -4881,11 +4881,19 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
 
           <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>บิลบางใบไม่มีบาร์โค้ด มีแต่ชื่อสินค้า ถ่ายรูปตัวสินค้าเพิ่มเพื่อให้ AI ดึงบาร์โค้ดมาจับคู่ให้</div>
 
-          <DropZone bare multiple accept="image/*" capture onFiles={addProductFiles}>
-            <div style={{ minHeight:50, borderRadius:12, background:'#fff', border:'1px solid #e4e6ea', color:'#334155', fontSize:15, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              ถ่ายรูปสินค้าเพื่อดึงบาร์โค้ด
-            </div>
-          </DropZone>
+          {/* capture = เปิดกล้องเลย / ไม่ใส่ = เลือกจากคลังรูปหรือลากไฟล์มาวางได้ */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <DropZone bare multiple accept="image/*" capture onFiles={addProductFiles}>
+              <div style={{ minHeight:50, borderRadius:12, background:'#2f6e90', color:'#fff', fontSize:14.5, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:7, boxShadow:'0 2px 0 #255771' }}>
+                <Camera size={17} />ถ่ายรูปสินค้า
+              </div>
+            </DropZone>
+            <DropZone bare multiple accept="image/*" onFiles={addProductFiles}>
+              <div style={{ minHeight:50, borderRadius:12, background:'#fff', border:'1px solid #e4e6ea', color:'#334155', fontSize:14.5, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+                <ImageIcon size={17} />อัพโหลดรูป
+              </div>
+            </DropZone>
+          </div>
 
           {productFiles.length>0&&(
             <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12 }}>

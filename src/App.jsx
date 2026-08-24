@@ -1018,7 +1018,8 @@ export default function CombinedApp() {
   const navItems = isManager
     ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
-      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
+      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt },
+         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:(invSubs||[]).filter(x=>x.status==='rejected').length }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
@@ -1068,25 +1069,6 @@ export default function CombinedApp() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!isManager && feature === 'invoice' && (() => {
-              const rej = (invSubs || []).filter(x => x.status === 'rejected').length;
-              const on = activeView === 'my_bills';
-              return (
-                <button onClick={() => setView(on ? 'invoice' : 'my_bills')}
-                  className="relative flex items-center gap-1.5 rounded-lg font-bold border"
-                  style={{ minHeight: 36, padding: '0 10px', fontSize: 12,
-                           borderColor: on ? '#B9CFDC' : '#E4E6EA',
-                           background: on ? '#EAF0F4' : '#fff',
-                           color: on ? '#255771' : '#475569' }}>
-                  {on ? <Receipt size={14} /> : <Send size={14} />}
-                  {on ? 'บันทึกบิล' : 'บิลที่ส่งแล้ว'}
-                  {!on && rej > 0 && (
-                    <span className="absolute text-white font-bold rounded-full text-center"
-                      style={{ top: -5, right: -5, minWidth: 17, height: 17, fontSize: 9.5, lineHeight: '17px', background: '#B91C1C' }}>{rej}</span>
-                  )}
-                </button>
-              );
-            })()}
             <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>
           </div>
         </div>
@@ -1164,7 +1146,9 @@ export default function CombinedApp() {
         </div>
       )}
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : 'calc(76px + env(safe-area-inset-bottom))' }}>
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : (feature === 'invoice' && activeView === 'invoice'
+          ? 'calc(148px + env(safe-area-inset-bottom))'   // แถบขั้นตอน + เมนูล่าง
+          : 'calc(76px + env(safe-area-inset-bottom))') }}>
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
@@ -2055,6 +2039,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
     pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
     approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
     rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
+    superseded: { label: 'แก้แล้วส่งใหม่',   soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', icon: RefreshCw },
   };
   const counts = invSubs.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
   const rejected = invSubs.filter(s => s.status === 'rejected');
@@ -2118,7 +2103,14 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
                     <div className="text-[11.5px] text-slate-500 tabular-nums mt-0.5">
                       บิล {s.invoiceNo || '—'}{s.invoiceDate ? ' · ' + s.invoiceDate : ''}
                     </div>
-                    {s.docNo && <div className="text-[11.5px] font-semibold text-slate-600 tabular-nums mt-0.5">{s.docNo}</div>}
+                    {s.docNo && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11.5px] font-semibold text-slate-600 tabular-nums">{s.docNo}</span>
+                        {s.reviseNo > 0 && (
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#EAF0F4', color: '#255771' }}>แก้รอบ {s.reviseNo}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
@@ -2140,9 +2132,13 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
                   )}
 
                   {s.status === 'rejected' && (
-                    <button onClick={() => setView('invoice')}
+                    <button onClick={() => {
+                        // แก้แล้วใช้เลขเดิม + R1 — ไม่กินเลขเอกสารใหม่
+                        safeSet('reviseInvoice', JSON.stringify({ id: s.id, docNo: s.docNo, invoiceNo: s.invoiceNo, note: s.reviewNote }));
+                        setView('invoice');
+                      }}
                       className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
-                      ถ่ายบิลใหม่ตามที่แจ้ง
+                      แก้ใบนี้ส่งใหม่ ({s.docNo ? s.docNo.replace(/R\d+$/i,'') + 'R' + ((s.reviseNo || 0) + 1) : 'รอบใหม่'})
                     </button>
                   )}
 
@@ -4546,8 +4542,9 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
 
 function StepBar({ current, onGo, maxStep }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    // นั่งเหนือเมนูล่างของแอป (สูง 62px) ไม่ทับกัน
+    <div className="fixed left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
+      style={{ bottom: 'calc(62px + env(safe-area-inset-bottom))' }}>
       <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
         {STEPS.map((label, i) => {
           const n = i+1, done = current > n, active = current === n, reachable = n <= (maxStep ?? current);
@@ -4629,6 +4626,9 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
   const [maxStep, setMaxStep] = useState(1);     // ขั้นสูงสุดที่เคยไปถึง — กดแถบล่างข้ามไปได้
   const [sendSt, setSendSt] = useState({ busy:false, done:null, err:'' });   // ส่งบิลให้ผู้จัดการ
+  // มาจากปุ่ม "แก้ใบนี้ส่งใหม่" — ส่งแล้วได้เลขเดิม + R1
+  const [revise, setRevise] = useState(() => { try { const v = safeGet('reviseInvoice',''); return v ? JSON.parse(v) : null; } catch { return null; } });
+  const clearRevise = () => { setRevise(null); try { localStorage.removeItem('reviseInvoice'); } catch {} };
 
   // พนักงานไม่บันทึกลงระบบเอง — ส่งให้ผู้จัดการอนุมัติก่อน
   const sendInvoicesForReview = async () => {
@@ -4645,6 +4645,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
           method:'POST', headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({ submission: {
             keyedById: currentUser.id, keyedBy: currentUser.name,
+            reviseOf: revise?.id || null,
             deviceId: safeGet('deviceId','') || null,
             invoiceNo: d.invoice_no || null, invoiceDate: d.invoice_date || null,
             vendorName: d.vendor_name || null,
@@ -4659,6 +4660,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       // ส่งแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย
       try { await fetch('/api/invoice-draft?keyed_by_id=' + encodeURIComponent(currentUser.id), { method:'DELETE' }); } catch {}
       setSendSt({ busy:false, done:sent, err:'' });
+      clearRevise();   // ส่งแก้แล้ว รอบถัดไปเป็นบิลใหม่ตามปกติ
     } catch (e) { setSendSt({ busy:false, done:null, err:e.message }); }
   };
   const w = useWinWidth(), mob = w < 600;
@@ -5022,8 +5024,25 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0, paddingBottom: 'calc(78px + env(safe-area-inset-bottom))' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      {revise && (
+        <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:12, padding:12, marginBottom:12, display:'flex', flexDirection:'column', gap:7 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:12.5, fontWeight:700, color:'#B91C1C' }}>กำลังแก้ใบที่ถูกส่งกลับ</span>
+            <span style={{ flex:1 }} />
+            <button onClick={clearRevise}
+              style={{ minHeight:30, padding:'0 10px', borderRadius:8, border:'1px solid #FECACA', background:'#fff', color:'#B91C1C', fontFamily:'inherit', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
+              ทำเป็นบิลใหม่แทน
+            </button>
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'#B91C1C', fontFamily:"'IBM Plex Mono', monospace" }}>
+            {revise.docNo} → {String(revise.docNo || '').replace(/R\d+$/i,'')}R…
+          </div>
+          {revise.note && <div style={{ fontSize:11.5, color:'#B91C1C', lineHeight:1.5 }}>ผู้จัดการแจ้ง: “{revise.note}”</div>}
+          <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>ส่งแล้วได้เลขฐานเดิมต่อท้ายรอบแก้ — ไม่กินเลขเอกสารใหม่</div>
+        </div>
+      )}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
-        <h2 style={{ fontWeight:700, fontSize:20, color:'#0f172a', margin:0 }}>บันทึกบิลซื้อ</h2>
+        <h2 style={{ fontWeight:700, fontSize:20, color:'#0f172a', margin:0 }}>{revise ? 'แก้บิลที่ถูกส่งกลับ' : 'บันทึกบิลซื้อ'}</h2>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <select value={model} onChange={e=>setModel(e.target.value)} style={{ fontSize:12, padding:'4px 8px', borderRadius:9, border:'1px solid #cbd5e1', background:'#f8fafc', color:'#475569' }}>
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}

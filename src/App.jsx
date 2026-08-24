@@ -798,9 +798,9 @@ export default function CombinedApp() {
   }, []);
 
   // บิลรออนุมัติ — ผู้จัดการเห็นในกล่องขาเข้าเดียวกัน
-  const pullInvSubs = useCallback(async () => {
+  const pullInvSubs = useCallback(async (keyedById) => {
     try {
-      const res = await fetch('/api/invoice-submission');
+      const res = await fetch('/api/invoice-submission' + (keyedById ? '?keyed_by_id=' + encodeURIComponent(keyedById) : ''));
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
       setInvSubs(j.submissions || []);
@@ -831,6 +831,8 @@ export default function CombinedApp() {
       pullSubmissions('recorder');
       pullSubmissions('stock_compare');
       pullInvSubs();
+    } else if ((currentUser.feature || 'recorder') === 'invoice') {
+      pullInvSubs(currentUser.id);      // เห็นเฉพาะบิลของตัวเอง — รู้ว่าถูกส่งกลับแก้
     } else {
       pullSubmissions(currentUser.feature || 'recorder');
     }
@@ -935,7 +937,8 @@ export default function CombinedApp() {
   const navItems = isManager
     ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
-      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
+      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt },
+         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:invSubs.filter(s=>s.status==='rejected').length }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
@@ -1065,7 +1068,8 @@ export default function CombinedApp() {
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {/* Counter - invoice */}
-        {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
+        {!isManager && feature === 'invoice' && activeView !== 'my_bills' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
+        {!isManager && feature === 'invoice' && activeView === 'my_bills' && <ErrorBox><MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser?.id)} /></ErrorBox>}
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
@@ -1935,6 +1939,135 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
           <button onClick={()=>setConfirming(false)} className="w-full py-3 border border-[#E4E6EA] bg-white hover:bg-[#F6F7F8] rounded-xl font-medium text-sm text-slate-600">
             ‹ กลับไปแก้
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// บิลที่พนักงานส่งไปแล้ว — เห็นผลรีวิวและเหตุผลที่ผู้จัดการส่งกลับ
+function MyBillsView({ invSubs = [], setView, onRefresh }) {
+  const [open, setOpen] = useState(null);
+  const CFG = {
+    pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
+    approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
+    rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
+  };
+  const counts = invSubs.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
+  const rejected = invSubs.filter(s => s.status === 'rejected');
+  const rest = invSubs.filter(s => s.status !== 'rejected');
+  const list = [...rejected, ...rest];   // ที่ต้องแก้ขึ้นบนสุด
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-xl font-bold text-slate-800">บิลที่ส่งแล้ว</h2>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-[11.5px] text-slate-400">{invSubs.length} ใบ</div>
+          <button onClick={onRefresh} title="ดึงสถานะล่าสุด"
+            className="rounded-lg flex items-center justify-center border bg-white text-slate-500"
+            style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}><RefreshCw size={14} /></button>
+        </div>
+      </div>
+
+      {rejected.length > 0 && (
+        <div className="rounded-xl px-3 py-2.5 border flex items-center gap-2" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
+          <AlertCircle size={16} style={{ color: '#B91C1C' }} className="shrink-0" />
+          <div className="text-[12.5px] font-bold" style={{ color: '#B91C1C' }}>มี {rejected.length} ใบที่ต้องแก้แล้วส่งใหม่</div>
+        </div>
+      )}
+
+      {invSubs.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {['pending', 'approved', 'rejected'].map(k => (
+            <div key={k} className="rounded-xl px-2.5 py-2 border" style={{ background: CFG[k].soft, borderColor: CFG[k].line }}>
+              <div className="text-[10px] font-semibold leading-tight" style={{ color: CFG[k].ink }}>{CFG[k].label}</div>
+              <div className="text-lg font-bold tabular-nums mt-0.5" style={{ color: CFG[k].ink }}>{counts[k] || 0}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {invSubs.length === 0 ? (
+        <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
+          <Receipt className="mx-auto text-[#E4E6EA] mb-2" size={34} />
+          <div className="text-[13px] text-slate-500 mb-3">ยังไม่มีบิลที่ส่ง</div>
+          <button onClick={() => setView('invoice')}
+            className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#2F6E90' }}>ไปบันทึกบิล</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {list.map(s => {
+            const cfg = CFG[s.status] || CFG.pending; const Icon = cfg.icon; const on = open === s.id;
+            return (
+              <div key={s.id} className="bg-white rounded-xl overflow-hidden border" style={{ borderColor: cfg.line }}>
+                <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: cfg.soft, borderColor: cfg.line }}>
+                  <Icon size={14} style={{ color: cfg.ink }} className="shrink-0" />
+                  <span className="text-[11.5px] font-bold" style={{ color: cfg.ink }}>{cfg.label}</span>
+                  <span className="ml-auto text-[10.5px] tabular-nums text-slate-500 shrink-0">
+                    {s.submittedAt ? new Date(s.submittedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 space-y-2.5">
+                  <div>
+                    <div className="text-[14px] font-bold text-slate-800">{s.vendorName || 'ไม่ระบุผู้ขาย'}</div>
+                    <div className="text-[11.5px] text-slate-500 tabular-nums mt-0.5">
+                      บิล {s.invoiceNo || '—'}{s.invoiceDate ? ' · ' + s.invoiceDate : ''}
+                    </div>
+                    {s.docNo && <div className="text-[11.5px] font-semibold text-slate-600 tabular-nums mt-0.5">{s.docNo}</div>}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                      <div className="text-[10px] text-slate-500">รายการ</div>
+                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount || s.lines?.length || 0}</div>
+                    </div>
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
+                      <div className="text-[10px] text-slate-500">ยอดสุทธิ</div>
+                      <div className="text-base font-bold text-slate-800 tabular-nums">{(s.netTotal || 0).toLocaleString('th-TH')}</div>
+                    </div>
+                  </div>
+
+                  {s.status !== 'pending' && s.reviewNote && (
+                    <div className="rounded-lg p-2.5 border" style={{ background: cfg.soft, borderColor: cfg.line }}>
+                      <div className="text-[10px] font-bold" style={{ color: cfg.ink }}>{s.reviewedBy || 'ผู้จัดการ'}</div>
+                      <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: cfg.ink }}>{s.reviewNote}</div>
+                    </div>
+                  )}
+
+                  {s.status === 'rejected' && (
+                    <button onClick={() => setView('invoice')}
+                      className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
+                      ถ่ายบิลใหม่ตามที่แจ้ง
+                    </button>
+                  )}
+
+                  {s.lines?.length > 0 && (
+                    <button onClick={() => setOpen(on ? null : s.id)}
+                      className="w-full pt-2 border-t text-[11.5px] font-semibold text-slate-500"
+                      style={{ borderColor: '#F6F7F8' }}>
+                      {on ? 'ซ่อนรายการในบิล' : `ดูรายการในบิล (${s.lines.length})`}
+                    </button>
+                  )}
+
+                  {on && (
+                    <div className="rounded-lg divide-y max-h-56 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
+                      {s.lines.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-800 truncate">{d.product_name || d.productName || '—'}</div>
+                            <div className="text-[10.5px] text-slate-400 tabular-nums">{d.barcode || d.product_code || ''}</div>
+                          </div>
+                          <div className="text-[12px] font-bold text-slate-700 tabular-nums shrink-0">×{d.quantity ?? d.qty ?? 0}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -5060,23 +5060,17 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
       {/* ซ่อนไว้ ไม่ unmount — กลับมาแล้วงานที่คีย์ไว้ยังอยู่ */}
       <div style={{ display: sentActive ? 'none' : 'block' }}>
       {revise && (
-        <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:12, padding:12, marginBottom:12, display:'flex', flexDirection:'column', gap:7 }}>
+        <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:12, padding:'10px 12px', marginBottom:12, display:'flex', flexDirection:'column', gap:6 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <span style={{ fontSize:12.5, fontWeight:700, color:'#B91C1C' }}>กำลังแก้ใบที่ถูกส่งกลับ</span>
-            <span style={{ flex:1 }} />
-            <button onClick={reset}
-              style={{ minHeight:30, padding:'0 10px', borderRadius:8, border:'1px solid #FECACA', background:'#fff', color:'#B91C1C', fontFamily:'inherit', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
-              ทำเป็นบิลใหม่แทน
+            <span style={{ flex:1, minWidth:0, fontSize:12.5, fontWeight:700, color:'#B91C1C', fontFamily:"'IBM Plex Mono', monospace" }}>
+              {String(revise.docNo || '').replace(/R\d+$/i,'')}R{(revise.reviseNo || 0) + 1}
+            </span>
+            <button onClick={reset} title="ยกเลิกการแก้ เริ่มบิลใหม่"
+              style={{ flex:'none', minHeight:30, padding:'0 11px', borderRadius:8, border:'1px solid #FECACA', background:'#fff', color:'#B91C1C', fontFamily:'inherit', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
+              ยกเลิก
             </button>
           </div>
-          <div style={{ fontSize:12, fontWeight:700, color:'#B91C1C', fontFamily:"'IBM Plex Mono', monospace" }}>
-            {revise.docNo} → {String(revise.docNo || '').replace(/R\d+$/i,'')}R{(revise.reviseNo || 0) + 1}
-          </div>
-          {revise.note && <div style={{ fontSize:11.5, color:'#B91C1C', lineHeight:1.5 }}>ผู้จัดการแจ้ง: “{revise.note}”</div>}
-          <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>
-            {revise.data ? 'ดึงข้อมูลใบเดิมมาให้แล้ว — แก้บาร์โค้ด จำนวน ราคา ได้เลย ไม่ต้องถ่ายรูปใหม่ (จะถ่ายเพิ่มก็ได้)' : 'ถ่ายบิลใหม่ตามที่ผู้จัดการแจ้ง'}
-            {' · ส่งแล้วได้เลขฐานเดิมต่อท้ายรอบแก้ ไม่กินเลขเอกสารใหม่'}
-          </div>
+          {revise.note && <div style={{ fontSize:11.5, color:'#B91C1C', lineHeight:1.45 }}>ผู้จัดการแจ้ง: “{revise.note}”</div>}
         </div>
       )}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
@@ -5086,8 +5080,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
             {MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
 
-          {(step>1||revise)&&<button onClick={reset} title={revise?'เลิกแก้ใบเดิม เริ่มบิลใหม่':'เริ่มใหม่'}
-            style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ {revise?'เลิกแก้':'ใหม่'}</button>}
+          {step>1&&!revise&&<button onClick={reset}
+            style={{ fontSize:12, padding:'4px 10px', borderRadius:9, border:'1px solid #fca5a5', background:'#fef2f2', color:'#b91c1c', cursor:'pointer' }}>↺ ใหม่</button>}
         </div>
       </div>
 

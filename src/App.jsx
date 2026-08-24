@@ -846,6 +846,7 @@ export default function CombinedApp() {
   // ดึงใบจากเซิร์ฟเวอร์ — ผู้จัดการ/พนักงานเปิดเครื่องไหนก็เห็นของเดียวกัน
   const [subSync, setSubSync] = useState({ busy: false, at: null, err: '' });
   const [invSubs, setInvSubs] = useState([]);   // บิลรออนุมัติ
+  const [reviseTarget, setReviseTarget] = useState(null);   // ใบที่ถูกส่งกลับและกำลังแก้
   const [menuOpen, setMenuOpen] = useState(false);   // เมนูข้างของผู้จัดการ
   const driveLog = useUploadLog();                   // ใบที่ยังไม่ขึ้น Drive → ตัวเลขบนเมนู
   const pullSubmissions = useCallback(async (feat) => {
@@ -1154,7 +1155,9 @@ export default function CombinedApp() {
             onOpenSent={() => setView('my_bills')} onCloseSent={() => setView('invoice')}
             sentActive={activeView === 'my_bills'}
             sentBadge={(invSubs||[]).filter(x=>x.status==='rejected').length}
-            sentView={<MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)} />} /></ErrorBox>}
+            reviseTarget={reviseTarget} onClearRevise={() => setReviseTarget(null)}
+            sentView={<MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)}
+              onRevise={(t) => { setReviseTarget(t); setView('invoice'); }} />} /></ErrorBox>}
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
@@ -2031,7 +2034,7 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
 }
 
 // บิลที่พนักงานส่งไปแล้ว — เห็นผลรีวิวและเหตุผลที่ผู้จัดการส่งกลับ
-function MyBillsView({ invSubs = [], setView, onRefresh }) {
+function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
   const [open, setOpen] = useState(null);
   useEffect(() => { onRefresh?.(); }, []);   // เปิดหน้าแล้วเอาสถานะล่าสุดเลย
   const CFG = {
@@ -2133,7 +2136,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
                   {s.status === 'rejected' && (
                     <button onClick={() => {
                         // แก้แล้วใช้เลขเดิม + R1 — ไม่กินเลขเอกสารใหม่
-                        safeSet('reviseInvoice', JSON.stringify({
+                        onRevise?.({
                           id: s.id, docNo: s.docNo, invoiceNo: s.invoiceNo, note: s.reviewNote,
                           reviseNo: s.reviseNo || 0,
                           // ข้อมูลใบเดิมทั้งหมด — แก้ต่อได้เลย ไม่ต้องถ่ายรูปใหม่
@@ -2143,8 +2146,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
                                   vendor_name: s.vendorName || s.header?.vendor_name || '',
                                   products: s.lines || [] },
                           fileName: s.fileName || '',
-                        }));
-                        setView('invoice');
+                        });
                       }}
                       className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
                       แก้ใบนี้ส่งใหม่ ({s.docNo ? s.docNo.replace(/R\d+$/i,'') + 'R' + ((s.reviseNo || 0) + 1) : 'รอบใหม่'})
@@ -4643,24 +4645,21 @@ class ErrorBox extends React.Component {
   }
 }
 
-function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onCloseSent, sentBadge = 0, sentActive = false, sentView = null }) {
+function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onCloseSent, sentBadge = 0, sentActive = false, sentView = null, reviseTarget = null, onClearRevise }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
   const [maxStep, setMaxStep] = useState(1);     // ขั้นสูงสุดที่เคยไปถึง — กดแถบล่างข้ามไปได้
   const [sendSt, setSendSt] = useState({ busy:false, done:null, err:'' });   // ส่งบิลให้ผู้จัดการ
   // มาจากปุ่ม "แก้ใบนี้ส่งใหม่" — ส่งแล้วได้เลขเดิม + R1
-  const [revise, setRevise] = useState(() => { try { const v = safeGet('reviseInvoice',''); return v ? JSON.parse(v) : null; } catch { return null; } });
-  const [reviseLoaded, setReviseLoaded] = useState(false);
-  const clearRevise = () => {
-    setRevise(null); setReviseLoaded(false);
-    try { localStorage.removeItem('reviseInvoice'); } catch {}
-  };
+  const revise = reviseTarget;
+  const [reviseLoaded, setReviseLoaded] = useState(null);   // เก็บ id ใบที่ยกข้อมูลมาแล้ว
+  const clearRevise = () => { setReviseLoaded(null); onClearRevise?.(); };
 
   // แก้ใบเดิม: ยกข้อมูลเก่ามาวางในขั้นตรวจสอบเลย — แก้บาร์โค้ด/จำนวน/ราคาได้ทันที
   useEffect(() => {
-    if (reviseLoaded || !revise?.data) return;
-    setReviseLoaded(true);
+    if (!revise?.data || reviseLoaded === revise.id) return;
+    setReviseLoaded(revise.id);
     setInvoices([{ files: [], pagesData: [revise.data], pageStatus: ['done'], status: 'done', data: revise.data, error: null }]);
     if (revise.fileName) setFileName(revise.fileName);
     setMaxStep(4); setStep(3);

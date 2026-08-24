@@ -4,6 +4,7 @@
 //   GET    /api/invoice-submission                    → ทุกใบ (ผู้จัดการ)
 //   GET    /api/invoice-submission?keyed_by_id=u1     → ใบของคนนั้น
 //   POST   /api/invoice-submission { submission }     → ส่งใบใหม่ (pending)
+//          submission.reviseOf = id ใบที่ถูกส่งกลับ → เลขเดิม + R1, R2 … (ไม่กินเลขใหม่)
 //   PATCH  /api/invoice-submission { id, status, review_note, reviewed_by }
 //          { id, drive: { ok, url, filename, error } } → บันทึกผลส่งขึ้น Drive
 //          status=approved → เขียนลง bill_header + imp_data ให้ด้วย
@@ -38,6 +39,23 @@ async function nextDocNo(prefix) {
   return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
 }
 
+// ใบที่ถูกส่งกลับแล้วแก้มา → ใช้เลขฐานเดิมต่อท้าย R1, R2 …
+// ไม่เรียก next_doc_no เพราะบิลจริงใบเดียวควรมีเลขฐานเดียว
+async function reviseDocNo(reviseOf) {
+  const cur = await sb(`invoice_submissions?id=eq.${encodeURIComponent(reviseOf)}&select=doc_no,invoice_no`);
+  const orig = cur?.[0];
+  if (!orig?.doc_no) throw new Error('ไม่พบใบเดิมที่จะแก้');
+  const baseNo = String(orig.doc_no).replace(/R\d+$/i, '');
+  // นับรอบจากเลขที่มีอยู่จริง — ปลอดภัยกว่านับจาก revise_no ถ้ามีแถวค้าง
+  const sibs = await sb(`invoice_submissions?doc_no=like.${encodeURIComponent(baseNo + 'R*')}&select=doc_no`);
+  let max = 0;
+  for (const x of (sibs || [])) {
+    const n = parseInt(String(x.doc_no).match(/R(\d+)$/i)?.[1] || '0', 10);
+    if (n > max) max = n;
+  }
+  return { docNo: `${baseNo}R${max + 1}`, reviseNo: max + 1 };
+}
+
 const toApp = (r) => ({
   id: r.id,
   docNo: r.doc_no,
@@ -58,6 +76,8 @@ const toApp = (r) => ({
   reviewedAt: r.reviewed_at,
   reviewedBy: r.reviewed_by,
   postedAt: r.posted_at,
+  reviseOf: r.revise_of || null,
+  reviseNo: r.revise_no || 0,
   drive: {
     status: r.drive_status || null,
     filename: r.drive_filename || '',
@@ -192,7 +212,25 @@ export default async function handler(req, res) {
         item_count: s.lines.length,
         net_total: s.netTotal ?? s.lines.reduce((a,p) => a + (num(p.total) || 0), 0),
         status: 'pending',
+        revise_of: s.reviseOf || null,
+        revise_no: 0,
       };
+
+      // แก้ใบที่ถูกส่งกลับ → เลขเดิม + R<n> ครั้งเดียว ไม่ต้องวนขอเลขใหม่
+      if (s.reviseOf) {
+        const { docNo, reviseNo } = await reviseDocNo(s.reviseOf);
+        row.doc_no = docNo;
+        row.revise_no = reviseNo;
+        const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
+        // ใบเดิมถือว่าถูกแทนที่แล้ว — กันผู้จัดการเห็นค้างในกล่องส่งกลับ
+        try {
+          await sb(`invoice_submissions?id=eq.${encodeURIComponent(s.reviseOf)}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'superseded' }),
+          });
+        } catch { /* ไม่สำเร็จก็ไม่บล็อก ใบใหม่บันทึกแล้ว */ }
+        return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
+      }
 
       // ถ้าเลขชนจริง (แข่งกันเสี้ยววินาที) ขอใหม่ให้เองเงียบ ๆ
       let lastErr;

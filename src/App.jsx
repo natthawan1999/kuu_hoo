@@ -1146,15 +1146,14 @@ export default function CombinedApp() {
         </div>
       )}
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : (feature === 'invoice' && activeView === 'invoice'
-          ? 'calc(148px + env(safe-area-inset-bottom))'   // แถบขั้นตอน + เมนูล่าง
-          : 'calc(76px + env(safe-area-inset-bottom))') }}>
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
         {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
         {/* Counter - invoice */}
-        {!isManager && feature === 'invoice' && activeView !== 'my_bills' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser} /></ErrorBox>}
+        {!isManager && feature === 'invoice' && activeView !== 'my_bills' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser}
+            onOpenSent={() => setView('my_bills')} sentBadge={(invSubs||[]).filter(x=>x.status==='rejected').length} /></ErrorBox>}
         {!isManager && feature === 'invoice' && activeView === 'my_bills' && <ErrorBox><MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)} /></ErrorBox>}
         {/* Manager */}
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
@@ -1168,7 +1167,7 @@ export default function CombinedApp() {
         {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
-      {!isManager && navItems.length > 1 && (
+      {!isManager && navItems.length > 1 && !(feature === 'invoice' && activeView === 'invoice') && (
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
           {navItems.map(item => {
@@ -2134,7 +2133,17 @@ function MyBillsView({ invSubs = [], setView, onRefresh }) {
                   {s.status === 'rejected' && (
                     <button onClick={() => {
                         // แก้แล้วใช้เลขเดิม + R1 — ไม่กินเลขเอกสารใหม่
-                        safeSet('reviseInvoice', JSON.stringify({ id: s.id, docNo: s.docNo, invoiceNo: s.invoiceNo, note: s.reviewNote }));
+                        safeSet('reviseInvoice', JSON.stringify({
+                          id: s.id, docNo: s.docNo, invoiceNo: s.invoiceNo, note: s.reviewNote,
+                          reviseNo: s.reviseNo || 0,
+                          // ข้อมูลใบเดิมทั้งหมด — แก้ต่อได้เลย ไม่ต้องถ่ายรูปใหม่
+                          data: { ...(s.header || {}),
+                                  invoice_no: s.invoiceNo || s.header?.invoice_no || '',
+                                  invoice_date: s.invoiceDate || s.header?.invoice_date || '',
+                                  vendor_name: s.vendorName || s.header?.vendor_name || '',
+                                  products: s.lines || [] },
+                          fileName: s.fileName || '',
+                        }));
                         setView('invoice');
                       }}
                       className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
@@ -4540,12 +4549,11 @@ function SettingsView({ config, onSave, onTestConnection, dataSource, lastSyncAt
   );
 }
 
-function StepBar({ current, onGo, maxStep }) {
+function StepBar({ current, onGo, maxStep, onOpenSent, sentBadge = 0 }) {
   return (
-    // นั่งเหนือเมนูล่างของแอป (สูง 62px) ไม่ทับกัน
-    <div className="fixed left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
-      style={{ bottom: 'calc(62px + env(safe-area-inset-bottom))' }}>
-      <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E4E6EA] z-20"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="max-w-6xl mx-auto grid" style={{ gridTemplateColumns: onOpenSent ? 'repeat(4, minmax(0,1fr)) 1.15fr' : 'repeat(4, minmax(0,1fr))' }}>
         {STEPS.map((label, i) => {
           const n = i+1, done = current > n, active = current === n, reachable = n <= (maxStep ?? current);
           return (
@@ -4565,6 +4573,19 @@ function StepBar({ current, onGo, maxStep }) {
             </button>
           );
         })}
+        {onOpenSent && (
+          <button onClick={onOpenSent}
+            className="relative flex flex-col items-center justify-center gap-1 leading-none border-l"
+            style={{ minHeight: 58, paddingTop: 8, paddingBottom: 8, borderColor: '#E4E6EA',
+                     borderTop: '3px solid transparent', background: '#fff', color: '#64748B', cursor: 'pointer' }}>
+            <Send size={17} />
+            <span className="text-[10px] font-semibold whitespace-nowrap">บิลที่ส่งแล้ว</span>
+            {sentBadge > 0 && (
+              <span className="absolute text-white font-bold rounded-full text-center"
+                style={{ top: 6, right: 10, minWidth: 16, height: 16, fontSize: 9.5, lineHeight: '16px', background: '#B91C1C' }}>{sentBadge}</span>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -4620,7 +4641,7 @@ class ErrorBox extends React.Component {
   }
 }
 
-function InvoiceScannerModule({ supabaseConfig, currentUser }) {
+function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, sentBadge = 0 }) {
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
@@ -4629,6 +4650,16 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   // มาจากปุ่ม "แก้ใบนี้ส่งใหม่" — ส่งแล้วได้เลขเดิม + R1
   const [revise, setRevise] = useState(() => { try { const v = safeGet('reviseInvoice',''); return v ? JSON.parse(v) : null; } catch { return null; } });
   const clearRevise = () => { setRevise(null); try { localStorage.removeItem('reviseInvoice'); } catch {} };
+  const [reviseLoaded, setReviseLoaded] = useState(false);
+
+  // แก้ใบเดิม: ยกข้อมูลเก่ามาวางในขั้นตรวจสอบเลย — แก้บาร์โค้ด/จำนวน/ราคาได้ทันที
+  useEffect(() => {
+    if (reviseLoaded || !revise?.data) return;
+    setReviseLoaded(true);
+    setInvoices([{ files: [], pagesData: [revise.data], pageStatus: ['done'], status: 'done', data: revise.data, error: null }]);
+    if (revise.fileName) setFileName(revise.fileName);
+    setMaxStep(4); setStep(3);
+  }, [revise, reviseLoaded]);
 
   // พนักงานไม่บันทึกลงระบบเอง — ส่งให้ผู้จัดการอนุมัติก่อน
   const sendInvoicesForReview = async () => {
@@ -5029,16 +5060,19 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <span style={{ fontSize:12.5, fontWeight:700, color:'#B91C1C' }}>กำลังแก้ใบที่ถูกส่งกลับ</span>
             <span style={{ flex:1 }} />
-            <button onClick={clearRevise}
+            <button onClick={() => { clearRevise(); reset(); }}
               style={{ minHeight:30, padding:'0 10px', borderRadius:8, border:'1px solid #FECACA', background:'#fff', color:'#B91C1C', fontFamily:'inherit', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
               ทำเป็นบิลใหม่แทน
             </button>
           </div>
           <div style={{ fontSize:12, fontWeight:700, color:'#B91C1C', fontFamily:"'IBM Plex Mono', monospace" }}>
-            {revise.docNo} → {String(revise.docNo || '').replace(/R\d+$/i,'')}R…
+            {revise.docNo} → {String(revise.docNo || '').replace(/R\d+$/i,'')}R{(revise.reviseNo || 0) + 1}
           </div>
           {revise.note && <div style={{ fontSize:11.5, color:'#B91C1C', lineHeight:1.5 }}>ผู้จัดการแจ้ง: “{revise.note}”</div>}
-          <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>ส่งแล้วได้เลขฐานเดิมต่อท้ายรอบแก้ — ไม่กินเลขเอกสารใหม่</div>
+          <div style={{ fontSize:10.5, color:'#94a3b8', lineHeight:1.5 }}>
+            {revise.data ? 'ดึงข้อมูลใบเดิมมาให้แล้ว — แก้บาร์โค้ด จำนวน ราคา ได้เลย ไม่ต้องถ่ายรูปใหม่ (จะถ่ายเพิ่มก็ได้)' : 'ถ่ายบิลใหม่ตามที่ผู้จัดการแจ้ง'}
+            {' · ส่งแล้วได้เลขฐานเดิมต่อท้ายรอบแก้ ไม่กินเลขเอกสารใหม่'}
+          </div>
         </div>
       )}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:8 }}>
@@ -5603,7 +5637,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
             style={{ alignSelf:'flex-start', minHeight:44, padding:'0 14px', borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#475569', fontFamily:'inherit', fontWeight:600, fontSize:13, cursor:'pointer' }}>‹ กลับไปแก้ข้อมูล</button>
         </div>
       )}
-      <StepBar current={step} maxStep={maxStep} onGo={setStep}/>
+      <StepBar current={step} maxStep={maxStep} onGo={setStep} onOpenSent={onOpenSent} sentBadge={sentBadge}/>
     </div>
   );
 }

@@ -541,6 +541,33 @@ function buildInvoiceXlsxBase64(inv) {
   return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 }
 
+// CSV สำหรับ import เข้า POS — 2 ไฟล์ต่อบิล ชื่อไฟล์ = doc_no
+// bill_header: 1 บรรทัดต่อบิล (มีหัวคอลัมน์)
+// imp_data:    barcode,qty,ราคาต่อหน่วยหลังส่วนลด,0 — ไม่มีหัวคอลัมน์ ตามที่ POS รับ
+function buildInvoiceCsvPair(inv) {
+  const h = inv.header || {};
+  const lines = Array.isArray(inv.lines) ? inv.lines : [];
+  const vs = vatSummary(lines) || {};
+  const rawAmt = lines.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const esc = (v) => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+
+  const headerCsv = 'invoice_no,invoice_date,vendor_name,vendor_tax_id,total_amount,net_total,vat_amount\r\n' +
+    [inv.invoiceNo || h.invoice_no || '', inv.invoiceDate || h.invoice_date || '',
+     h.vendor_name ?? inv.vendorName ?? '', h.vendor_tax_id ?? '',
+     +rawAmt.toFixed(2) || 0, Number(inv.netTotal) || vs.netTotal || 0, vs.vatAmt ?? 0].map(esc).join(',');
+
+  const impCsv = lines.map(d => {
+    const qty = d.qty != null ? +d.qty : 0;
+    const pea = d.price_ea != null ? +d.price_ea : null;
+    const sd  = d.special_discount != null ? +d.special_discount : 0;
+    const tot = (qty > 0 && pea != null) ? +(qty * pea - sd).toFixed(2) : null;
+    const per = (tot != null && qty > 0) ? +(tot / qty).toFixed(4) : 0;
+    return [d.barcode || '', qty, per, 0].join(',');
+  }).join('\r\n');
+
+  return { headerCsv, impCsv };
+}
+
 // เลขจริงออกจากเซิร์ฟเวอร์ (next_doc_no) — ที่นี่แค่ป้ายชั่วคราวสำหรับใบที่ยังส่งไม่ขึ้น
 function provisionalDocNo(prefix = 'RC') {
   const d = new Date();
@@ -991,13 +1018,15 @@ export default function CombinedApp() {
   const navItems = isManager
     ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
     : feature === 'invoice'
-      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt },
-         { id:'my_bills',label:'บิลที่ส่งแล้ว',icon:Send,badge:(invSubs||[]).filter(x=>x.status==='rejected').length }]
+      ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
 
   // หน้าที่จำไว้ไม่มีในเมนูของบทบาทนี้ (เช่นสลับฟีเจอร์) → ใช้หน้าแรกของเมนูแทน
   // ต้องเป็นค่าคำนวณ ไม่ใช่ hook เพราะอยู่หลังจุด return ของหน้าเลือกชื่อ
-  const activeView = navItems.some(i => i.id === view) ? view : (navItems[0]?.id || view);
+  // my_bills ไม่ได้อยู่ในเมนูล่าง (เปิดจากปุ่มบนหัว) แต่ต้องไม่ถูกเด้งกลับ
+  const EXTRA_VIEWS = ['my_bills'];
+  const activeView = (navItems.some(i => i.id === view) || EXTRA_VIEWS.includes(view))
+    ? view : (navItems[0]?.id || view);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#F6F7F8' }}>
@@ -1031,7 +1060,7 @@ export default function CombinedApp() {
             )}
             <div className="min-w-0">
               <h1 className="font-bold text-slate-800">
-                {navItems.find(i => i.id === activeView)?.label || 'KUUHOO'}
+                {activeView === 'my_bills' ? 'บิลที่ส่งแล้ว' : (navItems.find(i => i.id === activeView)?.label || 'KUUHOO')}
               </h1>
               <p className="text-xs text-slate-500 truncate">
                 {isManager ? 'ผู้จัดการ' : (FEATURE_LABEL[feature] || feature)}
@@ -1039,6 +1068,25 @@ export default function CombinedApp() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!isManager && feature === 'invoice' && (() => {
+              const rej = (invSubs || []).filter(x => x.status === 'rejected').length;
+              const on = activeView === 'my_bills';
+              return (
+                <button onClick={() => setView(on ? 'invoice' : 'my_bills')}
+                  className="relative flex items-center gap-1.5 rounded-lg font-bold border"
+                  style={{ minHeight: 36, padding: '0 10px', fontSize: 12,
+                           borderColor: on ? '#B9CFDC' : '#E4E6EA',
+                           background: on ? '#EAF0F4' : '#fff',
+                           color: on ? '#255771' : '#475569' }}>
+                  {on ? <Receipt size={14} /> : <Send size={14} />}
+                  {on ? 'บันทึกบิล' : 'บิลที่ส่งแล้ว'}
+                  {!on && rej > 0 && (
+                    <span className="absolute text-white font-bold rounded-full text-center"
+                      style={{ top: -5, right: -5, minWidth: 17, height: 17, fontSize: 9.5, lineHeight: '17px', background: '#B91C1C' }}>{rej}</span>
+                  )}
+                </button>
+              );
+            })()}
             <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>
           </div>
         </div>
@@ -2819,13 +2867,31 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
   const send = async (sub, force = false) => {
     setBusyId(sub.id); setConfirmId(null);
     const inv = isInv(sub);
-    const entry = await driveUpload({
-      subId: sub.id, type: 'xlsx',
-      filename: `${sub.docNo || sub.id}.xlsx`,
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      content: inv ? buildInvoiceXlsxBase64(sub) : buildSubXlsxBase64(sub), isBase64: true,
-      folderId: inv ? setting('drive_folder_purchase') : subFolderId(sub), force,
-    });
+    let entry;
+    if (inv) {
+      // บิลซื้อ → CSV สำหรับ import เข้า POS 2 ไฟล์ ชื่อไฟล์ = doc_no
+      const base = sub.docNo || sub.id;
+      const { headerCsv, impCsv } = buildInvoiceCsvPair(sub);
+      const folderId = setting('drive_folder_purchase');
+      const e1 = await driveUpload({ subId: sub.id, type: 'csv_header',
+        filename: `${base}_bill_header.csv`, mimeType: 'text/csv',
+        content: '\uFEFF' + headerCsv, folderId, force });
+      const e2 = await driveUpload({ subId: sub.id, type: 'csv_imp',
+        filename: `${base}_imp_data.csv`, mimeType: 'text/csv',
+        content: '\uFEFF' + impCsv, folderId, force });
+      // ทั้งคู่ต้องขึ้นครบ ถือว่าสำเร็จ — ขาดไฟล์ใดไฟล์หนึ่ง import ไม่ได้
+      entry = (e1.ok && e2.ok) ? { ...e1, filename: `${base}_bill_header.csv + _imp_data.csv` }
+            : (e1.ok ? e2 : e1);
+      if (e1.skipped && e2.skipped) entry.skipped = true;
+    } else {
+      entry = await driveUpload({
+        subId: sub.id, type: 'xlsx',
+        filename: `${sub.docNo || sub.id}.xlsx`,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        content: buildSubXlsxBase64(sub), isBase64: true,
+        folderId: subFolderId(sub), force,
+      });
+    }
     if (!entry.skipped) {
       const updated = await recordDriveResult(sub, entry, currentUser?.name,
         inv ? '/api/invoice-submission' : '/api/submission');
@@ -4606,22 +4672,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
   const [scanning, setScanning] = useState(false);
   const [rematching, setRematching] = useState(false);
   const [fileName, setFileName] = useState('');
-  const [driveStatus, setDSt] = useState(null);
-  const [driveUrl, setDUrl] = useState(null);
-  const [driveErr, setDErr] = useState(null);
   const [sbSt, setSbSt] = useState(null);
   const [sbErr, setSbErr] = useState(null);
   const [selectedPages, setSelPages] = useState({});
-  const [gReady, setGReady] = useState(false);
-  const [gToken, setGToken] = useState(null);
-  const [gClientId] = useState(() => (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_CLIENT_ID || '') : ''));   // จาก env เท่านั้น
   const [cfgSaved, setCfgSaved] = useState('');
   // ค่ากลางมาช้ากว่า mount — ทับค่าในเครื่องเมื่อโหลดเสร็จ
-  useEffect(() => {
-    loadCloudSettings().then(cs => {
-      if (cs.drive_folder_purchase) setDriveFolder(cs.drive_folder_purchase);
-    });
-  }, []);
   const saveCentral = async (key, value) => {
     setCfgSaved('saving');
     try {
@@ -4635,16 +4690,10 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
       setCfgSaved('ok');
     } catch { setCfgSaved('err'); }
   };
-  const [driveFolder, setDriveFolder] = useState(() => setting('drive_folder_purchase') || safeGet('drive_folder', ''));
   const [nameStatus, setNameStatus] = useState(null);
 
   const { url: sbUrl, anonKey: sbKey } = supabaseConfig;
 
-  useEffect(() => {
-    if (window.google?.accounts) { setGReady(true); return; }
-    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.onload = () => setGReady(true); document.head.appendChild(s);
-    return () => { try { document.head.removeChild(s); } catch {} };
-  }, []);
 
   // ร่างบิลขึ้นเซิร์ฟเวอร์ — คีย์ค้างที่เครื่องหนึ่ง ไปต่อเครื่องอื่นได้ (เก็บผลที่อ่านได้ ไม่เก็บรูป)
   const pushInvDraft = async () => {
@@ -4677,22 +4726,6 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
     } catch (e) { setInvDraft({ busy: '', msg: '', err: e.message }); }
   };
 
-  const connectGoogle = () => {
-    if (!gClientId) { alert('ยังไม่ได้ตั้ง Google Client ID — ให้ผู้จัดการตั้งที่ บันทึกแล้ว → ตั้งค่าโฟลเดอร์ Drive'); return; }
-    if (!gReady || !window.google?.accounts) { alert('Google library ยังไม่โหลด'); return; }
-    const client = window.google.accounts.oauth2.initTokenClient({ client_id: gClientId, scope: 'https://www.googleapis.com/auth/drive.file', callback: resp => { if (resp.access_token) setGToken(resp.access_token); else if (resp.error) setDErr('OAuth: '+resp.error); }, error_callback: err => setDErr('OAuth error: '+(err.message||err.type)) });
-    client.requestAccessToken();
-  };
-  const disconnectGoogle = () => { if (gToken && window.google?.accounts) window.google.accounts.oauth2.revoke(gToken, () => {}); setGToken(null); };
-
-  const uploadFileToDrive = async (filename, blob, mimeType) => {
-    const metadata = { name: filename, mimeType };
-    if (driveFolder) metadata.parents = [driveFolder];
-    const form = new FormData(); form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'})); form.append('file', blob);
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name', { method:'POST', headers:{Authorization:`Bearer ${gToken}`}, body:form });
-    if (!res.ok) { const t = await res.text(); if (res.status === 401) { setGToken(null); throw new Error('Token หมดอายุ — กรุณา connect ใหม่'); } throw new Error(`Drive ${res.status}: ${t.slice(0,150)}`); }
-    return res.json();
-  };
 
   const HEADER_KEYS = ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','vendor_branch','vendor_no','price_type','_vendorFromDB'];
   const mergePageData = (pagesData) => {
@@ -4916,30 +4949,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
     return new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   };
 
-  const buildImpDataCSV = () => {
-    const done = invoices.filter(i=>i.status==='done'&&i.data);
-    const rows=[];
-    for (const inv of done) { for (const p of (inv.data.products||[])) { const qty=p.qty!=null?+p.qty:0,pea=p.price_ea!=null?+p.price_ea:null,sd=p.special_discount!=null?+p.special_discount:0; const tot=(qty>0&&pea!=null)?+(qty*pea-sd).toFixed(2):null; const totPerQty=(tot!=null&&qty>0)?+(tot/qty).toFixed(4):0; const barcode=p.barcode??barcodeMap[String(p.description||'').trim()]??''; rows.push([barcode,qty,totPerQty,0]); } }
-    const csv=rows.map(r=>r.join(',')).join('\r\n');
-    return new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  };
 
-  const buildBillHeaderCSV = () => {
-    const done = invoices.filter(i=>i.status==='done'&&i.data);
-    const rows = done.map(inv=>{const d=inv.data,rawAmt=(d.products||[]).reduce((s,p)=>s+(+p.amount||0),0),vs=vatSummary(d.products);return[d.invoice_no??'',d.invoice_date??'',d.vendor_name??'',d.vendor_tax_id??'',+rawAmt.toFixed(2)||0,vs.netTotal,vs.vatAmt].join(',');});
-    return new Blob(['﻿'+'invoice_no,invoice_date,vendor_name,vendor_tax_id,total_amount,net_total,vat_amount\r\n'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
-  };
 
-  const uploadToDrive = async () => {
-    if (!gToken) { alert('กรุณาเชื่อมต่อ Google Drive ก่อน'); return; }
-    setDSt('uploading'); setDUrl(null); setDErr(null);
-    try {
-      const fname = fileName||'invoice';
-      const r1 = await uploadFileToDrive(fname+'_bill_header.csv', buildBillHeaderCSV(), 'text/csv');
-      await uploadFileToDrive(fname+'_imp_data.csv', buildImpDataCSV(), 'text/csv');
-      setDUrl(r1.webViewLink); setDSt('done');
-    } catch(e) { setDErr(e.message); setDSt('error'); }
-  };
 
   const saveToSupabase = async () => {
     if (!sbUrl || !sbKey) { setSbErr('ยังไม่ได้ตั้งค่า Supabase — ไปที่ ตั้งค่า ก่อน'); setSbSt('error'); return; }
@@ -4972,7 +4983,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
     } catch(e) { setSbErr(e.message); setSbSt('error'); }
   };
 
-  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setDSt(null);setDUrl(null);setDErr(null);setSbSt(null);setSbErr(null);setSelPages({}); };
+  const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setSbSt(null);setSbErr(null);setSelPages({}); };
 
   useEffect(() => {
     if (step===4&&!fileName) {
@@ -5559,32 +5570,14 @@ function InvoiceScannerModule({ supabaseConfig, currentUser }) {
 
           {/* ส่งออกไฟล์ */}
           <div style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:12, display:'flex', flexDirection:'column', gap:9 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>ส่งออกไฟล์ (ไม่บังคับ)</div>
+            <div style={{ fontSize:12, fontWeight:700, color:'#334155' }}>เก็บไฟล์ไว้ดูเอง (ไม่บังคับ)</div>
             <button onClick={()=>{const b=buildXLSXBlob();if(b)downloadBlob(b,(fileName||'invoice')+'.xlsx');}}
               style={{ width:'100%', minHeight:48, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#334155', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>
               ดาวน์โหลด Excel
             </button>
-            {!gToken ? (
-              <button onClick={connectGoogle}
-                style={{ width:'100%', minHeight:48, borderRadius:11, border:'1px solid #e4e6ea', background:'#fff', color:'#334155', fontFamily:'inherit', fontSize:14, fontWeight:700, cursor:'pointer' }}>
-                เชื่อมต่อ Google Drive
-              </button>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <button onClick={uploadToDrive} disabled={driveStatus==='uploading'}
-                  style={{ width:'100%', minHeight:48, borderRadius:11, border:'none', fontFamily:'inherit', fontSize:14, fontWeight:700, color:'#fff',
-                           background: driveStatus==='uploading'?'#94a3b8':'#2f6e90',
-                           cursor:driveStatus==='uploading'?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                  {driveStatus==='uploading'?<><Spinner size={16}/>กำลังอัปโหลด…</>:'อัปโหลด CSV ขึ้น Drive'}
-                </button>
-                <button onClick={disconnectGoogle}
-                  style={{ width:'100%', minHeight:40, borderRadius:10, background:'#fef2f2', color:'#b91c1c', border:'none', fontFamily:'inherit', fontSize:12, fontWeight:600, cursor:'pointer' }}>ตัดการเชื่อมต่อ Google</button>
-              </div>
-            )}
-            {driveStatus==='done'&&driveUrl&&(
-              <div style={{ fontSize:11.5, color:'#15803d', fontWeight:600 }}>✓ อัปโหลดแล้ว <a href={driveUrl} target="_blank" rel="noopener noreferrer" style={{ color:'#255771' }}>เปิดใน Drive →</a></div>
-            )}
-            {driveStatus==='error'&&driveErr&&<div style={{ fontSize:11.5, color:'#b91c1c' }}>{driveErr}</div>}
+            <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.55 }}>
+              ไฟล์เข้า Drive อัตโนมัติหลังผู้จัดการอนุมัติ — พนักงานไม่ต้องอัปโหลดเอง
+            </div>
           </div>
 
           <button onClick={()=>setStep(3)}

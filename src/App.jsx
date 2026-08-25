@@ -2392,42 +2392,208 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
   );
 }
 
+// ใบนับที่พนักงานส่งไปแล้ว — ตาราง 1 บรรทัด 1 ใบ แตะเข้าดูรายละเอียดอีกชั้น (โครงเดียวกับบิลที่ส่งแล้ว)
 function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRevise }) {
-  const [expanded, setExpanded] = useState(null);
-  const CFG = {
-    pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
-    approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
-    rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
-    superseded: { label: 'แก้แล้วส่งใหม่',   soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', icon: RefreshCw },
-  };
-  const counts = submissions.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
+  const [openId, setOpenId] = useState(null);
+  const [q, setQ] = useState('');
+  const [bc, setBc] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [status, setStatus] = useState('all');
+  const [adv, setAdv] = useState(true);
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="text-[11.5px] text-slate-400">{submissions.length} ใบ</div>
-          {onRefresh && (
-            <button onClick={onRefresh} disabled={subSync.busy} title="ดึงสถานะล่าสุดจากเซิร์ฟเวอร์"
-              className="rounded-lg flex items-center justify-center border bg-white text-slate-500"
-              style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}>
-              <RefreshCw size={14} className={subSync.busy ? 'animate-spin' : ''} />
-            </button>
-          )}
+  const counts = submissions.reduce((a, s2) => { const k = s2.status || 'pending'; a[k] = (a[k] || 0) + 1; return a; }, {});
+  const CFG = {
+    rejected:   { label: 'ต้องแก้',       soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', edge: '#B91C1C', bg: '#FEF2F2' },
+    pending:    { label: 'รอรีวิว',       soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', edge: '#FDE68A', bg: '#fff' },
+    approved:   { label: 'อนุมัติแล้ว',    soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', edge: '#BBF7D0', bg: '#fff' },
+    superseded: { label: 'แก้แล้วส่งใหม่', soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', edge: '#E4E6EA', bg: '#fff' },
+  };
+  const RANK = { rejected: 0, pending: 1, approved: 2, superseded: 3 };
+  const rowsOf = (s2) => Array.isArray(s2.data) ? s2.data : [];
+
+  const bb = bc.trim(), qq = q.trim().toLowerCase();
+  const list = submissions.filter(s2 => {
+    const st = s2.status || 'pending';
+    if (status !== 'all' && st !== status) return false;
+    const dt = String(s2.submittedAt || '').slice(0, 10);   // ใบนับไม่มีวันที่บิล ใช้วันที่ส่ง
+    if (from && (!dt || dt < from)) return false;
+    if (to && (!dt || dt > to)) return false;
+    if (bb && !rowsOf(s2).some(d => String(d.barcode || '').includes(bb))) return false;
+    if (qq && ![s2.docNo, s2.note].join(' ').toLowerCase().includes(qq)) return false;
+    return true;
+  }).sort((a, b2) => (RANK[a.status] ?? 9) - (RANK[b2.status] ?? 9)
+    || new Date(b2.submittedAt) - new Date(a.submittedAt));
+
+  const cur = openId ? submissions.find(s2 => s2.id === openId) : null;
+  const dirty = !!(q || bc || from || to || status !== 'all');
+  const COLS = '138px 104px 92px 52px 62px 20px';
+  const dt = (v, opt) => v ? new Date(v).toLocaleString('th-TH', opt || { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+
+  // ── ชั้นรายละเอียด ──
+  if (cur) {
+    const cfg = CFG[cur.status] || CFG.pending;
+    const rows = rowsOf(cur);
+    const idx = list.findIndex(s2 => s2.id === cur.id);
+    return (
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setOpenId(null)}
+            className="shrink-0 rounded-lg border bg-white font-bold text-[12.5px] text-slate-600"
+            style={{ minHeight: 38, padding: '0 12px', borderColor: '#E4E6EA' }}>‹ กลับ</button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold text-slate-800 tabular-nums truncate">{cur.docNo || '—'}</div>
+            <div className="text-[11px] text-slate-400">
+              {idx >= 0 ? `ใบที่ ${idx + 1} จาก ${list.length} ในรายการที่กรองไว้` : 'ไม่อยู่ในผลกรองปัจจุบัน'}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full border text-[11.5px] font-bold"
+            style={{ padding: '6px 12px', background: cfg.soft, borderColor: cfg.line, color: cfg.ink }}>
+            {cfg.label}{cur.reviseNo > 0 ? ` · แก้รอบ ${cur.reviseNo}` : ''}
+          </span>
         </div>
+
+        {cur.reviewNote && cur.status !== 'pending' && (
+          <div className="rounded-xl border p-3" style={{ background: cfg.soft, borderColor: cfg.line }}>
+            <div className="text-[10.5px] font-bold" style={{ color: cfg.ink }}>{cur.reviewedBy || 'ผู้จัดการ'}</div>
+            <div className="text-[12.5px] mt-1 leading-relaxed" style={{ color: cfg.ink }}>{cur.reviewNote}</div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-xl border p-3 space-y-2.5" style={{ borderColor: '#E4E6EA' }}>
+          <div className="rounded-xl px-2.5 py-2" style={{ background: '#EAF0F4' }}>
+            <div className="text-[10px] font-bold" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
+            <div className="text-[12px] tabular-nums mt-0.5" style={{ color: '#255771' }}>
+              {dt(cur.startedAt)} → {dt(cur.submittedAt)}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
+              <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
+              <div className="text-[15px] font-bold text-slate-800 tabular-nums mt-0.5">{cur.itemCount ?? rows.length}</div>
+            </div>
+            <div className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
+              <div className="text-[10px] text-slate-500">รวมจำนวน</div>
+              <div className="text-[15px] font-bold text-slate-800 tabular-nums mt-0.5">{(cur.totalQty || 0).toLocaleString('th-TH')}</div>
+            </div>
+          </div>
+          {cur.note && <div className="text-[11.5px] text-slate-500 leading-relaxed">หมายเหตุที่ส่งไป: “{cur.note}”</div>}
+        </div>
+
+        {rows.length > 0 && (
+          <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+            <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: 'minmax(0,1fr) 74px 52px', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+              {['สินค้า / บาร์โค้ด', 'จุดเก็บ', 'จำนวน'].map((h, i) => (
+                <span key={h} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: i === 2 ? 'right' : 'left' }}>{h}</span>
+              ))}
+            </div>
+            {rows.map((d, i) => {
+              const hit = bb && String(d.barcode || '').includes(bb);
+              return (
+                <div key={i} className="grid gap-2 items-center px-3 py-2 border-b"
+                  style={{ gridTemplateColumns: 'minmax(0,1fr) 74px 52px', borderColor: '#F6F7F8', background: hit ? '#FFFBEB' : '#fff' }}>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-slate-800 truncate">{d.productName || '—'}</div>
+                    <div className="text-[10px] text-slate-400 tabular-nums">{d.barcode || '—'}</div>
+                  </div>
+                  <span className="text-[11px] text-slate-500 truncate">{d.location || '—'}</span>
+                  <span className="text-[12.5px] font-semibold text-slate-800 text-right tabular-nums">{d.qty}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {cur.status === 'rejected' && (
+          <button onClick={() => onRevise?.({
+              id: cur.id, docNo: cur.docNo, note: cur.reviewNote,
+              reviseNo: cur.reviseNo || 0, featureType: cur.featureType,
+              data: cur.data || [],   // ยกรายการเดิมมาแก้ ไม่ต้องสแกนใหม่
+            })}
+            className="w-full text-white font-bold text-[14px] rounded-xl" style={{ minHeight: 48, background: '#B91C1C' }}>
+            แก้ใบนี้ส่งใหม่ ({cur.docNo ? cur.docNo.replace(/R\d+$/i, '') + 'R' + ((cur.reviseNo || 0) + 1) : 'รอบใหม่'})
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── ชั้นตาราง ──
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-[19px] font-bold text-slate-800">ใบที่ส่งแล้ว</h2>
+        <div className="flex-1" />
+        <div className="text-[11.5px] text-slate-400 whitespace-nowrap">
+          {dirty ? `${list.length} จาก ${submissions.length} ใบ` : `${submissions.length} ใบ`}
+        </div>
+        {onRefresh && (
+          <button onClick={onRefresh} disabled={subSync.busy} title="ดึงสถานะล่าสุดจากเซิร์ฟเวอร์"
+            className="shrink-0 rounded-lg flex items-center justify-center border bg-white text-slate-500"
+            style={{ width: 30, height: 30, borderColor: '#E4E6EA' }}>
+            <RefreshCw size={13} className={subSync.busy ? 'animate-spin' : ''} />
+          </button>
+        )}
       </div>
 
-      {submissions.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {['pending', 'approved', 'rejected'].map(k => (
-            <div key={k} className="rounded-xl px-2.5 py-2 border" style={{ background: CFG[k].soft, borderColor: CFG[k].line }}>
-              <div className="text-[10px] font-semibold leading-tight" style={{ color: CFG[k].ink }}>{CFG[k].label}</div>
-              <div className="text-lg font-bold tabular-nums mt-0.5" style={{ color: CFG[k].ink }}>{counts[k] || 0}</div>
-            </div>
-          ))}
+      <div className="bg-white border rounded-xl p-2.5 space-y-2" style={{ borderColor: '#E4E6EA' }}>
+        <div className="flex gap-1.5">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นเลขที่เอกสาร หรือหมายเหตุ"
+            className="flex-1 min-w-0 rounded-lg border text-[12px] text-slate-800 px-2.5"
+            style={{ height: 30, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+          <button onClick={() => setAdv(!adv)}
+            className="shrink-0 rounded-lg font-bold text-[11.5px] border"
+            style={{ minWidth: 46, height: 30,
+                     background: adv ? '#0F172A' : '#fff', color: adv ? '#fff' : '#475569',
+                     borderColor: adv ? '#0F172A' : '#E4E6EA' }}>{adv ? 'ปิด' : 'กรอง'}</button>
         </div>
-      )}
+
+        {adv && (
+          <div className="grid gap-1.5 pt-0.5 border-t" style={{ gridTemplateColumns: '0.95fr 0.85fr 0.85fr 1.1fr', borderColor: '#F1F3F5' }}>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">สถานะ</span>
+              <select value={status} onChange={e => setStatus(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 bg-white px-1.5"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }}>
+                <option value="all">ทุกสถานะ ({submissions.length})</option>
+                {['rejected', 'pending', 'approved', 'superseded'].map(k => (
+                  <option key={k} value={k}>{CFG[k].label} ({counts[k] || 0})</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">วันที่ส่ง จาก</span>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 px-2"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">ถึง</span>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 px-2"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">บาร์โค้ดในใบ</span>
+              <input value={bc} onChange={e => setBc(e.target.value)} inputMode="numeric" placeholder="8851753098835"
+                className="rounded-lg border text-[12px] text-slate-800 px-2 tabular-nums"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+          </div>
+        )}
+
+        {dirty && (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px] text-slate-500 truncate">
+              {[status !== 'all' && CFG[status].label, (from || to) && `${from || 'เริ่มต้น'} → ${to || 'ล่าสุด'}`,
+                bc && 'บาร์โค้ด ' + bc, q && `“${q}”`].filter(Boolean).join(' · ')}
+            </span>
+            <button onClick={() => { setQ(''); setBc(''); setFrom(''); setTo(''); setStatus('all'); }}
+              className="shrink-0 rounded-lg border bg-white text-[11.5px] font-bold text-slate-600"
+              style={{ height: 30, padding: '0 10px', borderColor: '#E4E6EA' }}>ล้างตัวกรอง</button>
+          </div>
+        )}
+      </div>
 
       {submissions.length === 0 ? (
         <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
@@ -2437,91 +2603,36 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
             className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#35706A' }}>ไปนับสต็อก</button>
         </div>
       ) : (
-        <div className="space-y-2">
-          {submissions.map(s => {
-            const cfg = CFG[s.status] || CFG.pending; const Icon = cfg.icon; const open = expanded === s.id;
+        <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+            {[['เลขที่เอกสาร', 0], ['ส่งเมื่อ', 0], ['สถานะ', 0], ['บาร์โค้ด', 1], ['รวมจำนวน', 1], ['', 0]].map(([h, right], i) => (
+              <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
+            ))}
+          </div>
+
+          {list.map(s2 => {
+            const cfg = CFG[s2.status] || CFG.pending;
             return (
-              <div key={s.id} className="bg-white rounded-xl overflow-hidden border" style={{ borderColor: cfg.line }}>
-                <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: cfg.soft, borderColor: cfg.line }}>
-                  <Icon size={14} style={{ color: cfg.ink }} className="shrink-0" />
-                  <span className="text-[11.5px] font-bold" style={{ color: cfg.ink }}>{cfg.label}</span>
-                  <span className="ml-auto text-[10.5px] tabular-nums text-slate-500 shrink-0">
-                    {new Date(s.submittedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
-                  </span>
-                </div>
-
-                <div className="p-3 space-y-2.5">
-                  {s.docNo && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[13.5px] font-bold text-slate-800 tabular-nums">{s.docNo}</span>
-                      {s.reviseNo > 0 && (
-                        <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#EAF0F4', color: '#255771' }}>แก้รอบ {s.reviseNo}</span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="rounded-lg px-2.5 py-2" style={{ background: '#EAF0F4' }}>
-                    <div className="text-[10px] font-bold" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
-                    <div className="text-[11.5px] tabular-nums mt-0.5" style={{ color: '#255771' }}>
-                      {s.startedAt ? new Date(s.startedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                      {' → '}
-                      {new Date(s.submittedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
-                      <div className="text-[10px] text-slate-500">บาร์โค้ด</div>
-                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount}</div>
-                    </div>
-                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
-                      <div className="text-[10px] text-slate-500">รวมจำนวน</div>
-                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.totalQty.toLocaleString('th-TH')}</div>
-                    </div>
-                  </div>
-
-                  {s.note && <div className="text-[11.5px] text-slate-500 leading-relaxed">หมายเหตุที่ส่งไป: “{s.note}”</div>}
-
-                  {s.status !== 'pending' && s.reviewNote && (
-                    <div className="rounded-lg p-2.5 border" style={{ background: cfg.soft, borderColor: cfg.line }}>
-                      <div className="text-[10px] font-bold" style={{ color: cfg.ink }}>{s.reviewedBy || 'ผู้จัดการ'}</div>
-                      <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: cfg.ink }}>{s.reviewNote}</div>
-                    </div>
-                  )}
-
-                  {s.status === 'rejected' && (
-                    <button onClick={() => onRevise?.({
-                        id: s.id, docNo: s.docNo, note: s.reviewNote,
-                        reviseNo: s.reviseNo || 0, featureType: s.featureType,
-                        data: s.data || [],   // ยกรายการเดิมมาแก้ ไม่ต้องสแกนใหม่
-                      })}
-                      className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
-                      แก้ใบนี้ส่งใหม่ ({s.docNo ? s.docNo.replace(/R\d+$/i,'') + 'R' + ((s.reviseNo || 0) + 1) : 'รอบใหม่'})
-                    </button>
-                  )}
-
-                  <button onClick={() => setExpanded(open ? null : s.id)}
-                    className="w-full pt-2 border-t text-[11.5px] font-semibold text-slate-500 hover:text-slate-700"
-                    style={{ borderColor: '#F6F7F8' }}>
-                    {open ? 'ซ่อนรายการที่นับ' : `ดูรายการที่นับ (${s.data?.length || 0})`}
-                  </button>
-
-                  {open && (
-                    <div className="rounded-lg divide-y max-h-56 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
-                      {s.data.map((d, i) => (
-                        <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[12px] font-semibold text-slate-800 truncate">{d.productName}</div>
-                            <div className="text-[10px] text-slate-400 tabular-nums truncate">{d.barcode}{d.location ? ' · ' + d.location : ''}</div>
-                          </div>
-                          <div className="text-[13px] font-bold text-slate-800 tabular-nums shrink-0">{d.qty}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <button key={s2.id} onClick={() => setOpenId(s2.id)}
+                className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
+                style={{ gridTemplateColumns: COLS, boxSizing: 'border-box',
+                         borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
+                <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s2.docNo || '—'}</span>
+                <span className="text-[11.5px] text-slate-500 tabular-nums truncate">{dt(s2.submittedAt)}</span>
+                <span className="justify-self-start rounded-full text-[10px] font-bold whitespace-nowrap"
+                  style={{ padding: '3px 8px', background: cfg.soft, color: cfg.ink }}>
+                  {cfg.label}{s2.reviseNo > 0 ? ` R${s2.reviseNo}` : ''}
+                </span>
+                <span className="text-[12.5px] text-slate-600 text-right tabular-nums">{s2.itemCount ?? rowsOf(s2).length}</span>
+                <span className="text-[13px] font-bold text-slate-800 text-right tabular-nums">{(s2.totalQty || 0).toLocaleString('th-TH')}</span>
+                <span className="text-[13px] text-slate-300 text-right">›</span>
+              </button>
             );
           })}
+
+          {list.length === 0 && (
+            <div className="px-4 py-8 text-center text-[13px] text-slate-500">ไม่มีเอกสารตรงตามที่กรอง</div>
+          )}
         </div>
       )}
     </div>

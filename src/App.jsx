@@ -2148,6 +2148,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
   const [adv, setAdv] = useState(true);
   useEffect(() => { onRefresh?.(); }, []);   // เปิดหน้าแล้วเอาสถานะล่าสุดเลย
 
+  const counts = invSubs.reduce((a, s2) => { const k = s2.status || 'pending'; a[k] = (a[k] || 0) + 1; return a; }, {});
   const CFG = {
     rejected:   { label: 'ต้องแก้',       soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', edge: '#B91C1C', bg: '#FEF2F2' },
     pending:    { label: 'รอรีวิว',       soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', edge: '#FDE68A', bg: '#fff' },

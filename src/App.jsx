@@ -228,20 +228,44 @@ async function sbFetch(url, key, table, rawQS) {
   return res.json();
 }
 
-async function lookupVendorREST(sbUrl, sbKey, vendorName) {
-  if (!sbUrl || !sbKey || !vendorName) return null;
+// คำที่ไม่ใช่ชื่อเฉพาะ — ถ้าเอาไปค้นจะเจอผู้ขายรายไหนก็ได้
+const VENDOR_NOISE = /(บริษัท|บมจ\.?|บจก\.?|หจก\.?|หสน\.?|ห้างหุ้นส่วน(จำกัด|สามัญ)?|ร้าน|จำกัด|มหาชน|สำนักงานใหญ่|สาขา\s*\S*|co\.?,?\s*ltd\.?|company|limited|part\.?)/gi;
+const vendorCore = (name) => String(name || '').replace(VENDOR_NOISE, ' ').replace(/[()ฯ.,\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+// ลำดับความแม่น: เลขภาษี 13 หลัก → ชื่อตรงเป๊ะ → ชื่อเฉพาะ (คำที่ยาวสุด)
+// เจอมากกว่า 1 ราย = เดาไม่ได้ ไม่เติมให้ ปล่อยให้คนกรอก
+async function lookupVendorREST(sbUrl, sbKey, vendorName, taxId) {
+  if (!sbUrl || !sbKey) return null;
   const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
-  const col = encodeURIComponent('"ชื่อ-นามสกุล"');
   const sel = encodeURIComponent('"รหัส"');
-  const get = async (op, kw) => {
+  const q = async (col, op, kw) => {
     const val = op === 'ilike' ? `*${encodeURIComponent(kw)}*` : encodeURIComponent(kw);
-    const r = await fetch(`${sbUrl}/rest/v1/vendor_info?select=${sel}&${col}=${op}.${val}&limit=1`, { headers: h });
+    const r = await fetch(`${sbUrl}/rest/v1/vendor_info?select=${sel}&${encodeURIComponent('"' + col + '"')}=${op}.${val}&limit=2`, { headers: h });
     if (!r.ok) return null;
     const d = await r.json();
-    return d[0]?.['รหัส'] ?? null;
+    return d.length === 1 ? (d[0]['รหัส'] ?? null) : null;   // กำกวมก็ไม่เดา
   };
-  const stripped = vendorName.trim().replace(/\s*(จำกัด|มหาชน|co\.?,?\s*ltd\.?|บจก\.?|หจก\.?|บมจ\.?)/gi, '').trim();
-  return (await get('eq', vendorName)) ?? (await get('ilike', stripped)) ?? (await get('ilike', stripped.split(/\s+/)[0]));
+
+  const tax = String(taxId || '').replace(/\D/g, '');
+  if (tax.length === 13) {
+    for (const col of ['เลขประจำตัวผู้เสียภาษี', 'เลขผู้เสียภาษี', 'tax_id']) {
+      try { const hit = await q(col, 'eq', tax); if (hit) return { no: hit, by: 'tax' }; } catch {}
+    }
+  }
+  if (!vendorName) return null;
+
+  const exact = await q('ชื่อ-นามสกุล', 'eq', vendorName.trim());
+  if (exact) return { no: exact, by: 'name' };
+
+  const core = vendorCore(vendorName);
+  if (core) {
+    const hit = await q('ชื่อ-นามสกุล', 'ilike', core);
+    if (hit) return { no: hit, by: 'near' };
+    // คำที่ยาวสุดมักเป็นชื่อเฉพาะจริง ต่างจาก "คำแรก" ที่มักเป็น "บริษัท"
+    const longest = core.split(' ').filter(w => w.length >= 3).sort((a, b) => b.length - a.length)[0];
+    if (longest) { const h2 = await q('ชื่อ-นามสกุล', 'ilike', longest); if (h2) return { no: h2, by: 'near' }; }
+  }
+  return null;
 }
 
 function toYMD(raw) {
@@ -448,7 +472,10 @@ function utf8ToBase64(str) {
 const safeFilename = (name) => String(name ?? 'file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120);
 
 // สถานะจริงอยู่ใน DB (คอลัมน์ drive_* ของใบ) — localStorage เป็นแค่แคชตอนเน็ตหลุด
-function driveEntryOf(sub, cache = {}, type = 'xlsx') {
+const driveTypeOf = (sub) => (sub?._kind === 'invoice' || sub?.invoiceNo !== undefined) ? 'csv_header'
+  : (sub?.featureType || sub?._kind) === 'stock_compare' ? 'csv_adjust' : 'csv_count';
+function driveEntryOf(sub, cache = {}, type) {
+  type = type || driveTypeOf(sub);
   const d = sub?.drive;
   if (d?.status === 'ok')     return { ok: true,  link: d.url, filename: d.filename, at: d.uploadedAt, tries: d.tries, fromDb: true };
   if (d?.status === 'failed') return { ok: false, err: d.error, filename: d.filename, at: d.uploadedAt, tries: d.tries, fromDb: true };
@@ -500,13 +527,6 @@ function subFolderId(sub) {
     ? setting('drive_folder_stock_adjust')
     : setting('drive_folder_manual');
 }
-function buildSubXlsxBase64(sub) {
-  const rows = buildStockExcelRows(sub.data, sub.docNo, sub.startedAt || sub.submittedAt);
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:30},{wch:10},{wch:12},{wch:12},{wch:10},{wch:12},{wch:10},{wch:20}];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-  return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-}
 
 // ไฟล์บิลซื้อ: 2 ชีต bill_header + invoice ตามสเปคเดิม
 function buildInvoiceXlsxBase64(inv) {
@@ -543,6 +563,47 @@ function buildInvoiceXlsxBase64(inv) {
 // CSV สำหรับ import เข้า POS — 2 ไฟล์ต่อบิล ชื่อไฟล์ = doc_no
 // bill_header: 1 บรรทัดต่อบิล (มีหัวคอลัมน์)
 // imp_data:    barcode,qty,ราคาต่อหน่วยหลังส่วนลด,0 — ไม่มีหัวคอลัมน์ ตามที่ POS รับ
+// RC — บันทึกมือ: barcode,qty,price,0 (ไม่มีหัวคอลัมน์)
+function buildRecorderCsv(rows) {
+  return (rows || []).map(d => [
+    d.barcode || '', Number(d.qty) || 0, Number(d.price) || 0, 0,
+  ].join(',')).join('\r\n');
+}
+
+// ST — ปรับยอด: barcode,adjust_stock (+/- ให้ตรงสต็อกจริง · ว่างถ้าไม่พบในระบบ)
+async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock') {
+  const codes = [...new Set((rows || []).map(d => String(d.barcode || '')).filter(Boolean))];
+  const onHand = {};
+  if (sbUrl && sbKey && codes.length) {
+    const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
+    const qc = (c) => encodeURIComponent(`"${c}"`);
+    for (let i = 0; i < codes.length; i += 50) {
+      const inList = codes.slice(i, i + 50).map(encodeURIComponent).join(',');
+      const url = `${sbUrl}/rest/v1/${stockTable}?${qc('รหัสสินค้า')}=in.(${inList})&select=${qc('รหัสสินค้า')},${qc('รวม')}`;
+      const r = await fetch(url, { headers: h });
+      if (!r.ok) throw new Error('อ่านยอดคงเหลือไม่ได้: ' + (await r.text()).slice(0, 120));
+      for (const row of await r.json()) {
+        onHand[String(row['รหัสสินค้า'] || '')] = parseInt(String(row['รวม'] ?? '0').replace(/[^\d-]/g, '')) || 0;
+      }
+    }
+  }
+  // รวมบาร์โค้ดซ้ำก่อน — นับหลายรอบต้องเป็นยอดเดียว
+  const counted = {};
+  for (const d of rows || []) {
+    const bc = String(d.barcode || '');
+    if (!bc) continue;
+    counted[bc] = (counted[bc] || 0) + (Number(d.qty) || 0);
+  }
+  const lines = Object.keys(counted).map(bc => {
+    const cur = onHand[bc];
+    if (cur == null) return `${bc},`;                     // ไม่พบในระบบ → ปล่อยว่าง
+    const adj = counted[bc] - cur;
+    return `${bc},${adj > 0 ? '+' + adj : adj}`;
+  });
+  const missing = Object.keys(counted).filter(bc => onHand[bc] == null).length;
+  return { csv: lines.join('\r\n'), missing, total: lines.length };
+}
+
 function buildInvoiceCsvPair(inv) {
   const h = inv.header || {};
   const lines = Array.isArray(inv.lines) ? inv.lines : [];
@@ -550,18 +611,22 @@ function buildInvoiceCsvPair(inv) {
   const rawAmt = lines.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const esc = (v) => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
 
-  const headerCsv = 'invoice_no,invoice_date,vendor_name,vendor_tax_id,total_amount,net_total,vat_amount\r\n' +
+  const headerCsv =
+    'invoice_no,invoice_date,vendor_name,vendor_tax_id,document_type,vendor_address,' +
+    'total_amount,total_discount,net_total,excl_vat,vat_amount,vendor_branch,vendor_no,price_type\r\n' +
     [inv.invoiceNo || h.invoice_no || '', inv.invoiceDate || h.invoice_date || '',
-     h.vendor_name ?? inv.vendorName ?? '', h.vendor_tax_id ?? '',
-     +rawAmt.toFixed(2) || 0, Number(inv.netTotal) || vs.netTotal || 0, vs.vatAmt ?? 0].map(esc).join(',');
+     h.vendor_name ?? inv.vendorName ?? '', h.vendor_tax_id ?? '', h.document_type ?? '', h.vendor_address ?? '',
+     +rawAmt.toFixed(2) || 0, vs.sdTot ?? 0, Number(inv.netTotal) || vs.netTotal || 0,
+     vs.excl ?? 0, vs.vatAmt ?? 0, h.vendor_branch ?? '', h.vendor_no ?? '', h.price_type ?? 'incl'].map(esc).join(',');
 
+  // ราคาต่อชิ้นหลังหักส่วนลด 4 ทศนิยม · ไม่มีบาร์โค้ดปล่อยว่าง
   const impCsv = lines.map(d => {
     const qty = d.qty != null ? +d.qty : 0;
     const pea = d.price_ea != null ? +d.price_ea : null;
     const sd  = d.special_discount != null ? +d.special_discount : 0;
-    const tot = (qty > 0 && pea != null) ? +(qty * pea - sd).toFixed(2) : null;
-    const per = (tot != null && qty > 0) ? +(tot / qty).toFixed(4) : 0;
-    return [d.barcode || '', qty, per, 0].join(',');
+    const tot = (qty > 0 && pea != null) ? qty * pea - sd : null;
+    const per = (tot != null && qty > 0) ? (tot / qty) : 0;
+    return [d.barcode || '', qty, per.toFixed(4), 0].join(',');
   }).join('\r\n');
 
   return { headerCsv, impCsv };
@@ -1162,7 +1227,7 @@ export default function CombinedApp() {
                 {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
         {isManager && activeView === 'drive_cfg' && <ErrorBox><DriveSettingsView currentUser={currentUser} /></ErrorBox>}
-        {isManager && activeView === 'saved' && <ErrorBox><SavedUploadsView submissions={submissions} invSubs={invSubs} subSync={subSync} currentUser={currentUser}
+        {isManager && activeView === 'saved' && <ErrorBox><SavedUploadsView submissions={submissions} invSubs={invSubs} subSync={subSync} currentUser={currentUser} supabaseConfig={supabaseConfig}
             onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }}
             onPatched={u => setSubmissions(prev => prev.map(x => x.id === u.id ? { ...x, ...u } : x))}
             onInvPatched={u => setInvSubs(prev => prev.map(x => x.id === u.id ? { ...x, ...u } : x))} /></ErrorBox>}
@@ -2848,7 +2913,7 @@ function DriveSettingsView({ currentUser }) {
   );
 }
 
-function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, currentUser, onPatched, onInvPatched }) {
+function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, currentUser, supabaseConfig, onPatched, onInvPatched }) {
   const cache = useUploadLog();
   const [tab, setTab] = useState('pending');
   const [busyId, setBusyId] = useState(null);
@@ -2890,13 +2955,25 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
       entry = (e1.ok && e2.ok) ? { ...e1, filename: `${base}_bill_header.csv + _imp_data.csv` }
             : (e1.ok ? e2 : e1);
       if (e1.skipped && e2.skipped) entry.skipped = true;
+    } else if (sub._kind === 'stock_compare') {
+      // ปรับยอด → ต้องรู้ยอดคงเหลือปัจจุบันก่อน ถึงคำนวณ +/- ได้
+      try {
+        const { csv, missing, total } = await buildAdjustCsv(
+          sub.data, supabaseConfig?.url, supabaseConfig?.anonKey, supabaseConfig?.stockTableName);
+        entry = await driveUpload({
+          subId: sub.id, type: 'csv_adjust',
+          filename: `${sub.docNo || sub.id}.txt`, mimeType: 'text/csv',
+          content: csv, folderId: subFolderId(sub), force,
+        });
+        if (entry.ok && missing) entry.warn = `${missing} จาก ${total} รายการไม่พบในระบบ ปล่อยค่าปรับว่างไว้`;
+      } catch (e) {
+        entry = { ok: false, err: e.message || 'สร้างไฟล์ปรับยอดไม่ได้' };
+      }
     } else {
       entry = await driveUpload({
-        subId: sub.id, type: 'xlsx',
-        filename: `${sub.docNo || sub.id}.xlsx`,
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        content: buildSubXlsxBase64(sub), isBase64: true,
-        folderId: subFolderId(sub), force,
+        subId: sub.id, type: 'csv_count',
+        filename: `${sub.docNo || sub.id}.csv`, mimeType: 'text/csv',
+        content: buildRecorderCsv(sub.data), folderId: subFolderId(sub), force,
       });
     }
     if (!entry.skipped) {
@@ -3697,7 +3774,11 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
     set({ loading: false, loadProgress: '' });
   };
 
-  const buildSimpleCSV = () => compareData.map(d => `${d.barcode},${d.adjustStock??''}`).join('\n');
+  // barcode,adjust_stock — ต้องมี + ให้ชัด · ไม่พบในระบบปล่อยว่าง
+  const buildSimpleCSV = () => compareData.map(d => {
+    const a = d.adjustStock;
+    return `${d.barcode},${a == null ? '' : a > 0 ? '+' + a : a}`;
+  }).join('\r\n');
   const buildFullCSV = () => {
     const info = selectedSub ? [`# Counter: ${selectedSub.counter}`, `# time_submit: ${new Date(selectedSub.submittedAt).toLocaleString('th-TH')}`, `# compare_at: ${compareState.compareAt?new Date(compareState.compareAt).toLocaleString('th-TH'):'-'}`].join('\n') : '';
     const header = 'รหัสสินค้า,ชื่อสินค้า,หน่วย,location,นับได้,ขายระหว่างนับ,รับระหว่างนับ,Adjusted_count,stock_at_submit,Adjust_stock,พบในระบบ';
@@ -3719,8 +3800,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   const saveToDrive = async (force = false) => {
     set({ driveSaving: true, driveResult: null });
     const res = await driveUpload({
-      subId: selectedSub.id, type: 'compare_txt',
-      filename: getFilename('txt'), mimeType: 'text/csv',
+      subId: selectedSub.id, type: 'csv_adjust',
+      filename: `${selectedSub.docNo || selectedSub.id}.txt`, mimeType: 'text/csv',
       content: buildSimpleCSV(), isBase64: false,
       folderId: setting('drive_folder_stock_adjust'), force,
     });
@@ -4764,7 +4845,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
   };
 
 
-  const HEADER_KEYS = ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','vendor_branch','vendor_no','price_type','_vendorFromDB'];
+  const HEADER_KEYS = ['invoice_no','invoice_date','vendor_name','vendor_tax_id','document_type','vendor_address','vendor_branch','vendor_no','price_type','_vendorFromDB','_vendorMatchBy'];
   const mergePageData = (pagesData) => {
     let merged = {}, allProducts = [];
     for (const pd of pagesData) { if (!pd) continue; for (const k of HEADER_KEYS) if (merged[k]==null&&pd[k]!=null) merged[k]=pd[k]; allProducts=[...allProducts,...(pd.products||[])]; }
@@ -4784,7 +4865,10 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
     try { data = extractJSON(tb?.text||''); } catch { const r2 = await callClaude([content[0],{type:'text',text:INVOICE_PROMPT+'\n\nตอบ JSON เท่านั้น:'}],{},model); data = extractJSON(r2.content?.find(b=>b.type==='text')?.text||''); }
     if (data.invoice_date) data.invoice_date = toYMD(data.invoice_date)||null;
     data.vendor_no = null;
-    if (data.vendor_name && sbUrl && sbKey) { try { const no = await lookupVendorREST(sbUrl, sbKey, data.vendor_name); if (no) { data.vendor_no=no; data._vendorFromDB=true; } } catch {} }
+    if (sbUrl && sbKey) { try {
+      const hit = await lookupVendorREST(sbUrl, sbKey, data.vendor_name, data.vendor_tax_id);
+      if (hit) { data.vendor_no = hit.no; data._vendorFromDB = true; data._vendorMatchBy = hit.by; }
+    } catch {} }
     return data;
   };
 
@@ -5378,7 +5462,11 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
                     <F label="สาขา" k="vendor_branch" />
                     <F label="ประเภทเอกสาร" k="document_type" />
                     <F label="รหัสผู้ขาย" k="vendor_no"
-                      tag={d._vendorFromDB && d.vendor_no ? <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>จากระบบ</span> : null} />
+                      tag={d._vendorFromDB && d.vendor_no ? (
+                        d._vendorMatchBy === 'near'
+                          ? <span style={{ background:'#fffbeb', color:'#b45309', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>ชื่อใกล้เคียง เช็คซ้ำ</span>
+                          : <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>{d._vendorMatchBy === 'tax' ? 'ตรงเลขภาษี' : 'จากระบบ'}</span>
+                      ) : null} />
                     <div style={{ gridColumn:'1 / -1', minWidth:0 }}>
                       <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3 }}>ราคาบนบิล</div>
                       <select value={d.price_type??'incl'}

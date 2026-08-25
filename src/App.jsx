@@ -494,7 +494,7 @@ async function recordDriveResult(sub, entry, by, endpoint = '/api/submission') {
 
 const uploadInFlight = new Set();
 // ส่งจริงครั้งเดียวต่อ (ใบ, ชนิดไฟล์) — ต้อง force ถ้าจะส่งซ้ำ
-async function driveUpload({ subId, type, filename, mimeType, content, isBase64 = false, folderId, force = false }) {
+async function driveUpload({ subId, type, filename, mimeType, content, isBase64 = false, bom = false, folderId, force = false }) {
   if (!folderId) return { ok: false, err: 'ยังไม่ได้ตั้งโฟลเดอร์ Drive — ตั้งที่ บันทึกแล้ว → ตั้งค่าโฟลเดอร์ Drive' };
   const key = uploadKey(subId, type);
   const log = readUploadLog();
@@ -503,9 +503,10 @@ async function driveUpload({ subId, type, filename, mimeType, content, isBase64 
   uploadInFlight.add(key);
   const name = safeFilename(filename);
   try {
+    const clean = isBase64 ? content : String(content).replace(/^\uFEFF/, '').replace(/[\r\n]+$/, '');
     const body = isBase64
       ? { content, isBase64: true }
-      : { content: utf8ToBase64('\uFEFF' + content), isBase64: true };   // BOM ให้ Excel อ่านไทยออก
+      : { content: utf8ToBase64((bom ? '\uFEFF' : '') + clean), isBase64: true };
     const res = await fetch('/api/drive-upload', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename: name, mimeType, folderId, ...body }),
@@ -3213,10 +3214,10 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
       const folderId = setting('drive_folder_purchase');
       const e1 = await driveUpload({ subId: sub.id, type: 'csv_header',
         filename: `${base}_bill_header.csv`, mimeType: 'text/csv',
-        content: '\uFEFF' + headerCsv, folderId, force });
+        content: headerCsv, bom: true, folderId, force });
       const e2 = await driveUpload({ subId: sub.id, type: 'csv_imp',
         filename: `${base}_imp_data.csv`, mimeType: 'text/csv',
-        content: '\uFEFF' + impCsv, folderId, force });
+        content: impCsv, folderId, force });
       // ทั้งคู่ต้องขึ้นครบ ถือว่าสำเร็จ — ขาดไฟล์ใดไฟล์หนึ่ง import ไม่ได้
       entry = (e1.ok && e2.ok) ? { ...e1, filename: `${base}_bill_header.csv + _imp_data.csv` }
             : (e1.ok ? e2 : e1);

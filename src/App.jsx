@@ -727,10 +727,9 @@ export default function CombinedApp() {
 
   useEffect(() => { loadCloudSettings(); }, []);
 
-  // เงียบ = auto-save (ไม่ขึ้นข้อความรบกวน) · ไม่เงียบ = ผู้ใช้กดปุ่มเอง
-  const pushDraft = async (silent = false) => {
+  const pushDraft = async () => {
     if (!currentUser) return;
-    if (!silent) setDraftSync({ busy: 'up', msg: '', err: '' });
+    setDraftSync({ busy: 'up', msg: '', err: '' });
     try {
       const res = await fetch('/api/draft', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -743,10 +742,9 @@ export default function CombinedApp() {
       });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
-      setDraftSync({ busy: '', msg: silent ? 'บันทึกอัตโนมัติแล้ว' : `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} บรรทัด`, err: '' });
+      setDraftSync({ busy: '', msg: `บันทึกขึ้นเซิร์ฟเวอร์แล้ว ${j.saved} บรรทัด`, err: '' });
     } catch (e) {
-      // auto-save พลาด (เน็ตหลุด) ไม่ต้องขัดจังหวะการนับ — ของยังอยู่ในเครื่อง
-      setDraftSync({ busy: '', msg: '', err: silent ? 'ยังไม่ได้บันทึกขึ้นเซิร์ฟเวอร์ — จะลองใหม่รอบหน้า' : e.message });
+      setDraftSync({ busy: '', msg: '', err: e.message });   // ของยังอยู่ในเครื่อง ไม่หาย
     }
   };
 
@@ -806,18 +804,6 @@ export default function CombinedApp() {
     throw new Error('ยังไม่ได้ตั้งค่า Supabase');
   };
 
-  // auto-save ทุกครั้งที่รายการเปลี่ยน — กันงานหายเวลาเครื่องดับ
-  const autoSaveRef = useRef({ n: -1, timer: null });
-  useEffect(() => {
-    if (!currentUser) return;
-    const n = countEntries.filter(e => e.counterId === currentUser.id).length;
-    if (autoSaveRef.current.n === -1) { autoSaveRef.current.n = n; return; }   // ข้ามรอบโหลดแรก
-    if (autoSaveRef.current.n === n) return;
-    autoSaveRef.current.n = n;
-    clearTimeout(autoSaveRef.current.timer);
-    autoSaveRef.current.timer = setTimeout(() => pushDraft(true), 1200);       // รวบรายการที่กดรัว ๆ เป็นรอบเดียว
-    return () => clearTimeout(autoSaveRef.current.timer);
-  }, [countEntries, currentUser]);
 
   const addCountEntry = (entry) => {
     const now = new Date();
@@ -857,6 +843,7 @@ export default function CombinedApp() {
       startedAt: grouped.reduce((min, g) => g.scannedAt && g.scannedAt < min ? g.scannedAt : min, now),
       note: note || '', status: 'pending', reviewedAt: null, reviewedBy: null, reviewNote: '',
       itemCount: grouped.length, totalQty: grouped.reduce((s, g) => s + g.qty, 0), data: grouped,
+      reviseOf: reviseCount?.id || null,
     };
     setSubmissions(prev => [sub, ...prev]);
 
@@ -887,6 +874,7 @@ export default function CombinedApp() {
       }
     }
 
+    clearReviseCount();   // ส่งรอบแก้แล้ว ออกจากโหมดแก้
     // ส่งเป็นใบแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย ไม่ให้เครื่องอื่นดึงของเก่ากลับมา
     try {
       await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}`, { method: 'DELETE' });
@@ -911,7 +899,33 @@ export default function CombinedApp() {
   // ดึงใบจากเซิร์ฟเวอร์ — ผู้จัดการ/พนักงานเปิดเครื่องไหนก็เห็นของเดียวกัน
   const [subSync, setSubSync] = useState({ busy: false, at: null, err: '' });
   const [invSubs, setInvSubs] = useState([]);   // บิลรออนุมัติ
-  const [reviseTarget, setReviseTarget] = useState(null);   // ใบที่ถูกส่งกลับและกำลังแก้
+  const [reviseTarget, setReviseTarget] = useState(null);   // บิลที่ถูกส่งกลับและกำลังแก้
+  // ใบนับที่ถูกส่งกลับและกำลังแก้ — อยู่ต่อข้ามการปิดแอป
+  const [reviseCount, setReviseCount] = useState(() => {
+    try { const v = localStorage.getItem('reviseCount'); return v ? JSON.parse(v) : null; } catch { return null; }
+  });
+  const startReviseCount = (t) => {
+    setReviseCount(t);
+    try { localStorage.setItem('reviseCount', JSON.stringify(t)); } catch {}
+    // ยกรายการที่นับไว้เดิมกลับมาเป็นของคนนี้ แก้ต่อได้เลย ไม่ต้องสแกนใหม่ทั้งใบ
+    setCountEntries(prev => [
+      ...(t.data || []).map((d, i) => ({
+        id: `rv${Date.now()}_${i}`,
+        featureType: t.featureType || currentUser?.feature || 'recorder',
+        barcode: d.barcode, productName: d.productName, productId: d.productId || '',
+        unit: d.unit || '', price: d.price || 0, cost: d.cost || 0,
+        qty: Number(d.qty) || 0, notFound: !!d.notFound,
+        location: d.location || '', scannedAt: d.scannedAt || t.submittedAt,
+        counterId: currentUser?.id || 'unknown', counterName: currentUser?.name || '',
+      })),
+      ...prev.filter(e => e.counterId !== currentUser?.id),
+    ]);
+    setView('count');
+  };
+  const clearReviseCount = () => {
+    setReviseCount(null);
+    try { localStorage.removeItem('reviseCount'); } catch {}
+  };
   const [menuOpen, setMenuOpen] = useState(false);   // เมนูข้างของผู้จัดการ
   const driveLog = useUploadLog();                   // ใบที่ยังไม่ขึ้น Drive → ตัวเลขบนเมนู
   const pullSubmissions = useCallback(async (feat) => {
@@ -1212,9 +1226,9 @@ export default function CombinedApp() {
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4" style={{ paddingBottom: isManager ? 24 : 'calc(76px + env(safe-area-inset-bottom))' }}>
         {/* Counter - stock / stock_compare */}
-        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} />}
-        {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} />}
-        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} />}
+        {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} revise={reviseCount} onCancelRevise={() => { clearMyEntries(); clearReviseCount(); }} />}
+        {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} revise={reviseCount} />}
+        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} onRevise={startReviseCount} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser}
             onOpenSent={() => setView('my_bills')} onCloseSent={() => setView('invoice')}
@@ -1641,7 +1655,7 @@ function EntryRow({ e, deleteEntry, highlight }) {
   );
 }
 
-function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {}, tone }) {
+function CounterCountView({ revise, onCancelRevise, entries, addEntry, deleteEntry, checkBarcode, setView, products, isSupabaseReady, connectionStatus, countDate, setCountDate, draft, updateDraft, pushDraft, pullDraft, draftSync = {}, tone }) {
   const T = tone || { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' };
   const [location, setLocation] = useState('');
   const [manualPrice, setManualPrice] = useState('');   // ราคาขายของรายการที่ไม่พบในระบบ
@@ -1684,6 +1698,19 @@ function CounterCountView({ entries, addEntry, deleteEntry, checkBarcode, setVie
 
   return (
     <div className="space-y-3">
+      {revise && (
+        <div className="rounded-xl border px-3 py-2.5 flex items-center gap-2.5" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-bold" style={{ color: '#B91C1C' }}>
+              กำลังแก้ {revise.docNo} → {String(revise.docNo || '').replace(/R\d+$/i, '')}R{(revise.reviseNo || 0) + 1}
+            </div>
+            {revise.note && <div className="text-[11px] mt-0.5 truncate" style={{ color: '#B91C1C' }}>{revise.note}</div>}
+          </div>
+          <button onClick={onCancelRevise}
+            className="shrink-0 rounded-lg font-bold text-[11.5px] border"
+            style={{ minHeight: 32, padding: '0 10px', background: '#fff', borderColor: '#FECACA', color: '#B91C1C' }}>ยกเลิก</button>
+        </div>
+      )}
       {/* รอบนับ + สถานะเซิร์ฟเวอร์ */}
       <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#e4e6ea' }}>
         <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor: '#eef0f3' }}>
@@ -1914,7 +1941,7 @@ function GroupedRow({ g, highlight, onEditQty }) {
   );
 }
 
-function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser, pickedAt, tone }) {
+function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, currentUser, pickedAt, tone, revise }) {
   const T = tone || { main: '#35706A', deep: '#2A5A55', soft: '#EAF1F0', line: '#B6D0CC' };
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(null);
@@ -2055,7 +2082,8 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
       {!confirming ? (
         <button onClick={handleSubmit} disabled={sending}
           className="w-full text-white font-bold text-[15.5px] rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
-          style={{ minHeight: 54, background: T.main, boxShadow: `0 2px 0 ${T.deep}` }}><Send size={19} />ส่งให้ผู้จัดการรีวิว</button>
+          style={{ minHeight: 54, background: revise ? '#B91C1C' : T.main, boxShadow: `0 2px 0 ${revise ? '#7F1D1D' : T.deep}` }}><Send size={19} />
+          {revise ? `ส่งรอบแก้ (${String(revise.docNo || '').replace(/R\d+$/i, '')}R${(revise.reviseNo || 0) + 1})` : 'ส่งให้ผู้จัดการรีวิว'}</button>
       ) : (
         <div className="space-y-3">
           <div className="text-[11px] font-bold tracking-wide text-[#B45309]">ยืนยันก่อนส่ง</div>
@@ -2098,50 +2126,222 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   );
 }
 
-// บิลที่พนักงานส่งไปแล้ว — เห็นผลรีวิวและเหตุผลที่ผู้จัดการส่งกลับ
-function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
-  const [open, setOpen] = useState(null);
-  useEffect(() => { onRefresh?.(); }, []);   // เปิดหน้าแล้วเอาสถานะล่าสุดเลย
-  const CFG = {
-    pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
-    approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
-    rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
-    superseded: { label: 'แก้แล้วส่งใหม่',   soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', icon: RefreshCw },
-  };
-  const counts = invSubs.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
-  const rejected = invSubs.filter(s => s.status === 'rejected');
-  const rest = invSubs.filter(s => s.status !== 'rejected');
-  const list = [...rejected, ...rest];   // ที่ต้องแก้ขึ้นบนสุด
+// บิลที่พนักงานส่งไปแล้ว — ตาราง 1 บรรทัด 1 ใบ แตะเข้าดูรายละเอียดอีกชั้น
+const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+// dd-mmm-yyyy — ไม่สับสนระหว่างวันกับเดือน
+const thDocDate = (v) => {
+  if (!v) return '—';
+  const iso = String(v).slice(0, 10);
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return String(v);
+  return `${+d}-${TH_MONTHS[+m - 1] || m}-${y}`;
+};
+const bahtFmt = (n) => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-bold text-slate-800">บิลที่ส่งแล้ว</h2>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="text-[11.5px] text-slate-400">{invSubs.length} ใบ</div>
-          <button onClick={onRefresh} title="ดึงสถานะล่าสุด"
-            className="rounded-lg flex items-center justify-center border bg-white text-slate-500"
-            style={{ width: 38, height: 38, borderColor: '#E4E6EA' }}><RefreshCw size={14} /></button>
+function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
+  const [openId, setOpenId] = useState(null);
+  const [q, setQ] = useState('');
+  const [bc, setBc] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [status, setStatus] = useState('all');
+  const [adv, setAdv] = useState(true);
+  useEffect(() => { onRefresh?.(); }, []);   // เปิดหน้าแล้วเอาสถานะล่าสุดเลย
+
+  const CFG = {
+    rejected:   { label: 'ต้องแก้',       soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', edge: '#B91C1C', bg: '#FEF2F2' },
+    pending:    { label: 'รอรีวิว',       soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', edge: '#FDE68A', bg: '#fff' },
+    approved:   { label: 'อนุมัติแล้ว',    soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', edge: '#BBF7D0', bg: '#fff' },
+    superseded: { label: 'แก้แล้วส่งใหม่', soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', edge: '#E4E6EA', bg: '#fff' },
+  };
+  const RANK = { rejected: 0, pending: 1, approved: 2, superseded: 3 };
+  const linesOf = (s) => Array.isArray(s.lines) ? s.lines : [];
+  const bcOf = (d) => String(d.barcode || d.product_code || '');
+  const qtyOf = (d) => Number(d.quantity ?? d.qty ?? 0) || 0;
+
+  const bb = bc.trim(), qq = q.trim().toLowerCase();
+  const list = invSubs.filter(s => {
+    const st = s.status || 'pending';
+    if (status !== 'all' && st !== status) return false;
+    const dt = String(s.invoiceDate || '').slice(0, 10);
+    if (from && (!dt || dt < from)) return false;
+    if (to && (!dt || dt > to)) return false;
+    if (bb && !linesOf(s).some(d => bcOf(d).includes(bb))) return false;
+    if (qq && ![s.docNo, s.invoiceNo, s.vendorName].join(' ').toLowerCase().includes(qq)) return false;
+    return true;
+  }).sort((a, b2) => (RANK[a.status] ?? 9) - (RANK[b2.status] ?? 9)
+    || new Date(b2.submittedAt) - new Date(a.submittedAt));
+
+  const cur = openId ? invSubs.find(s => s.id === openId) : null;
+  const dirty = !!(q || bc || from || to || status !== 'all');
+  const COLS = '132px minmax(0,1fr) 96px 92px 46px 92px 20px';
+
+  // ── ชั้นรายละเอียด ──
+  if (cur) {
+    const cfg = CFG[cur.status] || CFG.pending;
+    const lines = linesOf(cur);
+    const idx = list.findIndex(s => s.id === cur.id);
+    return (
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setOpenId(null)}
+            className="shrink-0 rounded-lg border bg-white font-bold text-[12.5px] text-slate-600"
+            style={{ minHeight: 38, padding: '0 12px', borderColor: '#E4E6EA' }}>‹ กลับ</button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold text-slate-800 tabular-nums truncate">{cur.docNo || '—'}</div>
+            <div className="text-[11px] text-slate-400">
+              {idx >= 0 ? `ใบที่ ${idx + 1} จาก ${list.length} ในรายการที่กรองไว้` : 'ไม่อยู่ในผลกรองปัจจุบัน'}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full border text-[11.5px] font-bold"
+            style={{ padding: '6px 12px', background: cfg.soft, borderColor: cfg.line, color: cfg.ink }}>
+            {cfg.label}{cur.reviseNo > 0 ? ` · แก้รอบ ${cur.reviseNo}` : ''}
+          </span>
         </div>
+
+        {cur.reviewNote && cur.status !== 'pending' && (
+          <div className="rounded-xl border p-3" style={{ background: cfg.soft, borderColor: cfg.line }}>
+            <div className="text-[10.5px] font-bold" style={{ color: cfg.ink }}>{cur.reviewedBy || 'ผู้จัดการ'}</div>
+            <div className="text-[12.5px] mt-1 leading-relaxed" style={{ color: cfg.ink }}>{cur.reviewNote}</div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-xl border p-3 space-y-2.5" style={{ borderColor: '#E4E6EA' }}>
+          <div className="text-[15px] font-bold text-slate-800">{cur.vendorName || 'ไม่ระบุผู้ขาย'}</div>
+          <div className="grid grid-cols-3 gap-2">
+            {[['เลขที่บิล', cur.invoiceNo || '—'], ['วันที่บิล', thDocDate(cur.invoiceDate)],
+              ['ส่งเมื่อ', cur.submittedAt ? new Date(cur.submittedAt).toLocaleString('th-TH', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—']].map(([k, v]) => (
+              <div key={k} className="rounded-xl px-2.5 py-2" style={{ background: '#F6F7F8' }}>
+                <div className="text-[10px] text-slate-500">{k}</div>
+                <div className="text-[12.5px] font-bold text-slate-800 mt-0.5 tabular-nums truncate">{v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-baseline gap-2 border-t pt-2.5" style={{ borderColor: '#F1F3F5' }}>
+            <span className="text-[12px] text-slate-500">{lines.length} รายการ</span>
+            <span className="flex-1" />
+            <span className="text-[11px] text-slate-500">ยอดสุทธิ</span>
+            <span className="text-[19px] font-bold text-slate-800 tabular-nums">{bahtFmt(cur.netTotal)}</span>
+          </div>
+        </div>
+
+        {lines.length > 0 && (
+          <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+            <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: 'minmax(0,1fr) 46px 74px 88px', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+              {['สินค้า / บาร์โค้ด', 'จำนวน', 'ราคา/หน่วย', 'รวม'].map((h, i) => (
+                <span key={h} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: i ? 'right' : 'left' }}>{h}</span>
+              ))}
+            </div>
+            {lines.map((d, i) => {
+              const hit = bb && bcOf(d).includes(bb);
+              return (
+                <div key={i} className="grid gap-2 items-center px-3 py-2 border-b"
+                  style={{ gridTemplateColumns: 'minmax(0,1fr) 46px 74px 88px', borderColor: '#F6F7F8', background: hit ? '#FFFBEB' : '#fff' }}>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-slate-800 truncate">{d.product_name || d.productName || d.description || '—'}</div>
+                    <div className="text-[10px] text-slate-400 tabular-nums">{bcOf(d) || '—'}</div>
+                  </div>
+                  <span className="text-[12.5px] text-slate-600 text-right tabular-nums">×{qtyOf(d)}</span>
+                  <span className="text-[12px] text-slate-500 text-right tabular-nums">{d.price_ea != null ? bahtFmt(d.price_ea) : '—'}</span>
+                  <span className="text-[12.5px] font-semibold text-slate-800 text-right tabular-nums">{d.total != null ? bahtFmt(d.total) : '—'}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {cur.status === 'rejected' && (
+          <button onClick={() => onRevise?.({
+              id: cur.id, docNo: cur.docNo, invoiceNo: cur.invoiceNo, note: cur.reviewNote,
+              reviseNo: cur.reviseNo || 0,
+              // ข้อมูลใบเดิมทั้งหมด — แก้ต่อได้เลย ไม่ต้องถ่ายรูปใหม่
+              data: { ...(cur.header || {}),
+                      invoice_no: cur.invoiceNo || cur.header?.invoice_no || '',
+                      invoice_date: cur.invoiceDate || cur.header?.invoice_date || '',
+                      vendor_name: cur.vendorName || cur.header?.vendor_name || '',
+                      products: cur.lines || [] },
+              fileName: cur.fileName || '',
+            })}
+            className="w-full text-white font-bold text-[14px] rounded-xl" style={{ minHeight: 48, background: '#B91C1C' }}>
+            แก้ใบนี้ส่งใหม่ ({cur.docNo ? cur.docNo.replace(/R\d+$/i, '') + 'R' + ((cur.reviseNo || 0) + 1) : 'รอบใหม่'})
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── ชั้นตาราง ──
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-[19px] font-bold text-slate-800">บิลที่ส่งแล้ว</h2>
+        <div className="flex-1" />
+        <div className="text-[11.5px] text-slate-400 whitespace-nowrap">
+          {dirty ? `${list.length} จาก ${invSubs.length} ใบ` : `${invSubs.length} ใบ`}
+        </div>
+        <button onClick={onRefresh} title="ดึงสถานะล่าสุด"
+          className="shrink-0 rounded-lg flex items-center justify-center border bg-white text-slate-500"
+          style={{ width: 30, height: 30, borderColor: '#E4E6EA' }}><RefreshCw size={13} /></button>
       </div>
 
-      {rejected.length > 0 && (
-        <div className="rounded-xl px-3 py-2.5 border flex items-center gap-2" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
-          <AlertCircle size={16} style={{ color: '#B91C1C' }} className="shrink-0" />
-          <div className="text-[12.5px] font-bold" style={{ color: '#B91C1C' }}>มี {rejected.length} ใบที่ต้องแก้แล้วส่งใหม่</div>
+      <div className="bg-white border rounded-xl p-2.5 space-y-2" style={{ borderColor: '#E4E6EA' }}>
+        <div className="flex gap-1.5">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นเลขที่เอกสาร บิล หรือผู้ขาย"
+            className="flex-1 min-w-0 rounded-lg border text-[12px] text-slate-800 px-2.5"
+            style={{ height: 30, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+          <button onClick={() => setAdv(!adv)}
+            className="shrink-0 rounded-lg font-bold text-[11.5px] border"
+            style={{ minWidth: 46, height: 30,
+                     background: adv ? '#0F172A' : '#fff', color: adv ? '#fff' : '#475569',
+                     borderColor: adv ? '#0F172A' : '#E4E6EA' }}>{adv ? 'ปิด' : 'กรอง'}</button>
         </div>
-      )}
 
-      {invSubs.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {['pending', 'approved', 'rejected'].map(k => (
-            <div key={k} className="rounded-xl px-2.5 py-2 border" style={{ background: CFG[k].soft, borderColor: CFG[k].line }}>
-              <div className="text-[10px] font-semibold leading-tight" style={{ color: CFG[k].ink }}>{CFG[k].label}</div>
-              <div className="text-lg font-bold tabular-nums mt-0.5" style={{ color: CFG[k].ink }}>{counts[k] || 0}</div>
-            </div>
-          ))}
-        </div>
-      )}
+        {adv && (
+          <div className="grid gap-1.5 pt-0.5 border-t" style={{ gridTemplateColumns: '0.95fr 0.85fr 0.85fr 1.1fr', borderColor: '#F1F3F5' }}>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">สถานะ</span>
+              <select value={status} onChange={e => setStatus(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 bg-white px-1.5"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }}>
+                <option value="all">ทุกสถานะ ({invSubs.length})</option>
+                {['rejected', 'pending', 'approved', 'superseded'].map(k => (
+                  <option key={k} value={k}>{CFG[k].label} ({counts[k] || 0})</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">วันที่บิล จาก</span>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 px-2"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">ถึง</span>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)}
+                className="rounded-lg border text-[12px] text-slate-800 px-2"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-semibold text-slate-500">บาร์โค้ดในบิล</span>
+              <input value={bc} onChange={e => setBc(e.target.value)} inputMode="numeric" placeholder="8851753098835"
+                className="rounded-lg border text-[12px] text-slate-800 px-2 tabular-nums"
+                style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
+            </label>
+          </div>
+        )}
+
+        {dirty && (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px] text-slate-500 truncate">
+              {[status !== 'all' && CFG[status].label, (from || to) && `${from || 'เริ่มต้น'} → ${to || 'ล่าสุด'}`,
+                bc && 'บาร์โค้ด ' + bc, q && `“${q}”`].filter(Boolean).join(' · ')}
+            </span>
+            <button onClick={() => { setQ(''); setBc(''); setFrom(''); setTo(''); setStatus('all'); }}
+              className="shrink-0 rounded-lg border bg-white text-[11.5px] font-bold text-slate-600"
+              style={{ height: 30, padding: '0 10px', borderColor: '#E4E6EA' }}>ล้างตัวกรอง</button>
+          </div>
+        )}
+      </div>
 
       {invSubs.length === 0 ? (
         <div className="bg-white rounded-xl px-4 py-9 text-center" style={{ border: '1px dashed #CBD5E1' }}>
@@ -2151,110 +2351,53 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
             className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#2F6E90' }}>ไปบันทึกบิล</button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+            {[['เลขที่เอกสาร', 0], ['ผู้ขาย', 0], ['วันที่บิล', 0], ['สถานะ', 0], ['จำนวน', 1], ['ยอดสุทธิ', 1], ['', 0]].map(([h, right], i) => (
+              <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
+            ))}
+          </div>
+
           {list.map(s => {
-            const cfg = CFG[s.status] || CFG.pending; const Icon = cfg.icon; const on = open === s.id;
+            const cfg = CFG[s.status] || CFG.pending;
+            const lines = linesOf(s);
             return (
-              <div key={s.id} className="bg-white rounded-xl overflow-hidden border" style={{ borderColor: cfg.line }}>
-                <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: cfg.soft, borderColor: cfg.line }}>
-                  <Icon size={14} style={{ color: cfg.ink }} className="shrink-0" />
-                  <span className="text-[11.5px] font-bold" style={{ color: cfg.ink }}>{cfg.label}</span>
-                  <span className="ml-auto text-[10.5px] tabular-nums text-slate-500 shrink-0">
-                    {s.submittedAt ? new Date(s.submittedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                  </span>
-                </div>
-
-                <div className="p-3 space-y-2.5">
-                  <div>
-                    <div className="text-[14px] font-bold text-slate-800">{s.vendorName || 'ไม่ระบุผู้ขาย'}</div>
-                    <div className="text-[11.5px] text-slate-500 tabular-nums mt-0.5">
-                      บิล {s.invoiceNo || '—'}{s.invoiceDate ? ' · ' + s.invoiceDate : ''}
-                    </div>
-                    {s.docNo && (
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[11.5px] font-semibold text-slate-600 tabular-nums">{s.docNo}</span>
-                        {s.reviseNo > 0 && (
-                          <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#EAF0F4', color: '#255771' }}>แก้รอบ {s.reviseNo}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
-                      <div className="text-[10px] text-slate-500">รายการ</div>
-                      <div className="text-base font-bold text-slate-800 tabular-nums">{s.itemCount || s.lines?.length || 0}</div>
-                    </div>
-                    <div className="flex-1 rounded-lg px-2.5 py-2 text-center" style={{ background: '#F6F7F8' }}>
-                      <div className="text-[10px] text-slate-500">ยอดสุทธิ</div>
-                      <div className="text-base font-bold text-slate-800 tabular-nums">{(s.netTotal || 0).toLocaleString('th-TH')}</div>
-                    </div>
-                  </div>
-
-                  {s.status !== 'pending' && s.reviewNote && (
-                    <div className="rounded-lg p-2.5 border" style={{ background: cfg.soft, borderColor: cfg.line }}>
-                      <div className="text-[10px] font-bold" style={{ color: cfg.ink }}>{s.reviewedBy || 'ผู้จัดการ'}</div>
-                      <div className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: cfg.ink }}>{s.reviewNote}</div>
-                    </div>
-                  )}
-
-                  {s.status === 'rejected' && (
-                    <button onClick={() => {
-                        // แก้แล้วใช้เลขเดิม + R1 — ไม่กินเลขเอกสารใหม่
-                        onRevise?.({
-                          id: s.id, docNo: s.docNo, invoiceNo: s.invoiceNo, note: s.reviewNote,
-                          reviseNo: s.reviseNo || 0,
-                          // ข้อมูลใบเดิมทั้งหมด — แก้ต่อได้เลย ไม่ต้องถ่ายรูปใหม่
-                          data: { ...(s.header || {}),
-                                  invoice_no: s.invoiceNo || s.header?.invoice_no || '',
-                                  invoice_date: s.invoiceDate || s.header?.invoice_date || '',
-                                  vendor_name: s.vendorName || s.header?.vendor_name || '',
-                                  products: s.lines || [] },
-                          fileName: s.fileName || '',
-                        });
-                      }}
-                      className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
-                      แก้ใบนี้ส่งใหม่ ({s.docNo ? s.docNo.replace(/R\d+$/i,'') + 'R' + ((s.reviseNo || 0) + 1) : 'รอบใหม่'})
-                    </button>
-                  )}
-
-                  {s.lines?.length > 0 && (
-                    <button onClick={() => setOpen(on ? null : s.id)}
-                      className="w-full pt-2 border-t text-[11.5px] font-semibold text-slate-500"
-                      style={{ borderColor: '#F6F7F8' }}>
-                      {on ? 'ซ่อนรายการในบิล' : `ดูรายการในบิล (${s.lines.length})`}
-                    </button>
-                  )}
-
-                  {on && (
-                    <div className="rounded-lg divide-y max-h-56 overflow-y-auto" style={{ background: '#F6F7F8', borderColor: '#E4E6EA' }}>
-                      {s.lines.map((d, i) => (
-                        <div key={i} className="flex items-center gap-2 px-2.5 py-2" style={{ borderColor: '#E4E6EA' }}>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[12px] font-semibold text-slate-800 truncate">{d.product_name || d.productName || '—'}</div>
-                            <div className="text-[10.5px] text-slate-400 tabular-nums">{d.barcode || d.product_code || ''}</div>
-                          </div>
-                          <div className="text-[12px] font-bold text-slate-700 tabular-nums shrink-0">×{d.quantity ?? d.qty ?? 0}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <button key={s.id} onClick={() => setOpenId(s.id)}
+                className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
+                style={{ gridTemplateColumns: COLS, boxSizing: 'border-box',
+                         borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
+                <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s.docNo || '—'}</span>
+                <span className="min-w-0 text-[12.5px] font-semibold text-slate-800 truncate">{s.vendorName || 'ไม่ระบุผู้ขาย'}</span>
+                <span className="text-[11.5px] text-slate-500 tabular-nums">{thDocDate(s.invoiceDate)}</span>
+                <span className="justify-self-start rounded-full text-[10px] font-bold whitespace-nowrap"
+                  style={{ padding: '3px 8px', background: cfg.soft, color: cfg.ink }}>
+                  {cfg.label}{s.reviseNo > 0 ? ` R${s.reviseNo}` : ''}
+                </span>
+                <span className="text-[12.5px] text-slate-600 text-right tabular-nums">
+                  {lines.reduce((a, d) => a + qtyOf(d), 0) || s.itemCount || 0}
+                </span>
+                <span className="text-[13px] font-bold text-slate-800 text-right tabular-nums">{bahtFmt(s.netTotal)}</span>
+                <span className="text-[13px] text-slate-300 text-right">›</span>
+              </button>
             );
           })}
+
+          {list.length === 0 && (
+            <div className="px-4 py-8 text-center text-[13px] text-slate-500">ไม่มีเอกสารตรงตามที่กรอง</div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
+function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRevise }) {
   const [expanded, setExpanded] = useState(null);
   const CFG = {
     pending:  { label: 'รอผู้จัดการรีวิว', soft: '#FFFBEB', line: '#FDE68A', ink: '#B45309', icon: Clock },
     approved: { label: 'อนุมัติแล้ว',      soft: '#F0FDF4', line: '#BBF7D0', ink: '#15803D', icon: ThumbsUp },
     rejected: { label: 'ส่งกลับแก้ไข',      soft: '#FEF2F2', line: '#FECACA', ink: '#B91C1C', icon: ThumbsDown },
+    superseded: { label: 'แก้แล้วส่งใหม่',   soft: '#F6F7F8', line: '#E4E6EA', ink: '#64748B', icon: RefreshCw },
   };
   const counts = submissions.reduce((a, s) => { a[s.status || 'pending'] = (a[s.status || 'pending'] || 0) + 1; return a; }, {});
 
@@ -2307,7 +2450,14 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
                 </div>
 
                 <div className="p-3 space-y-2.5">
-                  {s.docNo && <div className="text-[13.5px] font-bold text-slate-800 tabular-nums">{s.docNo}</div>}
+                  {s.docNo && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13.5px] font-bold text-slate-800 tabular-nums">{s.docNo}</span>
+                      {s.reviseNo > 0 && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: '#EAF0F4', color: '#255771' }}>แก้รอบ {s.reviseNo}</span>
+                      )}
+                    </div>
+                  )}
 
                   <div className="rounded-lg px-2.5 py-2" style={{ background: '#EAF0F4' }}>
                     <div className="text-[10px] font-bold" style={{ color: '#255771' }}>ช่วงเวลาที่นำมาคิด</div>
@@ -2338,9 +2488,13 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {} }) {
                   )}
 
                   {s.status === 'rejected' && (
-                    <button onClick={() => setView('count')}
+                    <button onClick={() => onRevise?.({
+                        id: s.id, docNo: s.docNo, note: s.reviewNote,
+                        reviseNo: s.reviseNo || 0, featureType: s.featureType,
+                        data: s.data || [],   // ยกรายการเดิมมาแก้ ไม่ต้องสแกนใหม่
+                      })}
                       className="w-full text-white font-bold text-[13.5px] rounded-xl" style={{ minHeight: 44, background: '#B91C1C' }}>
-                      นับใหม่ตามที่แจ้ง
+                      แก้ใบนี้ส่งใหม่ ({s.docNo ? s.docNo.replace(/R\d+$/i,'') + 'R' + ((s.reviseNo || 0) + 1) : 'รอบใหม่'})
                     </button>
                   )}
 
@@ -4730,7 +4884,8 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
   const [invDraft, setInvDraft] = useState({ busy: '', msg: '', err: '' });
   const [invOpen, setInvOpen] = useState({});    // พับ/กางรายการสินค้าต่อใบ
   const [prodOpen, setProdOpen] = useState({});  // พับ/กางสินค้าแต่ละตัว
-  const [maxStep, setMaxStep] = useState(1);     // ขั้นสูงสุดที่เคยไปถึง — กดแถบล่างข้ามไปได้
+  const maxStep = 4;   // เดินดูได้ทุกขั้นตั้งแต่ยังไม่อัปรูป — แต่ละขั้นบอกเองว่าต้องมีอะไรก่อน
+  const setMaxStep = () => {};
   const [sendSt, setSendSt] = useState({ busy:false, done:null, err:'' });   // ส่งบิลให้ผู้จัดการ
   // มาจากปุ่ม "แก้ใบนี้ส่งใหม่" — ส่งแล้วได้เลขเดิม + R1
   const revise = reviseTarget;
@@ -4743,7 +4898,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
     setReviseLoaded(revise.id);
     setInvoices([{ files: [], pagesData: [revise.data], pageStatus: ['done'], status: 'done', data: revise.data, error: null }]);
     if (revise.fileName) setFileName(revise.fileName);
-    setMaxStep(4); setStep(3);
+    setStep(3);
   }, [revise, reviseLoaded]);
 
   // พนักงานไม่บันทึกลงระบบเอง — ส่งให้ผู้จัดการอนุมัติก่อน
@@ -5099,12 +5254,12 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
   };
 
   const reset = () => { setStep(1);setInvoices([]);setPFiles([]);setBMap({});setSRes([]);setSelPFIds(new Set());setFileName('');setSbSt(null);setSbErr(null);setSelPages({});
-    setMaxStep(1); setSendSt({ busy:false, done:null, err:'' });
+    setSendSt({ busy:false, done:null, err:'' });
     clearRevise();   // เริ่มใหม่แล้วต้องเป็นบิลใหม่จริง ๆ ไม่ใช่รอบแก้ของใบเดิม
   };
 
   useEffect(() => {
-    if (step===4&&!fileName) {
+    if (step===4&&!fileName&&doneInvs.length>0) {
       (async()=>{
         // ชื่อไฟล์ = เลขเอกสารจากตัวนับกลาง เช่น IV-202608220001 — หลายคนคีย์พร้อมกันก็ไม่ชน
         try {
@@ -5135,7 +5290,6 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
   const grandTotal = allProds.reduce((s,p)=>s+(+p.amount||0),0);
   const allVs = vatSummary(allProds);
 
-  useEffect(() => { setMaxStep(m => Math.max(m, step)); }, [step]);
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: mob?8:0, paddingBottom: 'calc(78px + env(safe-area-inset-bottom))' }}>
@@ -5259,6 +5413,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
 
       {step===2&&(
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {invoices.length===0 && (
+            <div style={{ background:'#fff', border:'1px dashed #cbd5e1', borderRadius:12, padding:'26px 16px', textAlign:'center' }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#475569' }}>ยังไม่มีบิลให้อ่าน</div>
+              <div style={{ fontSize:11.5, color:'#94a3b8', marginTop:4, lineHeight:1.5 }}>อัปโหลดรูปบิลที่ขั้น 1 ก่อน แล้วกลับมาที่นี่เพื่อให้ AI อ่าน</div>
+              <button onClick={()=>setStep(1)} style={{ marginTop:12, minHeight:40, padding:'0 14px', borderRadius:10, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>ไปขั้นอัปโหลดรูป</button>
+            </div>
+          )}
           <div style={{ background:'#eaf0f4', border:'1px solid #b9cfdc', borderRadius:12, padding:12, display:'flex', gap:9, alignItems:'center' }}>
             <span style={{ fontSize:15, color:'#255771', flex:'none' }}>✓</span>
             <div style={{ flex:1, minWidth:0, fontSize:11.5, color:'#255771', lineHeight:1.5 }}>
@@ -5420,6 +5581,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
 
       {step===3&&(
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {invoices.length===0 && (
+            <div style={{ background:'#fff', border:'1px dashed #cbd5e1', borderRadius:12, padding:'26px 16px', textAlign:'center' }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#475569' }}>ยังไม่มีรายการให้ตรวจ</div>
+              <div style={{ fontSize:11.5, color:'#94a3b8', marginTop:4, lineHeight:1.5 }}>ต้องอ่านบิลด้วย AI ที่ขั้น 2 ก่อน</div>
+              <button onClick={()=>setStep(1)} style={{ marginTop:12, minHeight:40, padding:'0 14px', borderRadius:10, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>ไปขั้นอัปโหลดรูป</button>
+            </div>
+          )}
           <div style={{ fontSize:12.5, color:'#64748b', lineHeight:1.6 }}>AI อ่านมาให้แล้ว — ตรวจทีละรายการ แตะแก้ตัวเลขที่ผิดได้เลย ยอดสุทธิคิดใหม่ให้ทันที</div>
 
           {doneInvs.length===0 && invoices.length>0 && (
@@ -5434,13 +5602,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
             const upd = (patch) => updateData(gi, {...d, ...patch});
             const updP = (pi, patch) => { const prods=[...d.products]; prods[pi]=recalc({...prods[pi],...patch,_pt:d.price_type??'incl'}); updateData(gi,{...d,products:prods}); };
             const open = invOpen[gi] ?? false;   // เริ่มต้นพับไว้
-            const F = ({ label, k, wide, tag }) => (
+            const F = ({ label, k, wide, tag }) => ((
               <div style={{ gridColumn: wide ? '1 / -1' : 'auto', minWidth:0 }}>
                 <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3, display:'flex', alignItems:'center', gap:4 }}>{label}{tag}</div>
                 <input value={d[k]??''} onChange={e=>upd({[k]:e.target.value||null})}
                   style={{ width:'100%', minHeight:40, padding:'0 9px', border:'1px solid #e4e6ea', borderRadius:9, fontSize:13, boxSizing:'border-box' }}/>
               </div>
-            );
+            ));
             return (
               <div key={gi} style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, overflow:'hidden' }}>
                 <div style={{ background:'#eaf0f4', padding:'10px 12px', borderBottom:'1px solid #b9cfdc', display:'flex', alignItems:'center', gap:8 }}>
@@ -5455,18 +5623,18 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
                 <div style={{ padding:12, display:'flex', flexDirection:'column', gap:10 }}>
                   {/* หัวบิล */}
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                    <F label="ชื่อร้าน / บริษัท" k="vendor_name" wide />
-                    <F label="เลขที่ใบกำกับ" k="invoice_no" />
-                    <F label="วันที่" k="invoice_date" />
-                    <F label="เลขภาษี" k="vendor_tax_id" />
-                    <F label="สาขา" k="vendor_branch" />
-                    <F label="ประเภทเอกสาร" k="document_type" />
-                    <F label="รหัสผู้ขาย" k="vendor_no"
-                      tag={d._vendorFromDB && d.vendor_no ? (
+                    {F({ label:'ชื่อร้าน / บริษัท', k:'vendor_name', wide:true })}
+                    {F({ label:'เลขที่ใบกำกับ', k:'invoice_no' })}
+                    {F({ label:'วันที่', k:'invoice_date' })}
+                    {F({ label:'เลขภาษี', k:'vendor_tax_id' })}
+                    {F({ label:'สาขา', k:'vendor_branch' })}
+                    {F({ label:'ประเภทเอกสาร', k:'document_type' })}
+                    {F({ label:'รหัสผู้ขาย', k:'vendor_no',
+                      tag: d._vendorFromDB && d.vendor_no ? (
                         d._vendorMatchBy === 'near'
                           ? <span style={{ background:'#fffbeb', color:'#b45309', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>ชื่อใกล้เคียง เช็คซ้ำ</span>
                           : <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>{d._vendorMatchBy === 'tax' ? 'ตรงเลขภาษี' : 'จากระบบ'}</span>
-                      ) : null} />
+                      ) : null })}
                     <div style={{ gridColumn:'1 / -1', minWidth:0 }}>
                       <div style={{ color:'#94a3b8', fontSize:10, marginBottom:3 }}>ราคาบนบิล</div>
                       <select value={d.price_type??'incl'}
@@ -5613,6 +5781,13 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
 
       {step===4&&(
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {invoices.length===0 && (
+            <div style={{ background:'#fff', border:'1px dashed #cbd5e1', borderRadius:12, padding:'26px 16px', textAlign:'center' }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#475569' }}>ยังไม่มีบิลให้ส่ง</div>
+              <div style={{ fontSize:11.5, color:'#94a3b8', marginTop:4, lineHeight:1.5 }}>ตรวจรายการที่ขั้น 3 ให้เสร็จก่อน</div>
+              <button onClick={()=>setStep(1)} style={{ marginTop:12, minHeight:40, padding:'0 14px', borderRadius:10, border:'none', background:'#2f6e90', color:'#fff', fontFamily:'inherit', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>ไปขั้นอัปโหลดรูป</button>
+            </div>
+          )}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:8 }}>
             {[['ใบกำกับ',`${doneInvs.length}`,'ใบ'],['สินค้า',`${allProds.length}`,'รายการ'],['ยอดรวม',`฿${grandTotal.toLocaleString()}`,'']].map(([k,v,u])=>(
               <div key={k} style={{ background:'#fff', border:'1px solid #e4e6ea', borderRadius:12, padding:'10px 8px', textAlign:'center' }}>

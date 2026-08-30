@@ -3017,19 +3017,27 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                     <div className="text-[11.5px] text-slate-500 leading-relaxed">ยังไม่มีรอบซิงก์ใน sync_log</div>
                   ) : (
                     <>
+                      {Object.entries(reports.reduce((acc, r) => {
+                        const b = String(r.branch || '1').replace(/^0+/, '') || '1';
+                        (acc[b] = acc[b] || []).push(r); return acc;
+                      }, {})).sort(([a], [b]) => a.localeCompare(b)).map(([br, list]) => (
+                      <div key={br}>
+                      <div className="flex items-center gap-2 mt-1 mb-0.5">
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: BRANCH_SOFT[br] || '#F6F7F8', color: BRANCH_INK[br] || '#475569' }}>{branchName(br)}</span>
+                        <span className="text-[10.5px] text-slate-400">{list.length} รายงาน</span>
+                        {list.some(x => x.state !== 'ok') && (
+                          <span className="text-[10.5px] font-bold" style={{ color: '#B45309' }}>· {list.filter(x => x.state !== 'ok').length} ต้องดู</span>
+                        )}
+                      </div>
                       <div className="divide-y" style={{ borderColor: '#F1F3F5' }}>
-                        {reports.map((r, ri) => {
+                        {list.map((r, ri) => {
                           const short = r.missing > 0;
                           return (
-                            <div key={r.report + '|' + (r.branch || '') + ri} className="py-2">
+                            <div key={r.report + '|' + br + ri} className="py-2">
                               <div className="flex items-center gap-2">
                                 <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
                                 <span className="min-w-0 truncate text-[12px] font-semibold text-slate-800">{r.label || r.report}</span>
-                                <span className="shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold"
-                                  style={{ background: BRANCH_SOFT[String(r.branch || '1').replace(/^0+/, '')] || '#F6F7F8',
-                                           color: BRANCH_INK[String(r.branch || '1').replace(/^0+/, '')] || '#475569' }}>
-                                  {branchName(String(r.branch || '1').replace(/^0+/, ''))}
-                                </span>
                                 <span className="flex-1" />
                                 <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: short ? '#B91C1C' : '#2A5A55' }}>
                                   {r.rowsCsv !== null && r.rowsCsv !== r.rowsSent
@@ -3053,6 +3061,8 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                           );
                         })}
                       </div>
+                      </div>
+                      ))}
                       <button onClick={onOpenSync}
                         className="w-full rounded-xl border bg-white text-[12.5px] font-semibold text-slate-700 mt-2.5"
                         style={{ minHeight: 42, borderColor: '#E4E6EA' }}>ดูประวัติการซิงก์</button>
@@ -3167,17 +3177,26 @@ function DataSyncView() {
           {tab === 'now' ? (
             d.reports.length === 0 ? (
               <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center text-[13px] text-slate-500">ยังไม่มีรอบซิงก์ใน sync_log</div>
-            ) : d.reports.map(r => {
+            ) : Object.entries(d.reports.reduce((acc, r) => {
+              const b = String(r.branch || '1').replace(/^0+/, '') || '1';
+              (acc[b] = acc[b] || []).push(r); return acc;
+            }, {})).sort(([a], [b]) => a.localeCompare(b)).map(([br, list]) => (
+            <div key={br} className="space-y-2">
+              <div className="flex items-center gap-2 pt-1">
+                <span className="rounded-lg px-2 py-1 text-[11.5px] font-bold"
+                  style={{ background: BRANCH_SOFT[br] || '#F6F7F8', color: BRANCH_INK[br] || '#475569' }}>{branchName(br)}</span>
+                <span className="text-[11px] text-slate-400">{list.length} รายงาน</span>
+                {list.some(x => x.state !== 'ok') && (
+                  <span className="text-[11px] font-bold" style={{ color: '#B45309' }}>· {list.filter(x => x.state !== 'ok').length} ต้องดู</span>
+                )}
+              </div>
+              {list.map(r => {
               const t = TONE[r.state] || TONE.unknown;
               const short = r.rowsCsv !== null && r.missing > 0;
-              const br = String(r.branch || '1').replace(/^0+/, '');
               return (
                 <div key={r.report + '|' + br} className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
                   <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ background: t.soft, borderColor: '#ECEEF0' }}>
-                    <span className="min-w-0 truncate text-[13px] font-bold text-slate-900">{r.label || r.report}</span>
-                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold"
-                      style={{ background: BRANCH_SOFT[br] || '#F6F7F8', color: BRANCH_INK[br] || '#475569' }}>{branchName(br)}</span>
-                    <span className="flex-1" />
+                    <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-slate-900">{r.label || r.report}</span>
                     <span className="shrink-0 text-[10.5px] font-bold rounded-full px-2 py-1 bg-white" style={{ color: t.ink }}>{r.summary || t.label}</span>
                   </div>
                   <div className="p-3">
@@ -3225,7 +3244,9 @@ function DataSyncView() {
                   </div>
                 </div>
               );
-            })
+              })}
+            </div>
+            ))
           ) : tab === 'odd' ? (
             !d.anomalies ? (
               <div className="bg-white rounded-2xl border border-[#E4E6EA] p-8 text-center text-[13px] text-slate-500">ยังไม่ได้เปิดใช้การตรวจบิล</div>

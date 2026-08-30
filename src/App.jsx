@@ -147,7 +147,7 @@ function useWinWidth() {
   return w;
 }
 
-async function supabaseFindProduct(cfg, code) {
+async function supabaseFindProduct(cfg, code, branch = '') {
   const { url, anonKey, tableName, stockTableName } = cfg;
   if (!url || !anonKey) return null;
   const base = url.replace(/\/$/, '');
@@ -159,7 +159,7 @@ async function supabaseFindProduct(cfg, code) {
   // Query both tables in parallel
   const [priceRes, stockRes] = await Promise.all([
     fetch(`${base}/rest/v1/${priceTable}?${col}=eq.${encodeURIComponent(code)}&limit=1`, { headers: h }),
-    fetch(`${base}/rest/v1/${stockTable}?${col}=eq.${encodeURIComponent(code)}&limit=1`, { headers: h }),
+    fetch(`${base}/rest/v1/${stockTable}?${col}=eq.${encodeURIComponent(code)}${stockBranchFilter(branch)}&limit=1`, { headers: h }),
   ]);
 
   let priceRow = null, stockRow = null;
@@ -442,6 +442,24 @@ async function loadCloudSettings() {
 }
 const setting = (key, fallback = '') => CLOUD_SETTINGS[key] || fallback;
 
+// 2 สาขา — ชื่อแก้ได้ในหน้าตั้งค่า ไม่ต้อง redeploy
+const BRANCHES = () => [
+  { id: '1', name: setting('branch_1_name', 'สาขา 1') },
+  { id: '2', name: setting('branch_2_name', 'สาขา 2') },
+];
+const branchName = (id) => id === 'all' ? 'ทุกสาขา' : (BRANCHES().find(b => b.id === String(id))?.name || `สาขา ${id}`);
+// สีประจำสาขา — ให้เห็นแวบเดียวว่ากำลังทำงานสาขาไหน กันคีย์ผิดสาขา
+const BRANCH_INK = { '1': '#255771', '2': '#8A5A1C', all: '#475569' };
+const BRANCH_SOFT = { '1': '#EAF0F4', '2': '#FDF6EC', all: '#F6F7F8' };
+
+// ค่าที่อยู่ในคอลัมน์สาขาของ product_stock — ต่างจากรหัสสาขาในแอปได้
+const stockBranchFilter = (branch) => {
+  const col = setting('branch_stock_column', '');
+  if (!col || !branch || branch === 'all') return '';   // ไม่ตั้ง = อ่านรวมทุกสาขาเหมือนเดิม
+  const val = setting(`branch_${branch}_value`, branch);
+  return `&${encodeURIComponent('"' + col + '"')}=eq.${encodeURIComponent(val)}`;
+};
+
 // โฟลเดอร์ Drive ไม่ hardcode — มาจาก /api/config (env → app_settings)
 
 /* ---- ส่งขึ้น Drive: จำว่าไฟล์ไหนขึ้นแล้ว กันส่งซ้ำ + กันชื่อไทยทำ base64 พัง ---- */
@@ -572,7 +590,7 @@ function buildRecorderCsv(rows) {
 }
 
 // ST — ปรับยอด: barcode,adjust_stock (+/- ให้ตรงสต็อกจริง · ว่างถ้าไม่พบในระบบ)
-async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock') {
+async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock', branch = '1') {
   const codes = [...new Set((rows || []).map(d => String(d.barcode || '')).filter(Boolean))];
   const onHand = {};
   if (sbUrl && sbKey && codes.length) {
@@ -580,7 +598,7 @@ async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock') 
     const qc = (c) => encodeURIComponent(`"${c}"`);
     for (let i = 0; i < codes.length; i += 50) {
       const inList = codes.slice(i, i + 50).map(encodeURIComponent).join(',');
-      const url = `${sbUrl}/rest/v1/${stockTable}?${qc('รหัสสินค้า')}=in.(${inList})&select=${qc('รหัสสินค้า')},${qc('รวม')}`;
+      const url = `${sbUrl}/rest/v1/${stockTable}?${qc('รหัสสินค้า')}=in.(${inList})&select=${qc('รหัสสินค้า')},${qc('รวม')}${stockBranchFilter(branch)}`;
       const r = await fetch(url, { headers: h });
       if (!r.ok) throw new Error('อ่านยอดคงเหลือไม่ได้: ' + (await r.text()).slice(0, 120));
       for (const row of await r.json()) {
@@ -667,7 +685,13 @@ export default function CombinedApp() {
   const [view, setView] = useState(() => safeGet('lastView', 'count') || 'count');
   const [loaded, setLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
-    try { const v = localStorage.getItem('currentUser'); return v ? JSON.parse(v) : null; } catch { return null; }
+    try {
+      const v = localStorage.getItem('currentUser');
+      const u = v ? JSON.parse(v) : null;
+      // ผู้ใช้ที่ค้างจากก่อนมี 2 สาขา ไม่รู้ว่าทำงานสาขาไหน — ให้เลือกใหม่ ดีกว่าเดาผิดสาขา
+      if (u && u.role !== 'manager' && !u.branch) return null;
+      return u;
+    } catch { return null; }
   });
   const [supabaseConfig, setSupabaseConfig] = useState({ url: '', anonKey: '', tableName: 'product_price', stockTableName: 'product_stock' });
   const [dataSource, setDataSource] = useState('none');
@@ -677,6 +701,11 @@ export default function CombinedApp() {
   const [countDraft, setCountDraft] = useState({ barcode: '', qty: '', checkResult: null, error: '' });
   const [publicPage, setPublicPage] = useState(() => safeGet('lastPublicPage', '') || null);   // 'staff' | 'report' | 'settings'
   const [pickedAt, setPickedAt] = useState(null);   // เลือกชื่อไว้กี่โมง — โชว์ในหน้ายืนยันก่อนส่ง
+  // ผู้จัดการสลับดูได้ (all/1/2) · พนักงานล็อกไว้ที่สาขาที่เลือกตอนเข้าใช้
+  const [viewBranch, setViewBranch] = useState(() => {
+    try { const u = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      return u && u.role !== 'manager' && u.branch ? String(u.branch) : 'all'; } catch { return 'all'; }
+  });
   const [compareState, setCompareState] = useState({
     selectedSub: null, compareData: [], loading: false, loadProgress: '',
     error: '', compareAt: null, driveSaving: false, driveResult: null,
@@ -737,6 +766,7 @@ export default function CombinedApp() {
         body: JSON.stringify({
           counter_id: currentUser.id, counter_name: currentUser.name,
           feature: currentUser.feature || 'recorder',
+          branch: String(currentUser.branch || '1'),
           device_id: safeGet('deviceId', '') || null,
           entries: countEntries.filter(e => e.counterId === currentUser.id),
         }),
@@ -753,7 +783,7 @@ export default function CombinedApp() {
     if (!currentUser) return;
     setDraftSync({ busy: 'down', msg: '', err: '' });
     try {
-      const res = await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser.id)}&feature=${encodeURIComponent(currentUser.feature || 'recorder')}`);
+      const res = await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser.id)}&feature=${encodeURIComponent(currentUser.feature || 'recorder')}&branch=${encodeURIComponent(String(currentUser.branch || '1'))}`);
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
       const mine = (j.entries || []).map(e => ({ ...e, counterId: currentUser.id, counterName: currentUser.name, id: e.id || `${Date.now()}_${Math.random()}` }));
@@ -763,7 +793,8 @@ export default function CombinedApp() {
     } catch (e) { setDraftSync({ busy: '', msg: '', err: e.message }); }
   };
 
-  const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now()); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
+  const handleLogin = (user) => { setCurrentUser(user); setView(defaultViewFor(user)); setPickedAt(Date.now());
+    setViewBranch(user.role === 'manager' ? 'all' : String(user.branch || '1')); storage.set('currentUser', JSON.stringify(user)).catch(() => {}); };
   // สลับฟีเจอร์โดยไม่ต้องออกจากระบบ — ร่างแยกตามฟีเจอร์ ไม่หาย
   const switchFeature = (f) => {
     if (!currentUser || f === currentUser.feature) return;
@@ -796,7 +827,7 @@ export default function CombinedApp() {
     if (!trimmed) return null;
     if (supabaseConfig.url && supabaseConfig.anonKey) {
       try {
-        const row = await supabaseFindProduct(supabaseConfig, trimmed);
+        const row = await supabaseFindProduct(supabaseConfig, trimmed, String(currentUser?.branch || ''));
         if (row) { const product = mapSupabaseRow(row, trimmed); setProducts(prev => prev.some(p => p.id === product.id || p.barcode === product.barcode) ? prev : [...prev, product]); setConnectionStatus('ok'); return product; }
         setConnectionStatus('ok'); return null;
       } catch (e) { setConnectionStatus('error'); const cached = products.find(p => p.id === trimmed || p.barcode === trimmed); if (cached) return { ...cached, source: 'cached' }; throw new Error(`ค้นหาไม่ได้: ${e.message}`); }
@@ -840,6 +871,7 @@ export default function CombinedApp() {
       id: `sub${Date.now()}_${Math.random().toString(36).slice(2,7)}`, docNo,
       counter: currentUser?.name || 'พนักงาน', counterId: currentUser?.id || 'unknown',
       featureType: currentUser?.feature || 'recorder',
+      branch: String(currentUser?.branch || '1'),
       submittedAt: now,
       startedAt: grouped.reduce((min, g) => g.scannedAt && g.scannedAt < min ? g.scannedAt : min, now),
       note: note || '', status: 'pending', reviewedAt: null, reviewedBy: null, reviewNote: '',
@@ -878,7 +910,7 @@ export default function CombinedApp() {
     clearReviseCount();   // ส่งรอบแก้แล้ว ออกจากโหมดแก้
     // ส่งเป็นใบแล้ว ร่างบนเซิร์ฟเวอร์ต้องหาย ไม่ให้เครื่องอื่นดึงของเก่ากลับมา
     try {
-      await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}`, { method: 'DELETE' });
+      await fetch(`/api/draft?counter_id=${encodeURIComponent(currentUser?.id || '')}&feature=${encodeURIComponent(currentUser?.feature || 'recorder')}&branch=${encodeURIComponent(String(currentUser?.branch || '1'))}`, { method: 'DELETE' });
     } catch {}
     return saved;
     } finally { submittingRef.current = false; }
@@ -1058,11 +1090,16 @@ export default function CombinedApp() {
     db={{ ...supabaseConfig, connection: connectionStatus, dataSource, lastSyncAt, productCount: products.length }} />;
 
   const isManager = currentUser.role === 'manager';
+  const myBranch = String(currentUser.branch || '1');   // พนักงานทำงานสาขานี้เท่านั้น
+  // ใบเก่าก่อนมี 2 สาขา ไม่มี branch → นับเป็นสาขา 1
+  const inBranch = (x) => viewBranch === 'all' || String(x.branch || '1') === viewBranch;
+  const bSubs = isManager ? submissions.filter(inBranch) : submissions;
+  const bInvSubs = isManager ? invSubs.filter(inBranch) : invSubs;
   const feature = currentUser.feature || (isManager ? 'recorder' : 'recorder');
   const myEntries = countEntries.filter(e =>
     e.counterId === currentUser.id && (e.featureType || 'recorder') === (currentUser.feature || 'recorder'));
   const pendingCount = isManager
-    ? submissions.filter(s => s.status === 'pending').length + invSubs.filter(s => s.status === 'pending').length
+    ? submissions.filter(s => s.status === 'pending' && inBranch(s)).length + invSubs.filter(s => s.status === 'pending' && inBranch(s)).length
     : submissions.filter(s => s.status === 'pending' && (s.featureType||'recorder') === feature).length;
   // ใบที่อนุมัติแล้วแต่ยังไม่ขึ้น Drive
   const pendingUploadCount = isManager
@@ -1096,7 +1133,7 @@ export default function CombinedApp() {
 
   // Nav per role+feature
   const navItems = isManager
-    ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า Drive',icon:SettingsIcon }]
+    ? [{ id:'inbox',label:'รีวิวและอนุมัติ',icon:Inbox,badge:pendingCount },{ id:'saved',label:'บันทึกแล้ว',icon:Upload,badge:pendingUploadCount },{ id:'compare',label:'เทียบยอด',icon:ArrowLeftRight },{ id:'data_sync',label:'สถานะข้อมูล POS',icon:Database },{ id:'drive_cfg',label:'ตั้งค่า',icon:SettingsIcon }]
     : feature === 'invoice'
       ? [{ id:'invoice',label:'บันทึกบิล',icon:Receipt }]
       : [{ id:'count',label:'นับสต็อก',icon:ScanLine },{ id:'review',label:'ตรวจสอบ',icon:ClipboardCheck,badge:myEntries.length },{ id:'my_submissions',label:'ที่ส่งแล้ว',icon:Send }];
@@ -1148,6 +1185,26 @@ export default function CombinedApp() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isManager ? (
+              <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                {[{ id: 'all', label: 'รวม' }, ...BRANCHES().map(b => ({ id: b.id, label: b.name }))].map((b, i) => {
+                  const on = viewBranch === b.id;
+                  return (
+                    <button key={b.id} onClick={() => setViewBranch(b.id)}
+                      className="font-bold" title={`ดู${b.label}`}
+                      style={{ minHeight: 34, padding: '0 9px', fontSize: 11.5, borderLeft: i ? '1px solid #E4E6EA' : 'none',
+                               background: on ? BRANCH_SOFT[b.id] : '#fff', color: on ? BRANCH_INK[b.id] : '#94A3B8' }}>
+                      {b.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="rounded-lg px-2.5 font-bold flex items-center shrink-0"
+                style={{ minHeight: 32, fontSize: 11.5, background: BRANCH_SOFT[myBranch], color: BRANCH_INK[myBranch] }}>
+                {branchName(myBranch)}
+              </span>
+            )}
             <button onClick={handleLogout} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-[#F6F7F8] rounded"><LogOut size={14} />ออก</button>
           </div>
         </div>
@@ -1239,15 +1296,15 @@ export default function CombinedApp() {
             sentView={<MyBillsView invSubs={invSubs} setView={setView} onRefresh={() => pullInvSubs(currentUser)}
               onRevise={(t) => { setReviseTarget(t); setView('invoice'); }} />} /></ErrorBox>}
         {/* Manager */}
-                {isManager && activeView === 'compare' && <CompareStockView submissions={submissions} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+                {isManager && activeView === 'compare' && <CompareStockView branch={viewBranch} submissions={bSubs} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
         {isManager && activeView === 'data_sync' && <ErrorBox><DataSyncView /></ErrorBox>}
         {isManager && activeView === 'drive_cfg' && <ErrorBox><DriveSettingsView currentUser={currentUser} /></ErrorBox>}
-        {isManager && activeView === 'saved' && <ErrorBox><SavedUploadsView submissions={submissions} invSubs={invSubs} subSync={subSync} currentUser={currentUser} supabaseConfig={supabaseConfig}
+        {isManager && activeView === 'saved' && <ErrorBox><SavedUploadsView submissions={bSubs} invSubs={bInvSubs} subSync={subSync} currentUser={currentUser} supabaseConfig={supabaseConfig}
             onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }}
             onPatched={u => setSubmissions(prev => prev.map(x => x.id === u.id ? { ...x, ...u } : x))}
             onInvPatched={u => setInvSubs(prev => prev.map(x => x.id === u.id ? { ...x, ...u } : x))} /></ErrorBox>}
-        {isManager && activeView === 'inbox' && <ManagerInboxView invSubs={invSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={submissions} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
-        {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView submissions={submissions.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
+        {isManager && activeView === 'inbox' && <ManagerInboxView branch={viewBranch} invSubs={bInvSubs} onReviewInvoice={reviewInvoice} onDeleteInvoice={deleteInvoiceSub} onRefresh={() => { pullSubmissions('recorder'); pullSubmissions('stock_compare'); pullInvSubs(); }} subSync={subSync} submissions={bSubs} onReview={reviewSubmission} onDelete={deleteSubmission} feature={feature} />}
+        {isManager && feature === 'stock_compare' && activeView === 'compare' && <CompareStockView branch={viewBranch} submissions={bSubs.filter(s=>(s.featureType||'stock_compare')==='stock_compare')} supabaseConfig={supabaseConfig} compareState={compareState} setCompareState={setCompareState} />}
       </main>
 
       {!isManager && navItems.length > 1 && (
@@ -1280,6 +1337,7 @@ export default function CombinedApp() {
 
 function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0, db, onTestDb, onPrefillView }) {
   const [role, setRole] = useState(null);
+  const [branch, setBranch] = useState(null);   // เลือกทุกครั้งที่เปิด — เครื่องรวมอาจย้ายสาขา
   const [feature, setFeature] = useState(null);
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
@@ -1346,6 +1404,7 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0, db, o
   const handleLogin = async (picked) => {
     const useName = picked?.name || name.trim();
     if (!useName) return setError('กรุณาเลือกหรือใส่ชื่อ');
+    if (role === 'counter' && !branch) return setError('กรุณาเลือกสาขา');
     if (role === 'manager') {
       if (!pin) return setError('กรุณาใส่ PIN');
       setLoading(true); setError('');
@@ -1375,7 +1434,9 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0, db, o
       : allow.allow_recorder ? 'recorder' : allow.allow_compare ? 'stock_compare' : allow.allow_invoice ? 'invoice' : 'recorder';
     const useFeature = role === 'manager' ? 'all' : firstFeature;
     const stableId = picked?.id || `${role}_${useName.toLowerCase().replace(/\s+/g,'_')}`;
-    onLogin({ id: stableId, name: useName, role, feature: useFeature, allow, loginAt: new Date().toISOString() });
+    // ผู้จัดการเห็นทั้ง 2 สาขา สลับดูได้จากหัวหน้าจอ
+    onLogin({ id: stableId, name: useName, role, feature: useFeature, allow,
+      branch: role === 'manager' ? 'all' : branch, loginAt: new Date().toISOString() });
   };
 
   const features = role === 'manager' ? MANAGER_FEATURES : COUNTER_FEATURES;
@@ -1467,12 +1528,38 @@ function LoginScreen({ onLogin, onOpenPage, serverReady, productCount = 0, db, o
       ) : (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
         {/* Step 2: Feature */}
-        {/* พนักงาน — เลือกชื่อ */}
-        {role === 'counter' && (
+        {/* พนักงาน — เลือกสาขาก่อน กันคีย์ผิดสาขา */}
+        {role === 'counter' && !branch && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <button onClick={() => { setRole(null); setError(''); setName(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <button onClick={() => { setRole(null); setError(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
+              <div className="text-sm font-semibold text-slate-700">วันนี้ทำงานสาขาไหน</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {BRANCHES().map(b => (
+                <button key={b.id} onClick={() => { setBranch(b.id); setError(''); }}
+                  className="rounded-2xl border-2 p-4 text-left flex flex-col gap-2 bg-white"
+                  style={{ borderColor: '#E4E6EA', minHeight: 112 }}>
+                  <span className="rounded-xl flex items-center justify-center font-bold shrink-0"
+                    style={{ width: 42, height: 42, fontSize: 19, background: BRANCH_SOFT[b.id], color: BRANCH_INK[b.id] }}>{b.id}</span>
+                  <span className="text-[15px] font-bold text-slate-800 mt-auto leading-tight">{b.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[11px] text-slate-400 leading-relaxed">
+              เลือกสาขาทุกครั้งที่เปิดแอป — ยอดคงเหลือและเลขเอกสารแยกกันคนละสาขา
+            </div>
+          </div>
+        )}
+
+        {/* พนักงาน — เลือกชื่อ */}
+        {role === 'counter' && branch && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setBranch(null); setError(''); setName(''); }} className="text-xs text-slate-400 hover:text-slate-600">← กลับ</button>
               <div className="text-sm font-semibold text-slate-700">เลือกชื่อของคุณ</div>
+              <span className="ml-auto rounded-lg px-2 py-1 text-[11px] font-bold"
+                style={{ background: BRANCH_SOFT[branch], color: BRANCH_INK[branch] }}>{branchName(branch)}</span>
             </div>
 
             {staffLoading || staffList === undefined ? (
@@ -3142,8 +3229,48 @@ function DriveSettingsView({ currentUser }) {
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-xl font-bold text-slate-800">ตั้งค่าโฟลเดอร์ Drive</h2>
-        <p className="text-[11.5px] text-slate-500">ไฟล์แต่ละชนิดลงโฟลเดอร์ไหน — ตั้งครั้งเดียวทุกเครื่องใช้ร่วม</p>
+        <h2 className="text-xl font-bold text-slate-800">ตั้งค่า</h2>
+        <p className="text-[11.5px] text-slate-500">สาขาและโฟลเดอร์ Drive — ตั้งครั้งเดียวทุกเครื่องใช้ร่วม</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+        <div className="px-3.5 py-2.5 border-b text-[12px] font-bold text-slate-700" style={{ borderColor: '#E4E6EA', background: '#F8FAFC' }}>สาขา</div>
+        <div className="p-3.5 space-y-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            {['1', '2'].map(id => (
+              <div key={id}>
+                <label className="text-[11px] font-semibold text-slate-500">ชื่อสาขา {id}</label>
+                <input value={v[`branch_${id}_name`] || ''} placeholder={`สาขา ${id}`}
+                  onChange={e => { setV(o => ({ ...o, [`branch_${id}_name`]: e.target.value })); setSaved(''); }}
+                  className="w-full mt-1 rounded-xl border px-3 text-[13px] text-slate-800 outline-none"
+                  style={{ minHeight: 44, borderColor: '#E4E6EA', background: '#FAFBFB' }} />
+              </div>
+            ))}
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-slate-500">คอลัมน์สาขาในตาราง product_stock</label>
+            <input value={v.branch_stock_column || ''} placeholder="เช่น สาขา — เว้นว่าง = อ่านยอดรวมทุกสาขา"
+              onChange={e => { setV(o => ({ ...o, branch_stock_column: e.target.value })); setSaved(''); }}
+              className="w-full mt-1 rounded-xl border px-3 font-mono text-[12px] text-slate-800 outline-none"
+              style={{ minHeight: 44, borderColor: '#E4E6EA', background: '#FAFBFB' }} />
+            <div className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              ต้องตั้งให้ตรงกับชื่อคอลัมน์จริง ไม่งั้นการเทียบยอดจะใช้ยอดรวมทุกสาขา ทำให้ตัวเลขปรับผิด
+            </div>
+          </div>
+          {v.branch_stock_column && (
+            <div className="grid grid-cols-2 gap-2.5">
+              {['1', '2'].map(id => (
+                <div key={id}>
+                  <label className="text-[11px] font-semibold text-slate-500">ค่าในคอลัมน์นั้น = สาขา {id}</label>
+                  <input value={v[`branch_${id}_value`] || ''} placeholder={id}
+                    onChange={e => { setV(o => ({ ...o, [`branch_${id}_value`]: e.target.value })); setSaved(''); }}
+                    className="w-full mt-1 rounded-xl border px-3 font-mono text-[12px] text-slate-800 outline-none"
+                    style={{ minHeight: 44, borderColor: '#E4E6EA', background: '#FAFBFB' }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
@@ -3226,7 +3353,7 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
       // ปรับยอด → ต้องรู้ยอดคงเหลือปัจจุบันก่อน ถึงคำนวณ +/- ได้
       try {
         const { csv, missing, total } = await buildAdjustCsv(
-          sub.data, supabaseConfig?.url, supabaseConfig?.anonKey, supabaseConfig?.stockTableName);
+          sub.data, supabaseConfig?.url, supabaseConfig?.anonKey, supabaseConfig?.stockTableName, sub.branch || '1');
         entry = await driveUpload({
           subId: sub.id, type: 'csv_adjust',
           filename: `${sub.docNo || sub.id}.txt`, mimeType: 'text/csv',
@@ -3299,6 +3426,10 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
               style={{ background: failed ? '#FDF2F2' : '#F6F7F8', borderColor: '#ECEEF0' }}>
               <span className="text-[10.5px] font-bold bg-white rounded-md px-2 py-1" style={{ color: k.ink }}>{k.label}</span>
               <span className="flex-1 min-w-0 truncate font-mono font-bold text-[13.5px] text-slate-900">{sub.docNo || sub.id}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                style={{ background: BRANCH_SOFT[String(sub.branch || '1')], color: BRANCH_INK[String(sub.branch || '1')] }}>
+                {branchName(sub.branch || '1')}
+              </span>
             </div>
 
             <div className="p-3">
@@ -3390,7 +3521,7 @@ function SavedUploadsView({ submissions, invSubs = [], onRefresh, subSync = {}, 
   );
 }
 
-function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh, subSync = {}, invSubs = [], onReviewInvoice, onDeleteInvoice }) {
+function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh, subSync = {}, invSubs = [], onReviewInvoice, onDeleteInvoice, branch = 'all' }) {
   const [selected, setSelected] = useState(null);
   const [reviewNote, setReviewNote] = useState('');
   const [tab, setTab] = useState('pending');
@@ -3571,6 +3702,10 @@ function ManagerInboxView({ submissions, onReview, onDelete, feature, onRefresh,
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
                     style={{ background: kd.soft, color: kd.ink }}>{kd.label}</span>
                   <span className="text-[11.5px] font-bold tabular-nums" style={{ color: st.ink }}>{s.docNo || '—'}</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                    style={{ background: BRANCH_SOFT[String(s.branch || '1')], color: BRANCH_INK[String(s.branch || '1')] }}>
+                    {branchName(s.branch || '1')}
+                  </span>
                   <span className="ml-auto text-[11px] font-semibold text-slate-700 truncate">{s.counter}</span>
                 </div>
 
@@ -3935,7 +4070,7 @@ function Dashboard({ submissions, products, setView, isSupabaseReady, lastSyncAt
   );
 }
 
-function CompareStockView({ submissions, supabaseConfig, compareState, setCompareState }) {
+function CompareStockView({ submissions, supabaseConfig, compareState, setCompareState, branch = 'all' }) {
   const [cmpOpen, setCmpOpen] = useState({});   // การ์ดเปรียบเทียบ เริ่มต้นพับไว้
   const { selectedSub, compareData, loading, loadProgress, error, driveSaving, driveResult } = compareState;
   const set = (patch) => setCompareState(prev => ({ ...prev, ...patch }));
@@ -3971,7 +4106,8 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const inList = batch.map(c => encodeURIComponent(c)).join(',');
         const colCode = qc('รหัสสินค้า');
         const colSel = ['รหัสสินค้า','ชื่อสินค้า','หน่วย','รวม'].map(qc).join(',');
-        const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}`);
+        // ใบไหนนับสาขาไหน อ่านยอดของสาขานั้น (ถ้ายังไม่ตั้งคอลัมน์สาขา จะอ่านรวมเหมือนเดิม)
+        const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}${stockBranchFilter(sub.branch || '1')}`);
         stockRows = stockRows.concat(rows);
       }
       const sbMap = {};
@@ -4246,6 +4382,7 @@ function ReportView() {
   const [doc, setDoc] = useState('');
   const [barcode, setBarcode] = useState('');
   const [party, setParty] = useState('');
+  const [branch, setBranch] = useState('all');   // รายงานการนับ/บิลซื้อ กรองสาขาได้
   const [rows, setRows] = useState(null);
   const [cols, setCols] = useState([]);
   const [colFilter, setColFilter] = useState({});   // กรองรายคอลัมน์
@@ -4265,6 +4402,7 @@ function ReportView() {
           from: conf.needDate ? from : null,
           to:   conf.needDate ? to   : null,
           doc: doc || null, barcode: barcode || null, party: party || null,
+          branch: branch === 'all' ? null : branch,
           limit: 5000,
         }),
       });
@@ -4300,6 +4438,7 @@ function ReportView() {
     const meta = [
       [`รายงาน: ${conf.label}`],
       conf.needDate ? [`ช่วงวันที่: ${from} ถึง ${to}`] : ['ทั้งหมด (ไม่จำกัดวันที่)'],
+      [`สาขา: ${branch === 'all' ? 'ทุกสาขา' : branchName(branch)}`],
       [`ดึงเมื่อ: ${new Date().toLocaleString('th-TH')} · ${shown.length} แถว`],
       [],
       header,
@@ -4310,7 +4449,29 @@ function ReportView() {
     XLSX.utils.book_append_sheet(wb, ws, conf.label.slice(0, 30));
     const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     downloadBlob(new Blob([out], { type: 'application/octet-stream' }),
-      `report-${topic}-${todayISO()}.xlsx`);
+      `report-${topic}${branch === 'all' ? '' : '-สาขา' + branch}-${todayISO()}.xlsx`);
+  }
+
+  // แยกไฟล์ต่อสาขา — ส่งให้แต่ละสาขาดูของตัวเองได้ ไม่ต้องมาคัดเอง
+  function exportPerBranch() {
+    for (const b of BRANCHES()) {
+      const part = shown.filter(r => String(r.branch || '1') === b.id);
+      if (!part.length) continue;
+      const header = cols.map(k => COL_LABEL[k] || k);
+      const body = part.map(r => cols.map(k => (isNumCol(k) ? (Number(r[k]) || 0) : fmtCell(k, r[k]))));
+      const ws = XLSX.utils.aoa_to_sheet([
+        [`รายงาน: ${conf.label} — ${b.name}`],
+        conf.needDate ? [`ช่วงวันที่: ${from} ถึง ${to}`] : ['ทั้งหมด (ไม่จำกัดวันที่)'],
+        [`ดึงเมื่อ: ${new Date().toLocaleString('th-TH')} · ${part.length} แถว`],
+        [], header, ...body,
+      ]);
+      ws['!cols'] = cols.map(k => ({ wch: k === 'name' || k === 'description' ? 34 : 16 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, b.name.slice(0, 30));
+      const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      downloadBlob(new Blob([out], { type: 'application/octet-stream' }),
+        `report-${topic}-${b.name}-${todayISO()}.xlsx`);
+    }
   }
 
   function exportCsv() {
@@ -4318,7 +4479,7 @@ function ReportView() {
     const lines = [cols.map(k => esc(COL_LABEL[k] || k)).join(',')];
     for (const r of shown) lines.push(cols.map(k => esc(fmtCell(k, r[k]))).join(','));
     downloadBlob(new Blob(['\uFEFF' + lines.join('\n'), ], { type: 'text/csv;charset=utf-8' }),
-      `report-${topic}-${todayISO()}.csv`);
+      `report-${topic}${branch === 'all' ? '' : '-สาขา' + branch}-${todayISO()}.csv`);
   }
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -4400,6 +4561,23 @@ function ReportView() {
                 className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
+          {(topic === 'count' || topic === 'invoice') && (
+            <label className="block">
+              <span className="text-xs font-medium text-slate-500">สาขา</span>
+              <div className="mt-1 flex rounded-lg border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                {[{ id: 'all', label: 'ทุกสาขา' }, ...BRANCHES().map(b => ({ id: b.id, label: b.name }))].map((b, i) => {
+                  const on = branch === b.id;
+                  return (
+                    <button key={b.id} onClick={() => setBranch(b.id)} className="flex-1 font-semibold text-[12px]"
+                      style={{ minHeight: 38, borderLeft: i ? '1px solid #E4E6EA' : 'none',
+                               background: on ? BRANCH_SOFT[b.id] : '#fff', color: on ? BRANCH_INK[b.id] : '#94A3B8' }}>
+                      {b.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </label>
+          )}
           <label className="block">
             <span className="text-xs font-medium text-slate-500">รหัสสินค้า / ชื่อสินค้า</span>
             <input value={barcode} onChange={e => setBarcode(e.target.value)} placeholder="ทั้งหมด"
@@ -4458,6 +4636,13 @@ function ReportView() {
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white disabled:opacity-40 flex items-center gap-1">
                 <Download size={12} />CSV
               </button>
+              {(topic === 'count' || topic === 'invoice') && branch === 'all'
+                && new Set(shown.map(r => String(r.branch || '1'))).size > 1 && (
+                <button onClick={exportPerBranch}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white flex items-center gap-1">
+                  <FileSpreadsheet size={12} />Excel แยกสาขา
+                </button>
+              )}
               <button onClick={exportXlsx} disabled={!shown.length}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#35706A] hover:bg-[#2A5A55] text-white disabled:opacity-40 flex items-center gap-1">
                 <FileSpreadsheet size={12} />Excel
@@ -5029,6 +5214,7 @@ function InvoiceScannerModule({ supabaseConfig, currentUser, onOpenSent, onClose
           method:'POST', headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({ submission: {
             keyedById: currentUser.id, keyedBy: currentUser.name,
+            branch: String(currentUser.branch || '1'),
             reviseOf: revise?.id || null,
             deviceId: safeGet('deviceId','') || null,
             invoiceNo: d.invoice_no || null, invoiceDate: d.invoice_date || null,

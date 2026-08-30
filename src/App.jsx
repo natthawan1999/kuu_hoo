@@ -2366,7 +2366,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
 
   const cur = openId ? invSubs.find(s => s.id === openId) : null;
   const dirty = !!(q || bc || from || to || status !== 'all');
-  const COLS = '132px minmax(0,1fr) 96px 92px 46px 92px 20px';
+  const COLS = '124px minmax(96px,1fr) 78px 86px 40px 84px 18px';
 
   // ── ชั้นรายละเอียด ──
   if (cur) {
@@ -2489,7 +2489,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
         </div>
 
         {adv && (
-          <div className="grid gap-1.5 pt-0.5 border-t" style={{ gridTemplateColumns: '0.95fr 0.85fr 0.85fr 1.1fr', borderColor: '#F1F3F5' }}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5 border-t" style={{ borderColor: '#F1F3F5' }}>
             <label className="flex flex-col gap-1">
               <span className="text-[10.5px] font-semibold text-slate-500">สถานะ</span>
               <select value={status} onChange={e => setStatus(e.target.value)}
@@ -2502,7 +2502,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10.5px] font-semibold text-slate-500">วันที่บิล จาก</span>
+              <span className="text-[10.5px] font-semibold text-slate-500">บิลจาก</span>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)}
                 className="rounded-lg border text-[12px] text-slate-800 px-2"
                 style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
@@ -2543,8 +2543,8 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
             className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#2F6E90' }}>ไปบันทึกบิล</button>
         </div>
       ) : (
-        <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
-          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+        <div className="bg-white border rounded-xl overflow-x-auto" style={{ borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 'max-content', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
             {[['เลขที่เอกสาร', 0], ['ผู้ขาย', 0], ['วันที่บิล', 0], ['สถานะ', 0], ['จำนวน', 1], ['ยอดสุทธิ', 1], ['', 0]].map(([h, right], i) => (
               <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
             ))}
@@ -2556,7 +2556,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
             return (
               <button key={s.id} onClick={() => setOpenId(s.id)}
                 className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
-                style={{ gridTemplateColumns: COLS, boxSizing: 'border-box',
+                style={{ gridTemplateColumns: COLS, minWidth: 'max-content', boxSizing: 'border-box',
                          borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
                 <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s.docNo || '—'}</span>
                 <span className="min-w-0 text-[12.5px] font-semibold text-slate-800 truncate">{s.vendorName || 'ไม่ระบุผู้ขาย'}</span>
@@ -2618,7 +2618,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
 
   const cur = openId ? submissions.find(s2 => s2.id === openId) : null;
   const dirty = !!(q || bc || from || to || status !== 'all');
-  const COLS = '138px 104px 92px 52px 62px 20px';
+  const COLS = '126px 96px 86px 46px 56px 18px';
   const dt = (v, opt) => v ? new Date(v).toLocaleString('th-TH', opt || { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
 
   // ── ชั้นรายละเอียด ──
@@ -2740,7 +2740,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
         </div>
 
         {adv && (
-          <div className="grid gap-1.5 pt-0.5 border-t" style={{ gridTemplateColumns: '0.95fr 0.85fr 0.85fr 1.1fr', borderColor: '#F1F3F5' }}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5 border-t" style={{ borderColor: '#F1F3F5' }}>
             <label className="flex flex-col gap-1">
               <span className="text-[10.5px] font-semibold text-slate-500">สถานะ</span>
               <select value={status} onChange={e => setStatus(e.target.value)}
@@ -2753,7 +2753,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10.5px] font-semibold text-slate-500">วันที่ส่ง จาก</span>
+              <span className="text-[10.5px] font-semibold text-slate-500">ส่งจาก</span>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)}
                 className="rounded-lg border text-[12px] text-slate-800 px-2"
                 style={{ height: 34, borderColor: '#E4E6EA', boxSizing: 'border-box' }} />
@@ -2794,8 +2794,8 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
             className="text-white px-4 py-2.5 rounded-xl text-[13px] font-bold" style={{ background: '#35706A' }}>ไปนับสต็อก</button>
         </div>
       ) : (
-        <div className="bg-white border rounded-xl overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
-          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+        <div className="bg-white border rounded-xl overflow-x-auto" style={{ borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 'max-content', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
             {[['เลขที่เอกสาร', 0], ['ส่งเมื่อ', 0], ['สถานะ', 0], ['บาร์โค้ด', 1], ['รวมจำนวน', 1], ['', 0]].map(([h, right], i) => (
               <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
             ))}
@@ -2806,7 +2806,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
             return (
               <button key={s2.id} onClick={() => setOpenId(s2.id)}
                 className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
-                style={{ gridTemplateColumns: COLS, boxSizing: 'border-box',
+                style={{ gridTemplateColumns: COLS, minWidth: 'max-content', boxSizing: 'border-box',
                          borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
                 <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s2.docNo || '—'}</span>
                 <span className="text-[11.5px] text-slate-500 tabular-nums truncate">{dt(s2.submittedAt)}</span>
@@ -3018,13 +3018,19 @@ function LandingStatus({ onOpenManager, onOpenSync, db, onOpenDbSettings, onTest
                   ) : (
                     <>
                       <div className="divide-y" style={{ borderColor: '#F1F3F5' }}>
-                        {reports.map(r => {
+                        {reports.map((r, ri) => {
                           const short = r.missing > 0;
                           return (
-                            <div key={r.report} className="py-2">
+                            <div key={r.report + '|' + (r.branch || '') + ri} className="py-2">
                               <div className="flex items-center gap-2">
                                 <span className="rounded-full shrink-0" style={{ width: 6, height: 6, background: INK[r.state] || INK.unknown }} />
-                                <span className="flex-1 min-w-0 truncate text-[12px] font-semibold text-slate-800">{r.label || r.report}</span>
+                                <span className="min-w-0 truncate text-[12px] font-semibold text-slate-800">{r.label || r.report}</span>
+                                <span className="shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold"
+                                  style={{ background: BRANCH_SOFT[String(r.branch || '1').replace(/^0+/, '')] || '#F6F7F8',
+                                           color: BRANCH_INK[String(r.branch || '1').replace(/^0+/, '')] || '#475569' }}>
+                                  {branchName(String(r.branch || '1').replace(/^0+/, ''))}
+                                </span>
+                                <span className="flex-1" />
                                 <span className="text-[11.5px] tabular-nums shrink-0" style={{ color: short ? '#B91C1C' : '#2A5A55' }}>
                                   {r.rowsCsv !== null && r.rowsCsv !== r.rowsSent
                                     ? `${Number(r.rowsSent || 0).toLocaleString()} / ${r.rowsCsv.toLocaleString()} แถว`
@@ -3164,10 +3170,14 @@ function DataSyncView() {
             ) : d.reports.map(r => {
               const t = TONE[r.state] || TONE.unknown;
               const short = r.rowsCsv !== null && r.missing > 0;
+              const br = String(r.branch || '1').replace(/^0+/, '');
               return (
-                <div key={r.report} className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
+                <div key={r.report + '|' + br} className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
                   <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ background: t.soft, borderColor: '#ECEEF0' }}>
-                    <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-slate-900">{r.label || r.report}</span>
+                    <span className="min-w-0 truncate text-[13px] font-bold text-slate-900">{r.label || r.report}</span>
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold"
+                      style={{ background: BRANCH_SOFT[br] || '#F6F7F8', color: BRANCH_INK[br] || '#475569' }}>{branchName(br)}</span>
+                    <span className="flex-1" />
                     <span className="shrink-0 text-[10.5px] font-bold rounded-full px-2 py-1 bg-white" style={{ color: t.ink }}>{r.summary || t.label}</span>
                   </div>
                   <div className="p-3">

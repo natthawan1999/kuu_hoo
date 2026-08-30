@@ -4457,10 +4457,11 @@ const REPORT_TOPICS = [
 
 // หัวคอลัมน์ภาษาไทย — คีย์ตรงกับที่ /api/report ส่งกลับมา
 const COL_LABEL = {
+  branch: 'สาขา', barcode: 'บาร์โค้ด', master_code: 'รหัสหลัก (สต็อก)',
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
   product_code: 'รหัสสินค้า', barcode: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
-  price: 'ราคาขาย', cost: 'ทุนเฉลี่ย', margin: 'กำไร/ชิ้น', margin_pct: '% กำไร', category: 'ประเภท',
+  price: 'ราคาขาย', cost: 'ทุนเฉลี่ย', margin: 'กำไร/หน่วย', margin_pct: '% กำไร', category: 'ประเภท',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',
   discount: 'ส่วนลด', amount: 'จำนวนเงิน', vat: 'ภาษี', total: 'รวม',
@@ -4537,9 +4538,11 @@ function ReportView() {
       String(r[k] ?? '').toLowerCase().includes(v.trim().toLowerCase())));
   }, [rows, colFilter]);
 
+  // ราคาต่อหน่วย/ทุน/กำไร/% เอามาบวกกันไม่ได้ — รวมได้แต่จำนวนและยอดเงิน
+  const NO_SUM = ['price', 'cost', 'margin', 'margin_pct', 'price_ea'];
   const sums = useMemo(() => {
     const s = {};
-    for (const k of cols) if (isNumCol(k)) s[k] = shown.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    for (const k of cols) if (isNumCol(k) && !NO_SUM.includes(k)) s[k] = shown.reduce((a, r) => a + (Number(r[k]) || 0), 0);
     return s;
   }, [shown, cols]);
 

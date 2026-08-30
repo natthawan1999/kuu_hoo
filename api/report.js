@@ -4,6 +4,7 @@
 // เรียกจากหน้า Report Builder:
 //   POST /api/report
 //   { topic, from, to, doc, barcode, party, person, branch, limit, estimateOnly }
+//   limit: จำนวนแถวสูงสุด · 0 = ทั้งหมด (ระวังขนาด response)
 //   branch: '1' | '2' | ไม่ส่ง = ทุกสาขา
 //
 // topic: count | invoice | stock | price | in | out
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
   const {
     topic, from, to,
     doc = null, barcode = null, party = null, person = null, location = null, branch = null,
-    limit = 5000, estimateOnly = false,
+    limit = 50000, estimateOnly = false,
   } = req.body || {};
 
   if (!SB_URL || !SB_KEY) {
@@ -63,27 +64,41 @@ export default async function handler(req, res) {
   let args;
   if (topic === 'count') {
     args = { p_from: from, p_to: to, p_doc: nz(doc), p_barcode: nz(barcode),
-             p_counter: nz(person), p_branch: nz(branch), p_limit: limit };
+             p_counter: nz(person), p_branch: nz(branch), p_limit: (Number(limit) === 0 ? 100000000 : limit) };
   } else if (topic === 'invoice') {
     args = { p_from: from, p_to: to, p_doc: nz(doc), p_barcode: nz(barcode),
-             p_vendor: nz(party), p_keyed_by: nz(person), p_branch: nz(branch), p_limit: limit };
+             p_vendor: nz(party), p_keyed_by: nz(person), p_branch: nz(branch), p_limit: (Number(limit) === 0 ? 100000000 : limit) };
   } else if (topic === 'price') {
     // ราคาปัจจุบัน — ไม่ผูกวันที่ · party = ประเภทสินค้า
-    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: limit };
+    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: (Number(limit) === 0 ? 100000000 : limit) };
   } else if (topic === 'stock') {
     // รายงานคงเหลือ: location = ประเภทสินค้า (products_view.category)
-    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: limit };
+    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: (Number(limit) === 0 ? 100000000 : limit) };
   } else {
     args = { p_kind: topic, p_from: from, p_to: to, p_doc: nz(doc),
-             p_barcode: nz(barcode), p_party: nz(party), p_branch: nz(branch), p_limit: limit };
+             p_barcode: nz(barcode), p_party: nz(party), p_branch: nz(branch), p_limit: (Number(limit) === 0 ? 100000000 : limit) };
   }
 
-  const { data, error } = await client().rpc(FN[topic], args);
-  if (error) return res.status(500).json({ error: error.message });
+  // ดึงเป็นช่วง ๆ ต่อกันจนครบ limit ที่ขอ (db-max-rows ตั้งไว้ 1M แล้ว แต่ยังแบ่งหน้าไว้
+  // เพื่อไม่ให้ response ก้อนเดียวใหญ่เกินขนาดที่ Vercel ส่งได้)
+  // limit = 0 → เอาทั้งหมด ไม่มีเพดาน (ใช้กับปุ่มดาวน์โหลดไฟล์)
+  const PAGE = 10000;
+  const noCap = Number(limit) === 0;
+  const want = noCap ? Number.MAX_SAFE_INTEGER : Math.max(1, Number(limit) || 50000);
+  const rows = [];
+  for (let from2 = 0; from2 < want; from2 += PAGE) {
+    const to2 = Math.min(from2 + PAGE, want) - 1;
+    const { data, error } = await client().rpc(FN[topic], args).range(from2, to2);
+    if (error) return res.status(500).json({ error: error.message });
+    const chunk = data || [];
+    rows.push(...chunk);
+    if (chunk.length < to2 - from2 + 1) break;   // หมดข้อมูลแล้ว
+  }
 
   return res.status(200).json({
-    rows: data || [],
-    count: (data || []).length,
-    columns: data && data.length ? Object.keys(data[0]) : [],
+    rows,
+    count: rows.length,
+    truncated: !noCap && rows.length >= want,
+    columns: rows.length ? Object.keys(rows[0]) : [],
   });
 }

@@ -4526,6 +4526,7 @@ function ReportView() {
   const [barcode, setBarcode] = useState('');
   const [party, setParty] = useState('');
   const [branch, setBranch] = useState('all');   // รายงานการนับ/บิลซื้อ กรองสาขาได้
+  const [truncated, setTruncated] = useState(false);   // ผลชนเพดาน 50,000 แถว
   const [rows, setRows] = useState(null);
   const [cols, setCols] = useState([]);
   const [colFilter, setColFilter] = useState({});   // กรองรายคอลัมน์
@@ -4546,13 +4547,14 @@ function ReportView() {
           to:   conf.needDate ? to   : null,
           doc: doc || null, barcode: barcode || null, party: party || null,
           branch: branch === 'all' ? null : branch,
-          limit: 5000,
+          limit: 50000,
         }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || 'ดึงข้อมูลไม่สำเร็จ');
       setRows(j.rows || []);
       setCols(j.columns || (j.rows?.[0] ? Object.keys(j.rows[0]) : []));
+      setTruncated(!!j.truncated);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -4617,6 +4619,50 @@ function ReportView() {
       downloadBlob(new Blob([out], { type: 'application/octet-stream' }),
         `report-${topic}-${b.name}-${todayISO()}.xlsx`);
     }
+  }
+
+  const [dl, setDl] = useState('');
+  // ดาวน์โหลดทั้งหมดโดยไม่ผ่านตารางบนจอ — ใช้เมื่อข้อมูลเกินเพดานที่แสดงได้
+  async function exportAll(kind) {
+    setDl(kind); 
+    try {
+      const res = await fetch('/api/report', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          topic, from: conf.needDate ? from : null, to: conf.needDate ? to : null,
+          doc: doc || null, barcode: barcode || null, party: party || null,
+          branch: branch === 'all' ? null : branch,
+          limit: 0,   // ทั้งหมด
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'ดึงข้อมูลไม่สำเร็จ');
+      const all = j.rows || [];
+      const ks = j.columns || (all[0] ? Object.keys(all[0]) : []);
+      const head = ks.map(k => COL_LABEL[k] || k);
+      if (kind === 'csv') {
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const lines = [head.map(esc).join(',')];
+        for (const rw of all) lines.push(ks.map(k => esc(fmtCell(k, rw[k]))).join(','));
+        downloadBlob(new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }),
+          `report-${topic}-ทั้งหมด-${todayISO()}.csv`);
+      } else {
+        const ws = XLSX.utils.aoa_to_sheet([
+          [`รายงาน: ${conf.label}${branch === 'all' ? '' : ' — ' + branchName(branch)}`],
+          conf.needDate ? [`ช่วงวันที่: ${from} ถึง ${to}`] : ['ทั้งหมด (ไม่จำกัดวันที่)'],
+          [`ดึงเมื่อ: ${new Date().toLocaleString('th-TH')} · ${all.length} แถว`],
+          [], head,
+          ...all.map(rw => ks.map(k => (isNumCol(k) ? (Number(rw[k]) || 0) : fmtCell(k, rw[k])))),
+        ]);
+        ws['!cols'] = ks.map(k => ({ wch: k === 'name' || k === 'description' ? 34 : 16 }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, conf.label.slice(0, 30));
+        const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        downloadBlob(new Blob([out], { type: 'application/octet-stream' }),
+          `report-${topic}-ทั้งหมด-${todayISO()}.xlsx`);
+      }
+    } catch (e) { setErr(e.message); }
+    setDl('');
   }
 
   function exportCsv() {
@@ -4776,6 +4822,19 @@ function ReportView() {
                   className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-600 hover:bg-white flex items-center gap-1">
                   <X size={12} />ล้างตัวกรอง
                 </button>
+              )}
+              {truncated && (
+                <>
+                  <span className="text-[11px] font-bold rounded-lg px-2 py-1" style={{ background: '#FFFBEB', color: '#B45309' }}>
+                    แสดงได้ 50,000 แถว — มีมากกว่านี้
+                  </span>
+                  <button onClick={() => exportAll('xlsx')} disabled={!!dl}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-50 flex items-center gap-1"
+                    style={{ background: '#B45309' }}>
+                    {dl === 'xlsx' ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                    {dl === 'xlsx' ? 'กำลังดึงทั้งหมด…' : 'ดาวน์โหลดทั้งหมด'}
+                  </button>
+                </>
               )}
               <button onClick={exportCsv} disabled={!shown.length}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white disabled:opacity-40 flex items-center gap-1">

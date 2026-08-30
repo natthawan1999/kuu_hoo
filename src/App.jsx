@@ -147,6 +147,45 @@ function useWinWidth() {
   return w;
 }
 
+// บาร์โค้ดที่ยิงมาอาจเป็น: รหัสสินค้า · บาร์โค้ดหลัก · บาร์โค้ด-1..5 · บาร์โค้ดผู้ขาย · บาร์โค้ดแพ็ค
+// product_barcode (view) รวมทุกช่องไว้แล้ว — ค้นที่นี่ก่อน ได้รหัสสินค้าจริงกลับมา
+// product_pack = บาร์โค้ดแพ็ค → รหัสจริง + ยิง 1 ครั้งตัดกี่หน่วย
+// 🔴 แพ็ค/ลังเป็นแถวแยกใน product_master แต่ "ไม่มีสต็อกของตัวเอง"
+// สต็อกอยู่ที่ "รหัสหลัก" (xProduct) รหัสเดียว แล้วใช้ "ตัวคูณสต็อก" แปลงเป็นชิ้น
+// ~11% ของสินค้าเป็นแถวแพ็ค — ถ้าเก็บด้วยรหัสแพ็ค สต็อกจะแตกเป็น 2 ก้อน ไม่ตรง POS
+async function resolveBarcode(base, h, scanned, branch) {
+  const brFilter = stockBranchFilter(branch);
+  const sel = encodeURIComponent('"รหัสสินค้า","ชื่อสินค้า","ราคา-1","ทุนเฉลี่ย","หน่วยนับ","ตัวคูณสต็อก","รหัสหลัก","เป็นแพ็ค","คงเหลือ"');
+  const pick = (d) => ({
+    code: String(d['รหัสสินค้า'] || ''),
+    // รหัสที่ใช้เก็บ/นับสต็อกเสมอ
+    masterCode: String(d['รหัสหลัก'] || d['รหัสสินค้า'] || ''),
+    ratio: Number(d['ตัวคูณสต็อก']) || 1,
+    isPack: !!d['เป็นแพ็ค'],
+    onHandPieces: d['คงเหลือ'] == null ? null : Number(d['คงเหลือ']),
+    name: d['ชื่อสินค้า'] || '',
+    unit: d['หน่วยนับ'] || '',
+    price: Number(d['ราคา-1']) || 0,
+    cost: Number(d['ทุนเฉลี่ย']) || 0,
+  });
+  try {
+    const bcol = encodeURIComponent('"บาร์โค้ด"');
+    const r = await fetch(`${base}/rest/v1/product_barcode?${bcol}=eq.${encodeURIComponent(scanned)}${brFilter}&select=${sel}&limit=2`, { headers: h });
+    if (r.ok) {
+      const d = await r.json();
+      // ชนกันหลายสินค้า = เดาไม่ได้ เตือนคน ไม่หยิบตัวแรกมั่ว
+      if (d.length) return { ...pick(d[0]), conflict: d.length > 1 ? d.length : null };
+    }
+  } catch {}
+  // ยิงด้วยรหัสสินค้าตรง ๆ (ไม่ใช่บาร์โค้ด) — view ค้นด้วยรหัสไม่ได้ ต้องมาทางนี้
+  try {
+    const ccol = encodeURIComponent('"รหัสสินค้า"');
+    const r = await fetch(`${base}/rest/v1/product_barcode?${ccol}=eq.${encodeURIComponent(scanned)}${brFilter}&select=${sel}&limit=1`, { headers: h });
+    if (r.ok) { const d = await r.json(); if (d.length) return pick(d[0]); }
+  } catch {}
+  return null;
+}
+
 async function supabaseFindProduct(cfg, code, branch = '') {
   const { url, anonKey, tableName, stockTableName } = cfg;
   if (!url || !anonKey) return null;
@@ -156,10 +195,20 @@ async function supabaseFindProduct(cfg, code, branch = '') {
   const priceTable = tableName || 'product_price';
   const stockTable = stockTableName || 'product_stock';
 
+  // แปลงบาร์โค้ดเป็นรหัสสินค้าก่อน — ยิงบาร์โค้ดสำรองหรือบาร์โค้ดแพ็คก็หาเจอ
+  const hit = await resolveBarcode(base, h, code, branch);
+  const lookupCode = hit?.code || code;            // ราคาผูกกับหน่วยที่ยิง
+  const stockCode = hit?.masterCode || lookupCode;  // สต็อกผูกกับรหัสหลักเสมอ
+  const extra = hit ? {
+    _scannedBarcode: code, _masterCode: hit.masterCode, _stockRatio: hit.ratio,
+    _isPack: hit.isPack, _onHandPieces: hit.onHandPieces, _barcodeConflict: hit.conflict || null,
+    _unit: hit.unit, _name: hit.name, _price: hit.price, _cost: hit.cost,
+  } : {};
+
   // Query both tables in parallel
   const [priceRes, stockRes] = await Promise.all([
-    fetch(`${base}/rest/v1/${priceTable}?${col}=eq.${encodeURIComponent(code)}&limit=1`, { headers: h }),
-    fetch(`${base}/rest/v1/${stockTable}?${col}=eq.${encodeURIComponent(code)}${stockBranchFilter(branch)}&limit=1`, { headers: h }),
+    fetch(`${base}/rest/v1/${priceTable}?${col}=eq.${encodeURIComponent(lookupCode)}${stockBranchFilter(branch)}&limit=1`, { headers: h }),
+    fetch(`${base}/rest/v1/${stockTable}?${col}=eq.${encodeURIComponent(stockCode)}${stockBranchFilter(branch)}&limit=1`, { headers: h }),
   ]);
 
   let priceRow = null, stockRow = null;
@@ -171,7 +220,7 @@ async function supabaseFindProduct(cfg, code, branch = '') {
     return null;
   }
   // Merge: prefer price row fields, fill missing from stock row
-  return { ...(stockRow||{}), ...(priceRow||{}) };
+  return { ...(stockRow||{}), ...(priceRow||{}), ...extra };
 }
 
 function mapSupabaseRow(row, fallbackCode) {
@@ -183,15 +232,24 @@ function mapSupabaseRow(row, fallbackCode) {
     return '';
   };
   const id = String(get('รหัสสินค้า', 'product_code', 'code', 'id') || fallbackCode || '');
+  const num = (v) => parseFloat(String(v ?? '0').replace(/[^\d.-]/g, '')) || 0;
   return {
     source: 'supabase', id,
-    barcode: String(get('บาร์โค้ด', 'barcode') || id || fallbackCode || ''),
+    barcode: String(row._scannedBarcode || get('บาร์โค้ด', 'barcode') || id || fallbackCode || ''),
     productCode: id,
-    name: String(get('ชื่อสินค้า', 'product_name', 'name') || '(ไม่มีชื่อ)'),
+    // หน่วย/ราคา/ชื่อ ต้องเป็นของหน่วยที่ยิง (1x6, 1x36) ไม่ใช่ของรหัสหลัก
+    name: String(row._name || get('ชื่อสินค้า', 'product_name', 'name') || '(ไม่มีชื่อ)'),
     category: String(get('ประเภท', 'category') || 'อื่นๆ'),
-    unit: String(get('หน่วย', 'unit') || 'ชิ้น'),
-    price: parseFloat(String(get('ราคา', 'price', 'ราคาขาย') || '0').replace(/[^\d.-]/g, '')) || 0,
-    cost:  parseFloat(String(get('ทุนเฉลี่ย', 'ต้นทุน', 'cost', 'ราคาทุน') || '0').replace(/[^\d.-]/g, '')) || 0,
+    unit: String(row._unit || get('หน่วยนับ', 'หน่วย', 'unit') || 'ชิ้น'),
+    price: row._price || num(get('ราคา', 'price', 'ราคาขาย')),
+    cost:  row._cost  || num(get('ทุนเฉลี่ย', 'ต้นทุน', 'cost', 'ราคาทุน')),
+    // ยิงบาร์โค้ดสำรอง/แพ็ค — เก็บตัวที่ยิงจริงไว้ ไม่ให้กลายเป็นบาร์โค้ดหลักเงียบ ๆ
+    scannedBarcode: row._scannedBarcode || '',
+    masterCode: row._masterCode || id,          // รหัสที่สต็อกอยู่จริง
+    stockRatio: Number(row._stockRatio) || 1,   // 1 หน่วยนี้ = กี่ชิ้น
+    isPack: !!row._isPack,
+    onHandPieces: row._onHandPieces ?? null,
+    barcodeConflict: row._barcodeConflict || null,
   };
 }
 
@@ -585,13 +643,16 @@ function buildInvoiceXlsxBase64(inv) {
 // RC — บันทึกมือ: barcode,qty,price,0 (ไม่มีหัวคอลัมน์)
 function buildRecorderCsv(rows) {
   return (rows || []).map(d => [
-    d.barcode || '', Number(d.qty) || 0, Number(d.price) || 0, 0,
+    // รหัสหลัก + จำนวนชิ้น — POS เก็บสต็อกที่รหัสหลักรหัสเดียว
+    d.masterCode || d.barcode || '',
+    d.pieces != null ? Number(d.pieces) : (Number(d.qty) || 0) * (Number(d.stockRatio) || 1),
+    Number(d.price) || 0, 0,
   ].join(',')).join('\r\n');
 }
 
 // ST — ปรับยอด: barcode,adjust_stock (+/- ให้ตรงสต็อกจริง · ว่างถ้าไม่พบในระบบ)
 async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock', branch = '1') {
-  const codes = [...new Set((rows || []).map(d => String(d.barcode || '')).filter(Boolean))];
+  const codes = [...new Set((rows || []).map(d => String(d.masterCode || d.barcode || '')).filter(Boolean))];
   const onHand = {};
   if (sbUrl && sbKey && codes.length) {
     const h = { apikey: sbKey, Authorization: `Bearer ${sbKey}` };
@@ -609,9 +670,10 @@ async function buildAdjustCsv(rows, sbUrl, sbKey, stockTable = 'product_stock', 
   // รวมบาร์โค้ดซ้ำก่อน — นับหลายรอบต้องเป็นยอดเดียว
   const counted = {};
   for (const d of rows || []) {
-    const bc = String(d.barcode || '');
+    const bc = String(d.masterCode || d.barcode || '');
     if (!bc) continue;
-    counted[bc] = (counted[bc] || 0) + (Number(d.qty) || 0);
+    const pieces = d.pieces != null ? Number(d.pieces) : (Number(d.qty) || 0) * (Number(d.stockRatio) || 1);
+    counted[bc] = (counted[bc] || 0) + pieces;
   }
   const lines = Object.keys(counted).map(bc => {
     const cur = onHand[bc];
@@ -848,6 +910,10 @@ export default function CombinedApp() {
       id: `e${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
       featureType: currentUser?.feature || 'recorder',
       barcode: entry.barcode, productName: entry.productName, productId: entry.productId || '',
+      // สต็อกอยู่ที่รหัสหลัก · ตัวคูณแปลงหน่วยที่ยิงเป็นชิ้น (แพ็ค 1x6 → 6)
+      masterCode: entry.masterCode || entry.productId || entry.barcode,
+      stockRatio: Number(entry.stockRatio) || 1,
+      isPack: !!entry.isPack,
       unit: entry.unit || '', price: entry.price || 0, cost: entry.cost || 0,
       qty: parseInt(entry.qty) || 0, notFound: !!entry.notFound,
       location: entry.location || '',
@@ -1766,7 +1832,9 @@ function CounterCountView({ revise, onCancelRevise, entries, addEntry, deleteEnt
 
   const handleAdd = () => {
     if (!checkResult || !qty || parseInt(qty) <= 0) return;
-    addEntry({ barcode: checkResult.barcode, productName: checkResult.name, productId: checkResult.id, unit: checkResult.unit, price: checkResult.price || 0, cost: checkResult.cost || 0, qty: parseInt(qty), countDate, location: location.trim() });
+    addEntry({ barcode: checkResult.barcode, productName: checkResult.name, productId: checkResult.id,
+      masterCode: checkResult.masterCode || checkResult.id, stockRatio: checkResult.stockRatio || 1, isPack: !!checkResult.isPack,
+      unit: checkResult.unit, price: checkResult.price || 0, cost: checkResult.cost || 0, qty: parseInt(qty), countDate, location: location.trim() });
     updateDraft({ barcode: '', qty: '', checkResult: null, error: '' });
     setTimeout(() => barcodeInputRef.current?.focus(), 100);
   };
@@ -1861,11 +1929,30 @@ function CounterCountView({ revise, onCancelRevise, entries, addEntry, deleteEnt
           <div className="px-3 py-2.5 border-b" style={{ background: T.soft, borderColor: '#d5e5e2' }}>
             <div className="text-[10.5px] font-semibold" style={{ color: T.deep }}>พบสินค้าในฐานข้อมูล</div>
             <div className="text-[15px] font-bold text-slate-800 mt-0.5">{checkResult.name}</div>
-            <div className="flex gap-2.5 mt-1 text-[11px] text-slate-500">
+            <div className="flex gap-2.5 mt-1 text-[11px] text-slate-500 flex-wrap">
               <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{checkResult.productCode}</span>
               {checkResult.unit && <span>หน่วย: {checkResult.unit}</span>}
               {checkResult.price ? <span>฿{checkResult.price}</span> : null}
             </div>
+            {/* ยิงบาร์โค้ดสำรอง — บอกว่าเป็นสินค้าตัวเดียวกัน ไม่ให้คิดว่ายิงผิด */}
+            {checkResult.scannedBarcode && checkResult.scannedBarcode !== checkResult.productCode && (
+              <div className="text-[10.5px] mt-1" style={{ color: T.deep }}>
+                ยิง <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{checkResult.scannedBarcode}</span> → รหัส {checkResult.productCode}
+              </div>
+            )}
+            {checkResult.stockRatio > 1 && (
+              <div className="text-[11px] font-bold mt-1 rounded-lg px-2 py-1" style={{ background: '#FFFBEB', color: '#B45309' }}>
+                {checkResult.unit || 'แพ็ค'} · นับ 1 = {checkResult.stockRatio} ชิ้น
+                {checkResult.masterCode && checkResult.masterCode !== checkResult.productCode && (
+                  <span> · สต็อกอยู่ที่รหัส {checkResult.masterCode}</span>
+                )}
+              </div>
+            )}
+            {checkResult.barcodeConflict > 1 && (
+              <div className="text-[11px] font-bold mt-1 rounded-lg px-2 py-1" style={{ background: '#FEF2F2', color: '#B91C1C' }}>
+                บาร์โค้ดนี้ผูกกับสินค้า {checkResult.barcodeConflict} รายการ — เช็คให้ตรงก่อนนับ
+              </div>
+            )}
           </div>
           <div className="p-3 space-y-3">
             <div>
@@ -2041,10 +2128,26 @@ function CounterReviewView({ entries, setView, submitForReview, clearMyEntries, 
   const grouped = useMemo(() => {
     const map = new Map();
     [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(e => {
-      if (map.has(e.barcode)) { const ex = map.get(e.barcode); ex.qty += e.qty; ex.scans += 1; }
-      else map.set(e.barcode, { barcode: e.barcode, productName: e.productName, unit: e.unit||'', price: e.price||0, cost: e.cost||0, qty: e.qty, scans: 1, scannedAt: e.timestamp, notFound: !!e.notFound, location: e.location||'' });
+      // แพ็คกับชิ้นของตระกูลเดียวกันต้องรวมเป็นก้อนเดียว — สต็อกใน POS มีก้อนเดียว
+      const key = e.masterCode || e.barcode;
+      const pieces = (Number(e.qty) || 0) * (Number(e.stockRatio) || 1);
+      if (map.has(key)) {
+        const ex = map.get(key);
+        ex.qty += e.qty; ex.pieces += pieces; ex.scans += 1;
+        if (e.isPack) ex.hasPack = true; else ex.hasEach = true;
+      } else map.set(key, {
+        barcode: e.barcode, masterCode: key, stockRatio: Number(e.stockRatio) || 1,
+        pieces, hasPack: !!e.isPack, hasEach: !e.isPack,
+        productName: e.productName, unit: e.unit||'', price: e.price||0, cost: e.cost||0,
+        qty: e.qty, scans: 1, scannedAt: e.timestamp, notFound: !!e.notFound, location: e.location||'',
+      });
     });
-    return Array.from(map.values()).map(g => ({ ...g, qty: qtyOverrides[g.barcode] !== undefined ? qtyOverrides[g.barcode] : g.qty, overridden: qtyOverrides[g.barcode] !== undefined })).sort((a, b) => a.barcode.localeCompare(b.barcode));
+    return Array.from(map.values()).map(g => {
+      const ov = qtyOverrides[g.barcode];
+      const qty = ov !== undefined ? ov : g.qty;
+      // แก้จำนวนมือแล้ว ชิ้นต้องคิดใหม่จากตัวคูณ ไม่ใช้ยอดที่รวมไว้
+      return { ...g, qty, pieces: ov !== undefined ? qty * (g.stockRatio || 1) : g.pieces, overridden: ov !== undefined };
+    }).sort((a, b) => a.barcode.localeCompare(b.barcode));
   }, [entries, qtyOverrides]);
   const totalItems = grouped.length, totalQty = grouped.reduce((s, g) => s + g.qty, 0);
   const handleSubmit = async () => {
@@ -4080,13 +4183,19 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
   const fetchAndCompare = async (sub) => {
     const now = new Date().toISOString();
     set({ selectedSub: sub, loading: true, error: '', compareData: [], driveResult: null, compareAt: now });
+    // เทียบยอดต้องคิดเป็น "ชิ้น" ที่รหัสหลัก — สต็อกใน POS มีก้อนเดียวต่อตระกูล
+    // ใบเก่าก่อนมีตัวคูณ ไม่มี masterCode/pieces → ถือว่าเป็นชิ้น ตัวคูณ 1
     const groupedByBarcode = {};
     sub.data.forEach(d => {
-      if (!groupedByBarcode[d.barcode]) {
-        groupedByBarcode[d.barcode] = { barcode: d.barcode, productName: d.productName, unit: d.unit||'', qty: 0, scannedAt: d.scannedAt, locations: [], notFound: !!d.notFound };
+      const key = d.masterCode || d.barcode;
+      const pieces = d.pieces != null ? Number(d.pieces) : (Number(d.qty) || 0) * (Number(d.stockRatio) || 1);
+      if (!groupedByBarcode[key]) {
+        groupedByBarcode[key] = { barcode: key, scannedCode: d.barcode, productName: d.productName,
+          unit: (Number(d.stockRatio) || 1) > 1 ? 'ชิ้น' : (d.unit || ''),
+          qty: 0, scannedAt: d.scannedAt, locations: [], notFound: !!d.notFound };
       }
-      const g = groupedByBarcode[d.barcode];
-      g.qty += d.qty;
+      const g = groupedByBarcode[key];
+      g.qty += pieces;
       if (d.scannedAt && (!g.scannedAt || d.scannedAt < g.scannedAt)) g.scannedAt = d.scannedAt;
       if (d.location && !g.locations.includes(d.location)) g.locations.push(d.location);
     });
@@ -4107,7 +4216,7 @@ function CompareStockView({ submissions, supabaseConfig, compareState, setCompar
         const colCode = qc('รหัสสินค้า');
         const colSel = ['รหัสสินค้า','ชื่อสินค้า','หน่วย','รวม'].map(qc).join(',');
         // ใบไหนนับสาขาไหน อ่านยอดของสาขานั้น (ถ้ายังไม่ตั้งคอลัมน์สาขา จะอ่านรวมเหมือนเดิม)
-        const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}${stockBranchFilter(sub.branch || '1')}`);
+        const rows = await sbFetch(sbUrl, sbKey, table, `${colCode}=in.(${inList})&select=${colSel}${stockBranchFilter(sub.branch || '1')}`);   // codes = รหัสหลักแล้ว
         stockRows = stockRows.concat(rows);
       }
       const sbMap = {};
@@ -4341,6 +4450,7 @@ const REPORT_TOPICS = [
   { id: 'count',   label: 'การนับ',        needDate: true,  group: 'app', edge: '#22C55E', hint: 'เลขที่ใบ · ผู้นับ · วันที่' },
   { id: 'invoice', label: 'บิลซื้อ',        needDate: true,  group: 'app', edge: '#22C55E', hint: 'เลขที่บิล · ผู้ขาย' },
   { id: 'stock',   label: 'สินค้าคงเหลือ',  needDate: false, group: 'pos', edge: '#F59E0B', hint: 'รหัสสินค้า · ประเภท' },
+  { id: 'price',   label: 'ราคาสินค้า',     needDate: false, group: 'pos', edge: '#F59E0B', hint: 'ราคาขาย · ทุน · กำไร' },
   { id: 'in',      label: 'ซื้อเข้า',       needDate: true,  group: 'pos', edge: '#F59E0B', hint: 'เลขที่ใบรับ · ผู้ขาย' },
   { id: 'out',     label: 'ขายออก',        needDate: true,  group: 'pos', edge: '#F59E0B', hint: 'เลขที่บิลขาย · ลูกค้า' },
 ];
@@ -4350,13 +4460,14 @@ const COL_LABEL = {
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
   product_code: 'รหัสสินค้า', barcode: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
+  price: 'ราคาขาย', cost: 'ทุนเฉลี่ย', margin: 'กำไร/ชิ้น', margin_pct: '% กำไร', category: 'ประเภท',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',
   discount: 'ส่วนลด', amount: 'จำนวนเงิน', vat: 'ภาษี', total: 'รวม',
   on_hand: 'คงเหลือ', occurred_at: 'วันเวลา', kind: 'ประเภท', party: 'ผู้ขาย / ลูกค้า',
 };
 
-const isNumCol = (k) => ['qty','ea','price_ea','discount','amount','total','on_hand'].includes(k);
+const isNumCol = (k) => ['qty','ea','price_ea','discount','amount','total','on_hand','price','cost','margin','margin_pct'].includes(k);
 const isDateCol = (k) => ['counted_at','occurred_at','invoice_date'].includes(k);
 
 function fmtCell(k, v) {
@@ -4455,7 +4566,7 @@ function ReportView() {
   // แยกไฟล์ต่อสาขา — ส่งให้แต่ละสาขาดูของตัวเองได้ ไม่ต้องมาคัดเอง
   function exportPerBranch() {
     for (const b of BRANCHES()) {
-      const part = shown.filter(r => String(r.branch || '1') === b.id);
+      const part = shown.filter(r => String(r.branch || '1').replace(/^0+/, '') === b.id);
       if (!part.length) continue;
       const header = cols.map(k => COL_LABEL[k] || k);
       const body = part.map(r => cols.map(k => (isNumCol(k) ? (Number(r[k]) || 0) : fmtCell(k, r[k]))));
@@ -4561,7 +4672,7 @@ function ReportView() {
                 className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
-          {(topic === 'count' || topic === 'invoice') && (
+          {(
             <label className="block">
               <span className="text-xs font-medium text-slate-500">สาขา</span>
               <div className="mt-1 flex rounded-lg border overflow-hidden" style={{ borderColor: '#E4E6EA' }}>
@@ -4592,7 +4703,7 @@ function ReportView() {
                 className="mt-1 w-full border border-[#E4E6EA] rounded-lg px-3 py-2 text-sm" />
             </label>
           )}
-          {topic === 'stock' && (
+          {(topic === 'stock' || topic === 'price') && (
             <label className="block">
               <span className="text-xs font-medium text-slate-500">ประเภทสินค้า</span>
               <input value={party} onChange={e => setParty(e.target.value)} placeholder="ทั้งหมด"
@@ -4636,7 +4747,7 @@ function ReportView() {
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white disabled:opacity-40 flex items-center gap-1">
                 <Download size={12} />CSV
               </button>
-              {(topic === 'count' || topic === 'invoice') && branch === 'all'
+              {branch === 'all' && cols.includes('branch')
                 && new Set(shown.map(r => String(r.branch || '1'))).size > 1 && (
                 <button onClick={exportPerBranch}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#E4E6EA] text-slate-700 hover:bg-white flex items-center gap-1">

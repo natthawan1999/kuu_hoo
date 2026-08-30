@@ -6,7 +6,7 @@
 //   GET /api/sync-status?runs=60 → ขอประวัติมากกว่าเดิม (ดีฟอลต์ 30)
 //
 // ตารางที่ใช้:
-//   sync_log(id, run_at, report, data_date, rows_csv, rows_sent, status, error_msg, duration_sec)
+//   sync_log(id, run_at, report, สาขา, data_date, rows_source, rows_sent, status, error_msg, duration_sec, mode)
 //   sync_status (view) — คอลัมน์ชื่อไทย: ซิงก์ล่าสุด · วันที่ข้อมูล · สถานะ · จำนวนแถว · ชั่วโมงที่ผ่านมา · สรุป · ข้อความ_error
 //   upload_summary() — จาก sql/13-drive-status.sql (ถ้ายังไม่รัน จะข้ามส่วนนี้ไป)
 
@@ -61,9 +61,10 @@ export default async function handler(req, res) {
     // ประวัติรอบซิงก์ — เอาไว้หารอบที่ fail และเทียบจำนวนแถว
     const log = await sb(`sync_log?select=*&order=run_at.desc&limit=${runLimit}`);
     const runs = (log || []).map(r => {
-      const csv = n(r.rows_csv), sent = n(r.rows_sent);
+      const branch = (r['สาขา'] ?? r.branch) != null ? String(r['สาขา'] ?? r.branch) : null;
+      const csv = n(r.rows_csv ?? r.rows_source), sent = n(r.rows_sent);
       return {
-        id: r.id, report: r.report, runAt: r.run_at, dataDate: r.data_date,
+        id: r.id, report: r.report, branch, runAt: r.run_at, dataDate: r.data_date,
         rowsCsv: csv, rowsSent: sent,
         missing: csv !== null && sent !== null ? Math.max(csv - sent, 0) : null,
         status: r.status, error: r.error_msg || '',
@@ -74,14 +75,17 @@ export default async function handler(req, res) {
     // สถานะปัจจุบันรายรีพอร์ต — ใช้ view ถ้าอ่านได้ ไม่ได้ก็สรุปจาก sync_log เอง
     let reports = [];
     try {
-      const view = await sb('sync_status?select=*');
+      const view = await sb('sync_status?select=*&order=report.asc');
       reports = (view || []).map(v => {
-        const latest = runs.find(x => x.report === v.report);
+        const vBranch = String(v['สาขา'] ?? v.branch ?? '01');
+        // จับคู่รอบล่าสุดให้ตรงสาขา — ไม่งั้นแถวสาขา 2 จะไปหยิบตัวเลขของสาขา 1
+        const latest = runs.find(x => x.report === v.report && (x.branch == null || x.branch === vBranch));
         const src  = n(v['แถวต้นทาง'])  ?? latest?.rowsCsv  ?? null;
         const sent = n(v['แถวสำเร็จ'])   ?? latest?.rowsSent ?? null;
         const miss = n(v['แถวที่หาย'])   ?? latest?.missing  ?? null;
         const base = {
           report: v.report,
+          branch: vBranch,
           lastRunAt: v['ซิงก์ล่าสุด'] || null,
           dataDate: v['วันที่ข้อมูล'] || null,
           status: v['สถานะ'] || null,
@@ -100,16 +104,17 @@ export default async function handler(req, res) {
     } catch {
       const seen = new Set();
       for (const r of runs) {
-        if (seen.has(r.report)) continue;
-        seen.add(r.report);
+        const key = r.report + '|' + (r.branch || '01');   // 1 แถวต่อรีพอร์ตต่อสาขา
+        if (seen.has(key)) continue;
+        seen.add(key);
         const hoursAgo = r.runAt ? Math.round((Date.now() - new Date(r.runAt).getTime()) / 3600000) : null;
-        const base = { report: r.report, lastRunAt: r.runAt, dataDate: r.dataDate, status: r.status,
+        const base = { report: r.report, branch: r.branch || '01', lastRunAt: r.runAt, dataDate: r.dataDate, status: r.status,
                        rows: r.rowsSent, hoursAgo, summary: '', error: r.error,
                        rowsCsv: r.rowsCsv, rowsSent: r.rowsSent, missing: r.missing };
         reports.push({ ...base, label: REPORT_LABEL[r.report] || r.report, state: gradeReport(base) });
       }
     }
-    reports.sort((a, b) => a.report.localeCompare(b.report));
+    reports.sort((a, b) => a.report.localeCompare(b.report) || String(a.branch).localeCompare(String(b.branch)));
 
     // บิลที่ควรตรวจสอบ (ยอดผิดปกติ) — ไม่บล็อกอะไร แค่ชี้ให้ไปดู
     let anomalies = null;

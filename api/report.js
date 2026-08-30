@@ -6,7 +6,7 @@
 //   { topic, from, to, doc, barcode, party, person, branch, limit, estimateOnly }
 //   branch: '1' | '2' | ไม่ส่ง = ทุกสาขา
 //
-// topic: count | invoice | stock | in | out
+// topic: count | invoice | stock | price | in | out
 // ทุกตัวยกเว้น topic / from / to ไม่บังคับ — ไม่ส่ง = ไม่กรองด้วยตัวนั้น
 
 import { createClient } from '@supabase/supabase-js';
@@ -23,6 +23,7 @@ const FN = {
   count:   'report_count',
   invoice: 'report_invoice',
   stock:   'report_stock',
+  price:   'report_price',
   in:      'report_movement',
   out:     'report_movement',
 };
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
   }
 
   if (!FN[topic]) return res.status(400).json({ error: 'topic ไม่ถูกต้อง' });
-  if (topic !== 'stock' && (!from || !to)) {
+  if (!['stock', 'price'].includes(topic) && (!from || !to)) {
     return res.status(400).json({ error: 'ต้องมีช่วงวันที่' });
   }
 
@@ -66,12 +67,15 @@ export default async function handler(req, res) {
   } else if (topic === 'invoice') {
     args = { p_from: from, p_to: to, p_doc: nz(doc), p_barcode: nz(barcode),
              p_vendor: nz(party), p_keyed_by: nz(person), p_branch: nz(branch), p_limit: limit };
+  } else if (topic === 'price') {
+    // ราคาปัจจุบัน — ไม่ผูกวันที่ · party = ประเภทสินค้า
+    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: limit };
   } else if (topic === 'stock') {
     // รายงานคงเหลือ: location = ประเภทสินค้า (products_view.category)
-    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_limit: limit };
+    args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_branch: nz(branch), p_limit: limit };
   } else {
     args = { p_kind: topic, p_from: from, p_to: to, p_doc: nz(doc),
-             p_barcode: nz(barcode), p_party: nz(party), p_limit: limit };
+             p_barcode: nz(barcode), p_party: nz(party), p_branch: nz(branch), p_limit: limit };
   }
 
   const { data, error } = await client().rpc(FN[topic], args);

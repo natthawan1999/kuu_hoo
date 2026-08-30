@@ -3,7 +3,8 @@
 //
 // เรียกจากหน้า Report Builder:
 //   POST /api/report
-//   { topic, from, to, doc, barcode, party, person, limit, estimateOnly }
+//   { topic, from, to, doc, barcode, party, person, branch, limit, estimateOnly }
+//   branch: '1' | '2' | ไม่ส่ง = ทุกสาขา
 //
 // topic: count | invoice | stock | in | out
 // ทุกตัวยกเว้น topic / from / to ไม่บังคับ — ไม่ส่ง = ไม่กรองด้วยตัวนั้น
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
 
   const {
     topic, from, to,
-    doc = null, barcode = null, party = null, person = null, location = null,
+    doc = null, barcode = null, party = null, person = null, location = null, branch = null,
     limit = 5000, estimateOnly = false,
   } = req.body || {};
 
@@ -52,7 +53,7 @@ export default async function handler(req, res) {
     const { data, error } = await client().rpc('report_estimate', {
       p_topic: topic, p_from: nz(from), p_to: nz(to),
       p_doc: nz(doc), p_barcode: nz(barcode),
-      p_party: nz(party), p_person: nz(person),
+      p_party: nz(party), p_person: nz(person), p_branch: nz(branch),
     });
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ estimate: data });
@@ -61,10 +62,10 @@ export default async function handler(req, res) {
   let args;
   if (topic === 'count') {
     args = { p_from: from, p_to: to, p_doc: nz(doc), p_barcode: nz(barcode),
-             p_counter: nz(person), p_limit: limit };
+             p_counter: nz(person), p_branch: nz(branch), p_limit: limit };
   } else if (topic === 'invoice') {
     args = { p_from: from, p_to: to, p_doc: nz(doc), p_barcode: nz(barcode),
-             p_vendor: nz(party), p_keyed_by: nz(person), p_limit: limit };
+             p_vendor: nz(party), p_keyed_by: nz(person), p_branch: nz(branch), p_limit: limit };
   } else if (topic === 'stock') {
     // รายงานคงเหลือ: location = ประเภทสินค้า (products_view.category)
     args = { p_barcode: nz(barcode), p_location: nz(location) || nz(party), p_limit: limit };

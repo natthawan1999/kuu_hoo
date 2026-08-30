@@ -59,6 +59,7 @@ async function reviseDocNo(reviseOf) {
 const toApp = (r) => ({
   id: r.id,
   docNo: r.doc_no,
+  branch: r.branch || '1',
   keyedById: r.keyed_by_id,
   keyedBy: r.keyed_by,
   deviceId: r.device_id || '',
@@ -185,6 +186,7 @@ export default async function handler(req, res) {
       let path = 'invoice_submissions?select=*&order=submitted_at.desc&limit=300';
       if (q.keyed_by_id) path += `&keyed_by_id=eq.${encodeURIComponent(q.keyed_by_id)}`;
       if (q.status) path += `&status=eq.${encodeURIComponent(q.status)}`;
+      if (q.branch) path += `&branch=eq.${encodeURIComponent(q.branch)}`;
       const rows = await sb(path);
       return res.status(200).json({ submissions: (rows || []).map(toApp) });
     }
@@ -200,6 +202,7 @@ export default async function handler(req, res) {
       // (ของเดิมอ่าน seq แล้วเขียนกลับคนละจังหวะ จึงชนกันได้)
       const row = {
         doc_no: null,   // เติมตอนบันทึก
+        branch: String(s.branch || '1'),
         keyed_by_id: s.keyedById,
         keyed_by: s.keyedBy,
         device_id: s.deviceId || null,
@@ -236,7 +239,7 @@ export default async function handler(req, res) {
       let lastErr;
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          row.doc_no = await nextDocNo('IV');
+          row.doc_no = await nextDocNo('IV' + row.branch);   // ตัวนับแยกสาขา
           const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
           return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
         } catch (e) {

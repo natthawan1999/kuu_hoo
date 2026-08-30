@@ -4,6 +4,7 @@
 //
 //   GET   /api/submission?feature=recorder            → ใบทั้งหมดของฟีเจอร์นั้น (ผู้จัดการ)
 //   GET   /api/submission?counter_id=u1&feature=...   → เฉพาะใบของคนนั้น (พนักงาน)
+//          submission.reviseOf = id ใบที่ถูกส่งกลับ → เลขเดิม + R1, R2 … (ไม่กินเลขใหม่)
 //   POST  /api/submission  { submission: {...} }      → บันทึกใบใหม่
 //   PATCH /api/submission  { id, status, review_note, reviewed_by }  → ผลรีวิว
 //   DELETE /api/submission?id=...                     → ลบใบ (ผู้จัดการ)
@@ -12,6 +13,23 @@ const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '')
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
 
 // ออกเลขเอกสารจากตัวนับกลางใน DB — ทุกเครื่องขอจากที่นี่ที่เดียว จึงไม่ชนกัน
+// ใบที่ถูกส่งกลับแล้วแก้มา → ใช้เลขฐานเดิมต่อท้าย R1, R2 …
+// ไม่เรียก next_doc_no เพราะการนับรอบเดียวควรมีเลขฐานเดียว
+async function reviseDocNo(reviseOf) {
+  const cur = await sb(`count_submissions?id=eq.${encodeURIComponent(reviseOf)}&select=doc_no`);
+  const orig = cur?.[0];
+  if (!orig?.doc_no) throw new Error('ไม่พบใบเดิมที่จะแก้');
+  const baseNo = String(orig.doc_no).replace(/R\d+$/i, '');   // สาขาอยู่ใน prefix แล้ว รอบแก้จึงคงสาขาเดิมเสมอ
+  // นับรอบจากเลขที่มีอยู่จริง — ปลอดภัยกว่านับจาก revise_no ถ้ามีแถวค้าง
+  const sibs = await sb(`count_submissions?doc_no=like.${encodeURIComponent(baseNo + 'R*')}&select=doc_no`);
+  let max = 0;
+  for (const r of sibs || []) {
+    const n = parseInt(String(r.doc_no).match(/R(\d+)$/i)?.[1] || '0', 10);
+    if (n > max) max = n;
+  }
+  return { docNo: `${baseNo}R${max + 1}`, reviseNo: max + 1 };
+}
+
 async function nextDocNo(prefix) {
   const out = await sb('rpc/next_doc_no', { method: 'POST', body: JSON.stringify({ p_prefix: prefix }) });
   return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
@@ -42,6 +60,7 @@ const toApp = (r) => ({
   counter: r.counter_name,
   counterId: r.counter_id,
   featureType: r.feature_type,
+  branch: r.branch || '1',
   deviceId: r.device_id || '',
   startedAt: r.started_at,
   submittedAt: r.submitted_at,
@@ -55,6 +74,8 @@ const toApp = (r) => ({
   reviewedBy: r.reviewed_by,
   compareAt: r.compare_at,
   compareData: r.compare_data || null,
+  reviseOf: r.revise_of || null,
+  reviseNo: r.revise_no || 0,
   // สถานะส่งขึ้น Drive — อยู่กับใบ ทุกเครื่องเห็นตรงกัน
   drive: {
     status: r.drive_status || null,
@@ -78,6 +99,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       let path = 'count_submissions?select=*&order=submitted_at.desc&limit=500';
       if (q.feature) path += `&feature_type=eq.${encodeURIComponent(q.feature)}`;
+      if (q.branch)  path += `&branch=eq.${encodeURIComponent(q.branch)}`;
       if (q.counter_id) path += `&counter_id=eq.${encodeURIComponent(q.counter_id)}`;
       if (q.status) path += `&status=eq.${encodeURIComponent(q.status)}`;
       const rows = await sb(path);
@@ -89,12 +111,15 @@ export default async function handler(req, res) {
       const s = body.submission || body;
       if (!Array.isArray(s.data)) return res.status(400).json({ error: 'data ต้องเป็น array' });
 
-      const prefix = (s.featureType || 'recorder') === 'stock_compare' ? 'ST' : 'RC';
+      // เลขเอกสารแยกตัวนับต่อสาขา — RC1-… / RC2-…
+      const branch = String(s.branch || '1');
+      const prefix = ((s.featureType || 'recorder') === 'stock_compare' ? 'ST' : 'RC') + branch;
       const row = {
         doc_no: null,   // เซิร์ฟเวอร์ออกให้ตอนบันทึก
         counter_id: s.counterId || 'unknown',
         counter_name: s.counter || 'พนักงาน',
         feature_type: s.featureType || 'recorder',
+        branch,
         device_id: s.deviceId || null,
         started_at: s.startedAt || null,
         submitted_at: s.submittedAt || new Date().toISOString(),
@@ -106,14 +131,34 @@ export default async function handler(req, res) {
         review_note: s.reviewNote || '',
         compare_at: s.compareAt || null,
         compare_data: s.compareData || null,
+        revise_of: s.reviseOf || null,
+        revise_no: 0,
       };
+
+      // แก้ใบที่ถูกส่งกลับ → เลขเดิม + R<n> ครั้งเดียว ไม่ต้องวนขอเลขใหม่
+      if (s.reviseOf) {
+        const { docNo, reviseNo } = await reviseDocNo(s.reviseOf);
+        row.doc_no = docNo;
+        row.revise_no = reviseNo;
+        const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
+        // ใบเดิมถือว่าถูกแทนที่แล้ว — กันผู้จัดการเห็นค้างในกล่องส่งกลับ
+        try {
+          await sb(`count_submissions?id=eq.${encodeURIComponent(s.reviseOf)}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'superseded' }),
+          });
+        } catch { /* ไม่สำเร็จก็ไม่บล็อก ใบใหม่บันทึกแล้ว */ }
+        return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
+      }
 
       // กันกดส่งซ้ำ — ใบเดิมของคนเดิมภายใน 90 วินาที ถือว่าเป็นใบเดียวกัน
       try {
+        if (s.reviseOf) throw new Error('skip');   // รอบแก้อาจมียอดเท่าเดิม ไม่ใช่ใบซ้ำ
         const since = new Date(Date.now() - 90 * 1000).toISOString();
         const dupes = await sb(
           `count_submissions?select=*&counter_id=eq.${encodeURIComponent(row.counter_id)}` +
           `&feature_type=eq.${encodeURIComponent(row.feature_type)}` +
+          `&branch=eq.${encodeURIComponent(row.branch)}` +
           `&item_count=eq.${row.item_count}&total_qty=eq.${row.total_qty}` +
           `&submitted_at=gte.${encodeURIComponent(since)}&limit=1`
         );

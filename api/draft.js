@@ -2,7 +2,7 @@
 // ร่างการนับขึ้นเซิร์ฟเวอร์ — นับที่เครื่องหนึ่ง ไปต่อที่อีกเครื่องได้
 // ตาราง count_drafts (สร้างจาก supabase-setup.sql) ผูกร่างกับ counter_id ไม่ใช่เครื่อง
 //
-//   GET    /api/draft?counter_id=u1&feature=recorder   → ร่างของคนนั้น
+//   GET    /api/draft?counter_id=u1&feature=recorder&branch=1   → ร่างของคนนั้นในสาขานั้น
 //   POST   /api/draft  { counter_id, counter_name, feature, device_id, entries:[...] }
 //          → ทับร่างเดิมของคนนั้นทั้งชุด (ลบเก่า ใส่ใหม่)
 //   DELETE /api/draft?counter_id=u1&feature=recorder   → ล้างร่าง (ใช้ตอนส่งใบแล้ว)
@@ -42,7 +42,8 @@ export default async function handler(req, res) {
       if (!q.counter_id) return res.status(400).json({ error: 'ต้องมี counter_id' });
       const rows = await sb(
         `count_drafts?select=*&counter_id=eq.${encodeURIComponent(q.counter_id)}` +
-        `&feature_type=eq.${encodeURIComponent(feature)}&order=scanned_at.asc`
+        `&feature_type=eq.${encodeURIComponent(feature)}` +
+        `&branch=eq.${encodeURIComponent(q.branch || '1')}&order=scanned_at.asc`
       );
       return res.status(200).json({
         entries: (rows || []).map(r => ({
@@ -67,16 +68,18 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const { counter_id, counter_name, device_id, entries } = body;
+      const branch = String(body.branch || '1');
       if (!counter_id || !counter_name) return res.status(400).json({ error: 'ต้องมี counter_id และ counter_name' });
       if (!Array.isArray(entries)) return res.status(400).json({ error: 'entries ต้องเป็น array' });
 
       // ทับทั้งชุด — ร่างในเครื่องคือความจริงตอนกดบันทึก
-      await sb(`count_drafts?counter_id=eq.${encodeURIComponent(counter_id)}&feature_type=eq.${encodeURIComponent(feature)}`, { method: 'DELETE' });
+      await sb(`count_drafts?counter_id=eq.${encodeURIComponent(counter_id)}&feature_type=eq.${encodeURIComponent(feature)}&branch=eq.${encodeURIComponent(branch)}`, { method: 'DELETE' });
 
       if (entries.length) {
         const rows = entries.map(e => ({
           counter_id, counter_name,
           feature_type: feature,
+          branch,
           device_id: device_id || null,
           barcode: String(e.barcode || ''),
           product_code: e.productCode || e.productId || null,
@@ -98,7 +101,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'DELETE') {
       if (!q.counter_id) return res.status(400).json({ error: 'ต้องมี counter_id' });
-      await sb(`count_drafts?counter_id=eq.${encodeURIComponent(q.counter_id)}&feature_type=eq.${encodeURIComponent(feature)}`, { method: 'DELETE' });
+      await sb(`count_drafts?counter_id=eq.${encodeURIComponent(q.counter_id)}&feature_type=eq.${encodeURIComponent(feature)}&branch=eq.${encodeURIComponent(q.branch || '1')}`, { method: 'DELETE' });
       return res.status(200).json({ ok: true });
     }
 

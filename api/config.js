@@ -19,6 +19,12 @@ const ALLOWED = [
   'drive_folder_manual',        // บันทึกมือ
   'drive_folder_purchase',      // บิลซื้อ
   'invoice_model',              // โมเดลที่ใช้อ่านบิล
+  // 2 สาขา — ชื่อที่โชว์ในแอป และวิธีอ่านยอดคงเหลือแยกสาขาจาก product_stock
+  'branch_1_name',
+  'branch_2_name',
+  'branch_stock_column',        // ชื่อคอลัมน์สาขาใน product_stock (ว่าง = อ่านยอดรวม)
+  'branch_1_value',             // ค่าในคอลัมน์นั้นที่หมายถึงสาขา 1
+  'branch_2_value',
 ];
 
 // env เก็บแค่ของที่เป็นความลับ (client id) — โฟลเดอร์ตั้งในแอป เก็บที่ app_settings
@@ -28,6 +34,11 @@ const DEFAULTS = {
   drive_folder_manual:       '',
   drive_folder_purchase:     '',
   invoice_model:             '',
+  branch_1_name:             'สาขา 1',
+  branch_2_name:             'สาขา 2',
+  branch_stock_column:       '',
+  branch_1_value:            '1',
+  branch_2_value:            '2',
 };
 
 async function sb(path, init = {}) {

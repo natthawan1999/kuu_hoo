@@ -61,7 +61,12 @@ async function sb(path, init = {}) {
   const text = await res.text();
   let body = null;
   if (text) { try { body = JSON.parse(text); } catch { body = { message: text.slice(0, 300) }; } }
-  if (!res.ok) { const e = new Error(body?.message || `HTTP ${res.status}`); e.code = body?.code; throw e; }
+  if (!res.ok) {
+    // เอา details/hint มาด้วย — "HTTP 400" เฉย ๆ วินิจฉัยอะไรไม่ได้
+    const parts = [body?.message, body?.details, body?.hint].filter(Boolean);
+    const e = new Error(parts.join(' · ') || `HTTP ${res.status}`);
+    e.code = body?.code; throw e;
+  }
   return body;
 }
 

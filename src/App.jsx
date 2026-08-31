@@ -2366,7 +2366,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
 
   const cur = openId ? invSubs.find(s => s.id === openId) : null;
   const dirty = !!(q || bc || from || to || status !== 'all');
-  const COLS = '124px minmax(96px,1fr) 78px 86px 40px 84px 18px';
+  const COLS = 'minmax(124px,1.1fr) minmax(96px,1.6fr) minmax(78px,.8fr) minmax(86px,.9fr) minmax(40px,.5fr) minmax(84px,.9fr) 18px';
 
   // ── ชั้นรายละเอียด ──
   if (cur) {
@@ -2544,7 +2544,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
         </div>
       ) : (
         <div className="bg-white border rounded-xl overflow-x-auto" style={{ borderColor: '#E4E6EA' }}>
-          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 'max-content', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 600, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
             {[['เลขที่เอกสาร', 0], ['ผู้ขาย', 0], ['วันที่บิล', 0], ['สถานะ', 0], ['จำนวน', 1], ['ยอดสุทธิ', 1], ['', 0]].map(([h, right], i) => (
               <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
             ))}
@@ -2556,7 +2556,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
             return (
               <button key={s.id} onClick={() => setOpenId(s.id)}
                 className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
-                style={{ gridTemplateColumns: COLS, minWidth: 'max-content', boxSizing: 'border-box',
+                style={{ gridTemplateColumns: COLS, minWidth: 600, boxSizing: 'border-box',
                          borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
                 <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s.docNo || '—'}</span>
                 <span className="min-w-0 text-[12.5px] font-semibold text-slate-800 truncate">{s.vendorName || 'ไม่ระบุผู้ขาย'}</span>
@@ -2618,7 +2618,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
 
   const cur = openId ? submissions.find(s2 => s2.id === openId) : null;
   const dirty = !!(q || bc || from || to || status !== 'all');
-  const COLS = '126px 96px 86px 46px 56px 18px';
+  const COLS = 'minmax(126px,1.3fr) minmax(96px,1fr) minmax(86px,.9fr) minmax(46px,.6fr) minmax(56px,.7fr) 18px';
   const dt = (v, opt) => v ? new Date(v).toLocaleString('th-TH', opt || { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
 
   // ── ชั้นรายละเอียด ──
@@ -2795,7 +2795,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
         </div>
       ) : (
         <div className="bg-white border rounded-xl overflow-x-auto" style={{ borderColor: '#E4E6EA' }}>
-          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 'max-content', background: '#F8FAFC', borderColor: '#E4E6EA' }}>
+          <div className="grid gap-2 px-3 py-2 border-b" style={{ gridTemplateColumns: COLS, minWidth: 600, background: '#F8FAFC', borderColor: '#E4E6EA' }}>
             {[['เลขที่เอกสาร', 0], ['ส่งเมื่อ', 0], ['สถานะ', 0], ['บาร์โค้ด', 1], ['รวมจำนวน', 1], ['', 0]].map(([h, right], i) => (
               <span key={i} className="text-[10.5px] font-bold text-slate-500" style={{ textAlign: right ? 'right' : 'left' }}>{h}</span>
             ))}
@@ -2806,7 +2806,7 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
             return (
               <button key={s2.id} onClick={() => setOpenId(s2.id)}
                 className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
-                style={{ gridTemplateColumns: COLS, minWidth: 'max-content', boxSizing: 'border-box',
+                style={{ gridTemplateColumns: COLS, minWidth: 600, boxSizing: 'border-box',
                          borderColor: '#F1F3F5', borderLeft: `3px solid ${cfg.edge}`, background: cfg.bg }}>
                 <span className="min-w-0 text-[11.5px] font-bold text-slate-800 tabular-nums truncate">{s2.docNo || '—'}</span>
                 <span className="text-[11.5px] text-slate-500 tabular-nums truncate">{dt(s2.submittedAt)}</span>
@@ -4490,7 +4490,7 @@ const REPORT_TOPICS = [
 const COL_LABEL = {
   branch: 'สาขา', barcode: 'บาร์โค้ด', master_code: 'รหัสหลัก (สต็อก)',
   doc_no: 'เลขที่เอกสาร', counted_at: 'วันที่นับ', counter_name: 'ผู้นับ', zone: 'โซน',
-  product_code: 'รหัสสินค้า', barcode: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
+  product_code: 'รหัสสินค้า', name: 'ชื่อสินค้า', unit: 'หน่วย',
   qty: 'จำนวน', status: 'สถานะ',
   price: 'ราคาขาย', cost: 'ทุนเฉลี่ย', margin: 'กำไร/หน่วย', margin_pct: '% กำไร', category: 'ประเภท',
   file_name: 'ไฟล์', invoice_no: 'เลขที่บิล', invoice_date: 'วันที่บิล',

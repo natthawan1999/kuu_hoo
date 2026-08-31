@@ -34,6 +34,15 @@ async function sb(path, init = {}) {
 }
 
 // ออกเลขเอกสารจากตัวนับกลางใน DB — atomic ทุกเครื่องขอจากที่นี่ที่เดียว
+async function insertRow(table, row) {
+  try { return await sb(table, { method: 'POST', body: JSON.stringify(row) }); }
+  catch (e) {
+    if (!/branch/i.test(e.message || '')) throw e;
+    const { branch, ...rest } = row;   // ยังไม่ได้รัน sql/18
+    return await sb(table, { method: 'POST', body: JSON.stringify(rest) });
+  }
+}
+
 async function nextDocNo(prefix) {
   const out = await sb('rpc/next_doc_no', { method: 'POST', body: JSON.stringify({ p_prefix: prefix }) });
   return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
@@ -224,7 +233,7 @@ export default async function handler(req, res) {
         const { docNo, reviseNo } = await reviseDocNo(s.reviseOf);
         row.doc_no = docNo;
         row.revise_no = reviseNo;
-        const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
+        const out = await insertRow('invoice_submissions', row);
         // ใบเดิมถือว่าถูกแทนที่แล้ว — กันผู้จัดการเห็นค้างในกล่องส่งกลับ
         try {
           await sb(`invoice_submissions?id=eq.${encodeURIComponent(s.reviseOf)}`, {
@@ -240,7 +249,7 @@ export default async function handler(req, res) {
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
           row.doc_no = await nextDocNo('IV' + row.branch);   // ตัวนับแยกสาขา
-          const out = await sb('invoice_submissions', { method: 'POST', body: JSON.stringify(row) });
+          const out = await insertRow('invoice_submissions', row);
           return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
         } catch (e) {
           lastErr = e;

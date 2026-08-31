@@ -30,6 +30,18 @@ async function reviseDocNo(reviseOf) {
   return { docNo: `${baseNo}R${max + 1}`, reviseNo: max + 1 };
 }
 
+// ยังไม่ได้รัน sql/18 (ไม่มีคอลัมน์ branch) → insert ทั้งก้อนล้ม ใบเลยไม่ได้เลข
+// ลองใหม่แบบตัด branch ออก ดีกว่าให้พนักงานส่งไม่ได้ทั้งวัน
+async function insertRow(table, row) {
+  try {
+    return await sb(table, { method: 'POST', body: JSON.stringify(row) });
+  } catch (e) {
+    if (!/branch/i.test(e.message || '')) throw e;
+    const { branch, ...rest } = row;
+    return await sb(table, { method: 'POST', body: JSON.stringify(rest) });
+  }
+}
+
 async function nextDocNo(prefix) {
   const out = await sb('rpc/next_doc_no', { method: 'POST', body: JSON.stringify({ p_prefix: prefix }) });
   return typeof out === 'string' ? out : (Array.isArray(out) ? out[0] : out?.next_doc_no);
@@ -140,7 +152,7 @@ export default async function handler(req, res) {
         const { docNo, reviseNo } = await reviseDocNo(s.reviseOf);
         row.doc_no = docNo;
         row.revise_no = reviseNo;
-        const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
+        const out = await insertRow('count_submissions', row);
         // ใบเดิมถือว่าถูกแทนที่แล้ว — กันผู้จัดการเห็นค้างในกล่องส่งกลับ
         try {
           await sb(`count_submissions?id=eq.${encodeURIComponent(s.reviseOf)}`, {
@@ -158,7 +170,7 @@ export default async function handler(req, res) {
         const dupes = await sb(
           `count_submissions?select=*&counter_id=eq.${encodeURIComponent(row.counter_id)}` +
           `&feature_type=eq.${encodeURIComponent(row.feature_type)}` +
-          `&branch=eq.${encodeURIComponent(row.branch)}` +
+          (row.branch ? `&branch=eq.${encodeURIComponent(row.branch)}` : '') +
           `&item_count=eq.${row.item_count}&total_qty=eq.${row.total_qty}` +
           `&submitted_at=gte.${encodeURIComponent(since)}&limit=1`
         );
@@ -172,7 +184,7 @@ export default async function handler(req, res) {
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
           row.doc_no = await nextDocNo(prefix);
-          const out = await sb('count_submissions', { method: 'POST', body: JSON.stringify(row) });
+          const out = await insertRow('count_submissions', row);
           return res.status(200).json({ submission: toApp(Array.isArray(out) ? out[0] : out) });
         } catch (e) {
           lastErr = e;

@@ -4532,12 +4532,14 @@ const COL_LABEL = {
   vendor_name: 'ผู้ขาย', description: 'รายละเอียด', ea: 'ea', price_ea: 'ราคา/หน่วย',
   discount: 'ส่วนลด', amount: 'จำนวนเงิน', vat: 'ภาษี', total: 'รวม',
   on_hand: 'คงเหลือ', occurred_at: 'วันเวลา', kind: 'ประเภท', party: 'ผู้ขาย / ลูกค้า',
+  matched: 'ตรงที่ค้น',
 };
 
 const isNumCol = (k) => ['qty','ea','price_ea','discount','amount','total','on_hand','price','cost','margin','margin_pct'].includes(k);
 const isDateCol = (k) => ['counted_at','occurred_at','invoice_date'].includes(k);
 
 function fmtCell(k, v) {
+  if (k === 'matched') return v ? '✓ ใช่' : '';   // แถวพี่น้องในตระกูลเดียวกันปล่อยว่าง
   if (v == null || v === '') return '';
   if (isDateCol(k)) {
     const d = new Date(v);
@@ -4606,8 +4608,10 @@ function ReportView() {
       String(r[k] ?? '').toLowerCase().includes(v.trim().toLowerCase())));
   }, [rows, colFilter]);
 
-  // ราคาต่อหน่วย/ทุน/กำไร/% เอามาบวกกันไม่ได้ — รวมได้แต่จำนวนและยอดเงิน
-  const NO_SUM = ['price', 'cost', 'margin', 'margin_pct', 'price_ea'];
+  // ราคาต่อหน่วย/ทุน/กำไร/% เอามาบวกกันไม่ได้
+  // on_hand ในรายงานราคาก็บวกไม่ได้ — แถวชิ้น/แพ็ค/ลัง คือสต็อกก้อนเดียวกันนับซ้ำ
+  const NO_SUM = ['price', 'cost', 'margin', 'margin_pct', 'price_ea',
+                  ...(topic === 'price' ? ['on_hand'] : [])];
   const sums = useMemo(() => {
     const s = {};
     for (const k of cols) if (isNumCol(k) && !NO_SUM.includes(k)) s[k] = shown.reduce((a, r) => a + (Number(r[k]) || 0), 0);

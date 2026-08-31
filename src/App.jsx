@@ -968,7 +968,7 @@ export default function CombinedApp() {
         saved = j.submission;
         break;
       } catch (e) {
-        setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...s, syncError: e.message } : s));
+        setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...s, syncError: e.message || 'ส่งไม่สำเร็จ' } : s));
         break;
       }
     }
@@ -980,6 +980,24 @@ export default function CombinedApp() {
     } catch {}
     return saved;
     } finally { submittingRef.current = false; }
+  };
+
+  // ใบที่ขึ้นเซิร์ฟเวอร์ไม่สำเร็จ ค้างอยู่ในเครื่องและยังไม่มีเลข — ส่งซ้ำได้
+  const resendSubmission = async (id) => {
+    const sub = submissions.find(x => x.id === id);
+    if (!sub) return;
+    setSubmissions(prev => prev.map(x => x.id === id ? { ...x, syncError: '', sending: true } : x));
+    try {
+      const res = await fetch('/api/submission', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submission: { ...sub, syncError: undefined, sending: undefined, deviceId: safeGet('deviceId', '') || null } }),
+      });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+      setSubmissions(prev => [{ ...j.submission, synced: true }, ...prev.filter(x => x.id !== id && x.docNo !== j.submission.docNo)]);
+    } catch (e) {
+      setSubmissions(prev => prev.map(x => x.id === id ? { ...x, sending: false, syncError: e.message || 'ส่งไม่สำเร็จ' } : x));
+    }
   };
 
   const reviewSubmission = (id, status, reviewNote) => {
@@ -1352,7 +1370,7 @@ export default function CombinedApp() {
         {/* Counter - stock / stock_compare */}
         {!isManager && feature !== 'invoice' && activeView === 'count' && <CounterCountView entries={myEntries} addEntry={addCountEntry} deleteEntry={deleteCountEntry} checkBarcode={checkBarcode} setView={setView} products={products} isSupabaseReady={isSupabaseReady} connectionStatus={connectionStatus} countDate={countDate} setCountDate={setCountDate} draft={countDraft} updateDraft={updateDraft} pushDraft={pushDraft} pullDraft={pullDraft} draftSync={draftSync} tone={C} revise={reviseCount} onCancelRevise={() => { clearMyEntries(); clearReviseCount(); }} />}
         {!isManager && feature !== 'invoice' && activeView === 'review' && <CounterReviewView tone={C} entries={myEntries} setView={setView} submitForReview={submitForReview} clearMyEntries={clearMyEntries} currentUser={currentUser} pickedAt={pickedAt} revise={reviseCount} />}
-        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} onRevise={startReviseCount} />}
+        {!isManager && feature !== 'invoice' && activeView === 'my_submissions' && <MySubmissionsView onRefresh={() => pullSubmissions(feature)} onResend={resendSubmission} subSync={subSync} submissions={submissions.filter(s => s.counterId === currentUser.id && (s.featureType||'recorder') === feature)} setView={setView} onRevise={startReviseCount} />}
         {/* Counter - invoice */}
         {!isManager && feature === 'invoice' && <ErrorBox><InvoiceScannerModule supabaseConfig={supabaseConfig} currentUser={currentUser}
             onOpenSent={() => setView('my_bills')} onCloseSent={() => setView('invoice')}
@@ -2584,7 +2602,7 @@ function MyBillsView({ invSubs = [], setView, onRefresh, onRevise }) {
 }
 
 // ใบนับที่พนักงานส่งไปแล้ว — ตาราง 1 บรรทัด 1 ใบ แตะเข้าดูรายละเอียดอีกชั้น (โครงเดียวกับบิลที่ส่งแล้ว)
-function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRevise }) {
+function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRevise, onResend }) {
   const [openId, setOpenId] = useState(null);
   const [q, setQ] = useState('');
   const [bc, setBc] = useState('');
@@ -2803,6 +2821,23 @@ function MySubmissionsView({ submissions, setView, onRefresh, subSync = {}, onRe
 
           {list.map(s2 => {
             const cfg = CFG[s2.status] || CFG.pending;
+            if (s2.syncError || s2.sending) return (
+              <div key={s2.id} className="px-3 py-2.5 border-b" style={{ borderColor: '#F1F3F5', borderLeft: '3px solid #B91C1C', background: '#FDF2F2' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11.5px] font-bold tabular-nums" style={{ color: '#B91C1C' }}>{s2.docNo || '—'}</span>
+                  <span className="text-[11px] text-slate-500">{s2.itemCount ?? rowsOf(s2).length} รายการ · {(s2.totalQty || 0).toLocaleString('th-TH')}</span>
+                  <span className="flex-1" />
+                  <button onClick={() => onResend?.(s2.id)} disabled={s2.sending}
+                    className="shrink-0 rounded-lg text-[11.5px] font-bold text-white disabled:opacity-60"
+                    style={{ minHeight: 30, padding: '0 10px', background: '#B91C1C' }}>
+                    {s2.sending ? 'กำลังส่ง…' : 'ส่งซ้ำ'}
+                  </button>
+                </div>
+                <div className="text-[11px] mt-1 break-words" style={{ color: '#B91C1C' }}>
+                  ยังไม่ขึ้นเซิร์ฟเวอร์ — {s2.syncError || 'กำลังลองใหม่'}
+                </div>
+              </div>
+            );
             return (
               <button key={s2.id} onClick={() => setOpenId(s2.id)}
                 className="w-full grid gap-2 items-center px-3 py-2.5 text-left border-b"
